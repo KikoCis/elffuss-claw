@@ -4,7 +4,7 @@ import * as ui from './ui.js';
 import * as rules from './providers/rules.js';
 import * as db from './db.js';
 import * as settings from './settings.js';
-import { tasks } from './tools/index.js';
+import { tasks, watch } from './tools/index.js';
 
 // Proveedores LOCALES (corren en TU navegador). Los externos (OpenAI,
 // Anthropic, Ollama, servidor) son configuración avanzada y se resuelven
@@ -262,6 +262,13 @@ setInterval(async () => {
 tasks.startScheduler(t => {
   ui.toast('⏰ Tarea programada: ' + t.prompt);
   send('⏰ [tarea programada] ' + t.prompt);
+});
+
+// Automatizaciones de carpetas: dejar un archivo en la de origen → Elffuss lo
+// procesa y lo deja en la de destino, avisando por chat.
+watch.startWatcher(msg => {
+  ui.toast(msg);
+  ui.addMsg('assistant', msg);
 });
 
 window.elffuss = { agent, send }; // consola de depuración

@@ -57,6 +57,15 @@ for f in web/js/**/*.js web/js/*.js; do node --check "$f" || echo "FALLO: $f"; d
   respeta el protocolo del lock (`~/.gpu_coordination/PROTOCOL.md`) — osin/elffuss
   tienen prioridad NORMAL y ceden ante agentic-install.
 
+## Tests
+
+`tests/e2e_datos.mjs` (Playwright; `cd tests && npm i && npm run e2e` con el dev
+server corriendo): valida Excel→gráfico (xlsx real vía SheetJS) y la
+automatización de carpetas (`fs.watch` entrada→salida + `fs.copy`). Corre en
+modo básico (determinista, sin GPU) sembrando carpetas OPFS registradas en el
+IndexedDB — los pickers nativos exigen gesto de usuario. Para tests con modelo
+local WebGPU: flags `--enable-unsafe-webgpu --use-angle=metal` y **lock de GPU**.
+
 ## Coordinación con agentic-install (modelo propio)
 
 `coordinacion/NECESIDADES.md` = peticiones de Elffuss al agente de agentic-install
