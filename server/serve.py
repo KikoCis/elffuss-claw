@@ -10,8 +10,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import os
+
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8642
-ROOT = str(Path(__file__).resolve().parent.parent / 'web')
+ROOT = os.environ.get('NASTIA_ROOT') or str(Path(__file__).resolve().parent.parent / 'web')
 MAX_PROXY_BYTES = 2_000_000
 
 
@@ -20,10 +22,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=ROOT, **kwargs)
 
     def end_headers(self):
-        # Aislamiento cross-origin (wasm multihilo de transformers.js);
-        # 'credentialless' deja pasar los CDNs sin cabeceras CORP.
-        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
-        self.send_header('Cross-Origin-Embedder-Policy', 'credentialless')
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
