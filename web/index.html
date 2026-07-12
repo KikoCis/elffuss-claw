@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nastia — el SO que vive en tu navegador</title>
+<meta name="description" content="Nastia: un sistema operativo agéntico en tu navegador. Las apps no existen: se crean.">
+<link rel="stylesheet" href="css/nastia.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✳️</text></svg>">
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="logo">✳</span><b>Nastia</b><span class="beta">β</span>
+    <span class="claim">las apps no existen: se crean</span>
+  </div>
+  <div class="controls">
+    <label class="model-pick">🧠
+      <select id="model-select">
+        <option value="rules" selected>Básico (sin modelo)</option>
+        <option value="onnx">Nastia LM · ONNX/WebGPU</option>
+        <option value="litert">Gemma-4 E2B · LiteRT-LM</option>
+      </select>
+    </label>
+    <span id="model-status" class="dot off" title="estado del modelo"></span>
+    <button id="btn-perms" class="ghost">Permisos</button>
+  </div>
+</header>
+
+<main>
+  <section id="chat">
+    <div id="log">
+      <div class="msg sys"><b>Hola, soy Nastia.</b> Un sistema operativo que vive en tu navegador.
+        Aquí las apps no se instalan: <i>se crean</i> cuando las pides y aparecen a la derecha.
+        Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados,
+        programar tareas y navegar por ti. Todo se queda en tu máquina.</div>
+    </div>
+    <div id="chips">
+      <span class="chip">Hazme un reloj</span>
+      <span class="chip">Crea una app de notas</span>
+      <span class="chip">Autoriza una carpeta</span>
+      <span class="chip">Recuérdame dentro de 1 minuto que estire las piernas</span>
+      <span class="chip">Abre https://example.com</span>
+    </div>
+    <form id="composer">
+      <input id="prompt" autocomplete="off" placeholder="Pídeme lo que necesites…">
+      <button type="submit" id="send" title="Enviar">➤</button>
+    </form>
+  </section>
+
+  <section id="viz">
+    <nav id="tabs">
+      <button data-tab="vista" class="active">Vista</button>
+      <button data-tab="apps">Apps</button>
+      <button data-tab="tareas">Tareas</button>
+      <button data-tab="vault">Vault</button>
+      <button data-tab="permisos">Permisos</button>
+    </nav>
+    <div class="panel active" id="panel-vista">
+      <div id="vista-empty">
+        <div class="big">✳</div>
+        <p>Aquí aparece lo que Nastia crea.<br>Prueba: <i>«hazme un reloj»</i></p>
+      </div>
+      <iframe id="appframe" title="app generada"
+              sandbox="allow-scripts allow-forms allow-modals allow-popups" hidden></iframe>
+    </div>
+    <div class="panel" id="panel-apps"></div>
+    <div class="panel" id="panel-tareas"></div>
+    <div class="panel" id="panel-vault"></div>
+    <div class="panel" id="panel-permisos"></div>
+  </section>
+</main>
+
+<dialog id="perm-dialog">
+  <h3 id="perm-title"></h3>
+  <p id="perm-desc"></p>
+  <p id="perm-detail" class="muted"></p>
+  <div class="row right">
+    <button id="perm-deny" class="ghost">Denegar</button>
+    <button id="perm-allow" class="primary">Permitir</button>
+  </div>
+</dialog>
+
+<div id="toasts"></div>
+<div id="model-progress" hidden>
+  <div class="track"><div id="model-bar"></div></div>
+  <span id="model-progress-text"></span>
+</div>
+
+<script type="module" src="js/kernel.js"></script>
+</body>
+</html>
