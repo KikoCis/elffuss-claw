@@ -1,7 +1,10 @@
 // UI: chat + visualizador + paneles. Todo el DOM vive aquí.
 import * as db from './db.js';
 import * as perms from './permissions.js';
+import * as settings from './settings.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
+
+let onSettingsChangedCb = () => {};
 
 const $ = id => document.getElementById(id);
 
@@ -117,6 +120,7 @@ export function selectTab(name) {
   if (name === 'tareas') refreshTasks();
   if (name === 'vault') refreshVault();
   if (name === 'permisos') refreshPerms();
+  if (name === 'ajustes') refreshSettings();
 }
 
 function card(...children) {
@@ -282,10 +286,82 @@ export function modelStatus(state) { // 'off' | 'loading' | 'on' | 'gpu'
   $('model-status').className = 'dot ' + state;
 }
 
+// ---------- selector de modelo (dinámico) ----------
+export function rebuildModelSelect(options, current) {
+  const sel = $('model-select');
+  sel.replaceChildren();
+  for (const o of options) {
+    const opt = document.createElement('option');
+    opt.value = o.id;
+    opt.textContent = o.label;
+    sel.appendChild(opt);
+  }
+  if (current && options.some(o => o.id === current)) sel.value = current;
+}
+
+export function setModel(id) { $('model-select').value = id; }
+
+// ---------- panel ajustes (config avanzada de proveedores) ----------
+export function refreshSettings() {
+  const panel = $('panel-ajustes');
+  panel.replaceChildren(el('h3', null, '⚙️ Modelos y configuración avanzada'));
+  panel.appendChild(el('p', 'muted',
+    'Elffuss corre en tu navegador por defecto. Aquí puedes conectar modelos externos ' +
+    '(opcional). Las claves se guardan solo en este navegador y las llamadas van directas ' +
+    'al proveedor — nada pasa por nuestros servidores.'));
+
+  const cfgs = settings.configs();
+  for (const [id, c] of Object.entries(cfgs)) {
+    const wrap = el('div', 'card col');
+    const head = el('div', 'row between');
+    const title = el('b', null, c.label);
+    const toggle = el('input');
+    toggle.type = 'checkbox';
+    toggle.checked = c.enabled;
+    head.append(title, toggle);
+    wrap.appendChild(head);
+    wrap.appendChild(el('span', 'muted', c.help || ''));
+
+    const model = el('input');
+    model.placeholder = 'modelo';
+    model.value = c.model || '';
+    const base = el('input');
+    base.placeholder = 'endpoint';
+    base.value = c.baseURL || '';
+    const key = el('input');
+    key.type = 'password';
+    key.placeholder = c.kind === 'anthropic' ? 'sk-ant-…' : (id === 'ollama' || id === 'server' ? 'clave (no necesaria)' : 'sk-…');
+    key.value = c.apiKey || '';
+
+    wrap.append(labeled('Modelo', model), labeled('Endpoint', base));
+    if (id !== 'ollama' && id !== 'server') wrap.append(labeled('API key', key));
+
+    const save = () => {
+      settings.update(id, {
+        enabled: toggle.checked,
+        model: model.value.trim(),
+        baseURL: base.value.trim(),
+        apiKey: key.value,
+      });
+      onSettingsChangedCb();
+    };
+    toggle.onchange = () => { save(); toast(toggle.checked ? `${c.label} activado — elígelo en el selector 🧠` : `${c.label} desactivado`); };
+    wrap.appendChild(btn('Guardar', 'primary', () => { save(); toast('Guardado'); }));
+    panel.appendChild(wrap);
+  }
+}
+
+function labeled(label, input) {
+  const row = el('label', 'field');
+  row.append(el('span', 'muted', label), input);
+  return row;
+}
+
 // ---------- arranque ----------
-export function init({ onSend, onModelChange }) {
+export function init({ onSend, onModelChange, onSettingsChanged }) {
   perms.setAsker(askPermission);
   apps.setRenderer(renderApp);
+  onSettingsChangedCb = onSettingsChanged || (() => {});
 
   $('composer').addEventListener('submit', e => {
     e.preventDefault();

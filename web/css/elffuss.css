@@ -176,6 +176,13 @@ main {
 }
 .card b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .card code { background: var(--bg); padding: 2px 8px; border-radius: 6px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+.card.col { flex-direction: column; align-items: stretch; gap: 8px; }
+.card.col b { flex: none; }
+.row.between { justify-content: space-between; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field .muted { font-size: .74rem; }
+.msg.user.queued { opacity: .55; }
+.msg.user.queued::after { content: ' ⏳'; }
 .muted { color: var(--muted); font-size: .82rem; }
 .row { display: flex; gap: 8px; margin: 10px 0; }
 .row.right { justify-content: flex-end; }

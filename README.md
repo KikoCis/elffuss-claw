@@ -13,7 +13,9 @@ en el visualizador. Sin instalar nada, sin backend obligatorio, con el modelo co
 | Pilar | Cómo |
 |---|---|
 | **Apps que se crean** | El agente genera HTML autocontenido → iframe sandbox en el visualizador. Se guardan en IndexedDB y se reabren desde la pestaña *Apps*. |
-| **Cuatro cerebros** | **Ornith 9B · servidor** (llama.cpp en el OVH, `/v1` OpenAI-compatible, razonador con thinking desactivable), **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B `q4`, 100% local), **LiteRT-LM** (Google, Gemma-4 E2B, preview) y **Básico** (reglas, 0 descarga). Autocarga con cadena de respaldo: servidor → WebGPU → básico. |
+| **Local por defecto** | Cerebros que corren en TU navegador: **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B `q4`), **LiteRT-LM** (Gemma-4 E2B) y **Básico** (reglas, 0 descarga). Autocarga solo-local (WebGPU → básico); **nunca** tira de un modelo externo por su cuenta. |
+| **Modelos externos (avanzado)** | Pestaña ⚙️: conecta **OpenAI**, **Anthropic (Claude)**, **Ollama local** o el **servidor Ornith 9B** — opt-in. Las claves se guardan solo en tu navegador y las llamadas van directas al proveedor. |
+| **Cola de mensajes** | Puedes encolar varios mensajes; se procesan en orden y **persisten en IndexedDB**: un refresco a media respuesta no pierde ninguno (se recuperan y siguen). |
 | **Memoria + histórico** | El histórico de conversación persiste en IndexedDB (refrescar no borra nada; 🧹 = nueva conversación) y `memory.*` guarda hechos para siempre en el navegador — entran en el CONTEXTO de cada turno. |
 | **Contexto ACE-lite** | Eviction de historial por relevancia (BM25-lite + IDF, portado del attention-context-eviction de agentic-install) con presupuesto de tokens + CONTEXTO AHORA (estado real del sistema) + idioma del navegador. |
 | **Permisos** | Cada ámbito (archivos, apps, vault, tareas, internet) pide permiso la primera vez; revocables en la pestaña *Permisos*. |
