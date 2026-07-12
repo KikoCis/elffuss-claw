@@ -34,6 +34,7 @@ async function changeModel(id) {
   if (!providers[id]) { // modo básico
     agent.setProvider(rules);
     ui.modelStatus('off');
+    localStorage.setItem('nastia.model', 'rules');
     ui.toast('Modo básico: sin modelo, órdenes directas.');
     return;
   }
@@ -44,18 +45,31 @@ async function changeModel(id) {
     await mod.load(p => ui.modelProgress(p));
     ui.modelProgress(null);
     agent.setProvider(mod);
+    localStorage.setItem('nastia.model', id);
     ui.modelStatus(navigator.gpu ? 'gpu' : 'on');
-    ui.toast(`${mod.name} listo · ${navigator.gpu ? 'WebGPU' : 'CPU/wasm'}`);
+    ui.toast(`${mod.name} listo · ${navigator.gpu ? 'WebGPU' : 'CPU/wasm'} · готово ✳`);
   } catch (e) {
     ui.modelProgress(null);
     ui.modelStatus('off');
     agent.setProvider(rules);
     document.getElementById('model-select').value = 'rules';
-    ui.toast('⚠️ No se pudo cargar el modelo: ' + e.message);
+    console.error('[nastia] fallo cargando modelo', e);
+    ui.toast('⚠️ No se pudo cargar el modelo: ' + (e?.message || String(e)));
   }
 }
 
 ui.init({ onSend: send, onModelChange: changeModel });
+
+// Autocarga del cerebro: lo último elegido o, si hay WebGPU, el ONNX por
+// defecto — Nastia no arranca «sin modelo»; mientras descarga, el modo básico
+// sigue atendiendo.
+const savedModel = localStorage.getItem('nastia.model');
+const initialModel = savedModel || (navigator.gpu ? 'onnx' : 'rules');
+if (providers[initialModel]) {
+  document.getElementById('model-select').value = initialModel;
+  ui.toast('Cargando el cerebro de Nastia… mientras, el modo básico te atiende.');
+  changeModel(initialModel);
+}
 
 // Las tareas vencidas se auto-envían como prompts al agente.
 tasks.startScheduler(t => {

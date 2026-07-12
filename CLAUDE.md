@@ -39,6 +39,21 @@ for f in web/js/**/*.js web/js/*.js; do node --check "$f" || echo "FALLO: $f"; d
   respeta el protocolo del lock (`~/.gpu_coordination/PROTOCOL.md`) — osin/nastia
   tienen prioridad NORMAL y ceden ante agentic-install.
 
+## Coordinación con agentic-install (modelo propio)
+
+`coordinacion/NECESIDADES.md` = peticiones de Nastia al agente de agentic-install
+(que entrena los modelos); `coordinacion/ERRORES.md` = fallos encontrados
+probando modelos en navegador (sirve de set de eval). Protocolo de estados en
+las cabeceras. El usuario hace de correo entre los dos agentes: mantener ambos
+archivos al día tras cada prueba.
+
+## Personalidad
+
+Nastia es una eslava ucraniana angelical: rubia, cara redonda, cálida y
+resolutiva; español conciso con algún «добре»/«готово». Vive en
+`systemPrompt()` (agent.js), el avatar en `web/img/nastia.svg`. Mantener la
+persona corta: los modelos pequeños se degradan con prompts largos.
+
 ## Deploy
 
 `./deploy.sh` — rsync de web/ al servidor de UtopiaIA + nginx/certbot
