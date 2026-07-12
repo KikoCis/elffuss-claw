@@ -1,15 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Elffuss: ángel eslava — halo, melena rubia, cara redonda angelical -->
-  <ellipse cx="64" cy="16" rx="24" ry="6.5" fill="none" stroke="#ffd76a" stroke-width="5" opacity=".95"/>
-  <!-- alitas -->
-  <path d="M18 74 C 8 66 10 52 20 48 C 16 60 20 68 30 72 Z" fill="#ffffff" opacity=".8"/>
-  <path d="M110 74 C 120 66 118 52 108 48 C 112 60 108 68 98 72 Z" fill="#ffffff" opacity=".8"/>
+  <!-- Elffuss: elfa eslava — orejas puntiagudas, melena rubia, corona de
+       hojas, cara redonda angelical -->
+  <!-- destellos mágicos -->
+  <path d="M108 22 l2.6 6.4 6.4 2.6 -6.4 2.6 -2.6 6.4 -2.6-6.4 -6.4-2.6 6.4-2.6 Z" fill="#ffd76a" opacity=".9"/>
+  <circle cx="18" cy="34" r="2.6" fill="#ffd76a" opacity=".7"/>
   <!-- melena (detrás) -->
-  <path d="M64 24 C 32 24 22 52 24 84 C 25 98 34 108 44 110 L 44 68 C 44 48 52 38 64 38 C 76 38 84 48 84 68 L 84 110 C 94 108 103 98 104 84 C 106 52 96 24 64 24 Z" fill="#f7c948"/>
+  <path d="M64 22 C 32 22 22 50 24 84 C 25 98 34 108 44 110 L 44 66 C 44 46 52 36 64 36 C 76 36 84 46 84 66 L 84 110 C 94 108 103 98 104 84 C 106 50 96 22 64 22 Z" fill="#f7c948"/>
+  <!-- orejas de elfa -->
+  <path d="M34 76 L12 54 C 8 68 14 82 32 85 Z" fill="#ffe8d6"/>
+  <path d="M30 76 L18 62 C 16 70 20 78 30 80 Z" fill="#f5c9a8"/>
+  <path d="M94 76 L116 54 C 120 68 114 82 96 85 Z" fill="#ffe8d6"/>
+  <path d="M98 76 L110 62 C 112 70 108 78 98 80 Z" fill="#f5c9a8"/>
   <!-- cara redonda -->
   <circle cx="64" cy="72" r="29" fill="#ffe8d6"/>
   <!-- flequillo -->
   <path d="M35 72 C 35 46 47 34 64 34 C 81 34 93 46 93 72 C 93 61 87 56 80 53 C 73 50 70 45 64 45 C 58 45 55 50 48 53 C 41 56 35 61 35 72 Z" fill="#ffd76a"/>
+  <!-- corona de hojas élfica -->
+  <g fill="#5fbf6e">
+    <ellipse cx="42" cy="42" rx="7" ry="3.2" transform="rotate(-28 42 42)"/>
+    <ellipse cx="53" cy="35.5" rx="7" ry="3.2" transform="rotate(-12 53 35.5)"/>
+    <ellipse cx="64" cy="33.5" rx="7" ry="3.2"/>
+    <ellipse cx="75" cy="35.5" rx="7" ry="3.2" transform="rotate(12 75 35.5)"/>
+    <ellipse cx="86" cy="42" rx="7" ry="3.2" transform="rotate(28 86 42)"/>
+  </g>
+  <circle cx="64" cy="33.5" r="2.4" fill="#ff4d8d"/>
   <!-- ojos azules -->
   <circle cx="52" cy="73" r="3.8" fill="#3b6fd4"/>
   <circle cx="76" cy="73" r="3.8" fill="#3b6fd4"/>

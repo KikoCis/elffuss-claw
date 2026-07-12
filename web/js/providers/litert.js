@@ -20,6 +20,12 @@ export async function load(onProgress = () => {}) {
   });
 }
 
+// Liberar el modelo (vigilante de RAM).
+export async function unload() {
+  try { engine?.close?.(); } catch { /* mejor esfuerzo */ }
+  engine = null; conversation = null; sentCount = 0;
+}
+
 export async function chat(history, system, onToken = () => {}) {
   if (!engine) throw new Error('Modelo no cargado');
   // Comparar solo la parte estática del prompt: el CONTEXTO AHORA va al final

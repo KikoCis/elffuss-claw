@@ -13,7 +13,9 @@ en el visualizador. Sin instalar nada, sin backend obligatorio, con el modelo co
 | Pilar | Cómo |
 |---|---|
 | **Apps que se crean** | El agente genera HTML autocontenido → iframe sandbox en el visualizador. Se guardan en IndexedDB y se reabren desde la pestaña *Apps*. |
-| **Modelo en el navegador** | 3 cerebros conmutables: **Básico** (reglas, 0 descarga), **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B, dtype `q4`) y **LiteRT-LM** (Google, Gemma-4 E2B, early preview). |
+| **Cuatro cerebros** | **Ornith 9B · servidor** (llama.cpp en el OVH, `/v1` OpenAI-compatible, razonador con thinking desactivable), **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B `q4`, 100% local), **LiteRT-LM** (Google, Gemma-4 E2B, preview) y **Básico** (reglas, 0 descarga). Autocarga con cadena de respaldo: servidor → WebGPU → básico. |
+| **Memoria + histórico** | El histórico de conversación persiste en IndexedDB (refrescar no borra nada; 🧹 = nueva conversación) y `memory.*` guarda hechos para siempre en el navegador — entran en el CONTEXTO de cada turno. |
+| **Contexto ACE-lite** | Eviction de historial por relevancia (BM25-lite + IDF, portado del attention-context-eviction de agentic-install) con presupuesto de tokens + CONTEXTO AHORA (estado real del sistema) + idioma del navegador. |
 | **Permisos** | Cada ámbito (archivos, apps, vault, tareas, internet) pide permiso la primera vez; revocables en la pestaña *Permisos*. |
 | **Tus carpetas** | File System Access API (Chrome/Edge): autorizas una carpeta y Elffuss lista/lee/escribe dentro. Doble permiso: el de Elffuss + el nativo del navegador. |
 | **Vault** | Secretos cifrados con AES-256-GCM, clave derivada por PBKDF2 (310k iter.) de tu contraseña maestra. Autobloqueo a los 5 min. Nada sale de tu máquina. |

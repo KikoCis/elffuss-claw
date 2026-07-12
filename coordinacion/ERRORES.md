@@ -38,7 +38,7 @@ genérico.
   aplicación.» — sin sentido para Elffuss.
 - **Nota**: Qwen2.5-0.5B genérico no conoce su rol ni habla buen español pese
   al system prompt. Para N-001/N-002: incluir en el SFT identidad de Elffuss
-  (ángel eslava ucraniana, español cálido y conciso, «добре/готово»)
+  (elfa eslava ucraniana, español cálido y conciso, «добре/готово»)
   y ejemplos [resultado]→respuesta.
 
 ## E-004 · LiteRT-LM (Gemma-4 E2B) sin probar E2E — **ABIERTO** *(2026-07-12)*
@@ -55,6 +55,25 @@ genérico.
   vía transformers.js. El 0.5B q4 (786 MB) sí carga. → Restricción añadida a
   N-002. Para modelos mayores la ruta es LiteRT-LM (N-001), que no pasa por el
   heap wasm.
+
+## E-006 · Ornith razona en `reasoning_content` y no contesta — **CERRADO** *(2026-07-12)*
+- **Visto**: Ornith-1.0-9B (Qwen3.5-9B, repack KikoCis con template arreglado)
+  servido con llama.cpp `--jinja` piensa en `reasoning_content` antes del
+  `content`; con `max_tokens` corto se queda pensando y el content llega vacío.
+  En la CPU del servidor (E-007) un turno razonado = >5 min.
+- **Solución**: `chat_template_kwargs: {enable_thinking:false}` por petición →
+  respuesta en 4.7 s. El streaming enseña `reasoning_content` en la burbuja de
+  «pensando» si se activa el modo profundo (`REMOTE.thinking=true`).
+- Recordad SIEMPRE con Ornith: **temp 1.0 / top_p 0.95** (con temp baja entra
+  en bucles de repetición — documentado en el README del repack).
+
+## E-007 · Rendimiento CPU del servidor OVH — **dato de referencia** *(2026-07-12)*
+- llama.cpp, Ornith 9B Q4_K_M (5.3 GB, requant de Q8_0), 8 cores (`-t 6`):
+  **ingestión ~19 t/s, generación ~3.5 t/s**. Prompt de Elffuss ≈ 650 tokens →
+  ~33 s la primera vez (`--cache-reuse 256` reutiliza prefijo después). Una app
+  HTML de ~600 tokens ≈ 3 min.
+- El 31B IQ2_M (10.9 GB) NO cabe: 15 GB de RAM, ~9.7 disponibles → thrash de
+  disco, <1 t/s. Si algún día hay servidor con GPU o más RAM, reevaluar.
 
 ## Benignos (no actuar)
 - Warnings de onnxruntime `VerifyEachNodeIsAssignedToAnEp` (ops de shape en

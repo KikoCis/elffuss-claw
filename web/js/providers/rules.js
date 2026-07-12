@@ -57,6 +57,14 @@ export async function chat(history) {
   if (/(lista|ver|muestra|qué|que).*(tareas)/.test(t) || t === 'tareas')
     return call({ tool: 'tasks.list', args: {} });
 
+  // memoria persistente
+  const mRemember = text.match(/\brecuerda (?:que )?(.+)/i);
+  if (mRemember) return call({ tool: 'memory.save', args: { fact: mRemember[1].trim() } });
+  if (/(qué|que) recuerdas|tu memoria|mis recuerdos/.test(t))
+    return call({ tool: 'memory.list', args: {} });
+  const mForget = text.match(/\bolvida (?:el )?(m[a-z0-9]{6})\b/i);
+  if (mForget) return call({ tool: 'memory.forget', args: { id: mForget[1] } });
+
   // vault
   const mSecret = text.match(/guarda (?:el |la )?(?:secreto|contraseña) ([\w.@-]+)\s*[:=]\s*(\S+)/i);
   if (mSecret) return call({ tool: 'vault.set', args: { name: mSecret[1], secret: mSecret[2] } });
