@@ -9,7 +9,7 @@ export const name = MODEL.label;
 let generator = null, TextStreamer = null;
 
 export async function load(onProgress = () => {}) {
-  const tf = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
+  const tf = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4');
   TextStreamer = tf.TextStreamer;
   if (MODEL.selfHosted) {
     tf.env.allowRemoteModels = false;

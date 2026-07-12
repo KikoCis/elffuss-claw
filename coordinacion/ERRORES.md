@@ -75,6 +75,19 @@ genérico.
 - El 31B IQ2_M (10.9 GB) NO cabe: 15 GB de RAM, ~9.7 disponibles → thrash de
   disco, <1 t/s. Si algún día hay servidor con GPU o más RAM, reevaluar.
 
+## E-008 · LFM2.5 requiere transformers.js v4 — **CERRADO** *(2026-07-12)*
+- Con `@huggingface/transformers@3`, LFM2.5-1.2B descarga (850 MB) y lanza un
+  throw numérico `10283960` al crear la sesión (arquitectura no soportada).
+  Con **v4** carga y funciona perfecto. Proveedor onnx migrado a v4.
+
+## E-009 · Qwen3.5-0.8B roto en onnxruntime-web — **ABIERTO (upstream)** *(2026-07-12)*
+- Carga (716 MB: decoder+embed+vision separados) pero al generar:
+  `RuntimeError: operation does not support unaligned accesses` (inputs
+  `past_conv`/`past_recurrent` → arquitectura híbrida) y lentitud extrema
+  (7 min un turno). Bug del runtime, no del modelo. Re-evaluar con futuras
+  versiones de ort-web/transformers.js. Análisis completo:
+  [CANDIDATOS-MODELO.md](CANDIDATOS-MODELO.md).
+
 ## Benignos (no actuar)
 - Warnings de onnxruntime `VerifyEachNodeIsAssignedToAnEp` (ops de shape en
   CPU): normales, sin impacto visible.

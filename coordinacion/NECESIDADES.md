@@ -46,11 +46,12 @@ verificada en navegador vía LiteRT-LM.
 ## N-002 · Tool-caller diminuto ≤1B → ONNX q4 (ruta ligera) — **PENDIENTE**
 *2026-07-12 · prioridad media (pero es el que arregla la agéntica pequeña)*
 
-El Qwen2.5-0.5B genérico que usamos hoy es débil siguiendo el protocolo.
-Un 0.5B **entrenado para el protocolo de Elffuss** rendiría mucho más que uno
-genérico ×4 su tamaño.
+**Actualización 12-jul (análisis en [CANDIDATOS-MODELO.md](CANDIDATOS-MODELO.md))**:
+el default ya no es Qwen2.5-0.5B sino **LFM2.5-1.2B-Instruct** (850 MB q4,
+agentic-first, clava el protocolo SIN fine-tune con transformers.js v4). El SFT
+sigue teniendo valor para pulir persona/español/uso del CONTEXTO.
 
-- **Qué**: SFT sobre `Qwen/Qwen2.5-0.5B-Instruct` (o similar ≤1B) con dataset
+- **Qué**: SFT sobre `LiquidAI/LFM2.5-1.2B` (o 700M/350M si basta) con dataset
   sintético del protocolo Elffuss: pares user→tool-call para las 14 herramientas,
   user→```html app completa, y [resultado]→respuesta en español. Podemos generar
   el dataset juntos (pedídnoslo por aquí y os pasamos transcripciones reales).

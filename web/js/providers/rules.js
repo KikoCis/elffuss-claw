@@ -17,6 +17,28 @@ const APPS = {
   notas: () => SHELL('Notas',
     '<h2>📝 Notas</h2><textarea id="n" style="width:82vw;height:60vh;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:14px;font-size:16px;resize:none" placeholder="Escribe aquí…"></textarea><p id="s" style="color:#8b949e;font-size:.85rem"></p>',
     "let mem={};let store;try{store=localStorage;store.getItem('x')}catch(e){store={getItem:k=>mem[k],setItem:(k,v)=>mem[k]=v}}const n=document.getElementById('n'),s=document.getElementById('s');n.value=store.getItem('elffuss.notas')||'';n.oninput=()=>{store.setItem('elffuss.notas',n.value);s.textContent='guardado '+new Date().toLocaleTimeString('es-ES')};"),
+  arte: () => SHELL('Arte',
+    '<canvas id="g" style="position:fixed;inset:0;width:100vw;height:100vh"></canvas><p style="position:fixed;bottom:12px;left:0;right:0;text-align:center;color:#8b949e;font-size:.8rem">mueve el ratón ✨</p>',
+    "const c=document.getElementById('g'),gl=c.getContext('webgl',{alpha:false});" +
+    "const N=9000,S=new Float32Array(N*2);for(let i=0;i<N*2;i++)S[i]=Math.random();" +
+    "const vs='attribute vec2 s;uniform float t,a;uniform vec2 m;varying vec3 C;varying float G;" +
+    "void main(){float r=0.1+1.2*pow(s.y,0.7);float g=s.x*6.283+r*3.0+t*(0.2+0.4/(r+0.2));" +
+    "vec2 p=vec2(cos(g),sin(g))*r;p.y*=0.7;p+=m*(0.05+r*0.08);gl_Position=vec4(p.x/a,p.y,0.,1.);" +
+    "float w=0.5+0.5*sin(t*(2.+s.x*4.)+s.y*30.);G=w;" +
+    "C=mix(vec3(1.,.3,.55),vec3(.49,.36,1.),smoothstep(.1,1.2,r));gl_PointSize=1.5+3.*w;}';" +
+    "const fs='precision mediump float;varying vec3 C;varying float G;" +
+    "void main(){float m2=smoothstep(.5,0.,length(gl_PointCoord-.5));gl_FragColor=vec4(C*G,m2*G);}';" +
+    "function sh(t2,s2){const x=gl.createShader(t2);gl.shaderSource(x,s2);gl.compileShader(x);return x}" +
+    "const P=gl.createProgram();gl.attachShader(P,sh(gl.VERTEX_SHADER,vs));gl.attachShader(P,sh(gl.FRAGMENT_SHADER,fs));" +
+    "gl.linkProgram(P);gl.useProgram(P);const B=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,B);" +
+    "gl.bufferData(gl.ARRAY_BUFFER,S,gl.STATIC_DRAW);const L=gl.getAttribLocation(P,'s');" +
+    "gl.enableVertexAttribArray(L);gl.vertexAttribPointer(L,2,gl.FLOAT,false,0,0);" +
+    "gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.clearColor(0.04,0.05,0.08,1);" +
+    "let mx=0,my=0;addEventListener('pointermove',e=>{mx=(e.clientX/innerWidth-.5)*2;my=-(e.clientY/innerHeight-.5)*2});" +
+    "(function F(n){c.width=innerWidth;c.height=innerHeight;gl.viewport(0,0,c.width,c.height);" +
+    "gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform1f(gl.getUniformLocation(P,'t'),n/1000);" +
+    "gl.uniform1f(gl.getUniformLocation(P,'a'),c.width/c.height);gl.uniform2f(gl.getUniformLocation(P,'m'),mx,my);" +
+    "gl.drawArrays(gl.POINTS,0,N);requestAnimationFrame(F)})(0);"),
   calculadora: () => SHELL('Calculadora',
     '<div><input id="p" readonly style="width:288px;font-size:1.6rem;text-align:right;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:10px;margin-bottom:10px;box-sizing:border-box"><div id="k" style="display:grid;grid-template-columns:repeat(4,64px);gap:8px"></div></div>',
     "const p=document.getElementById('p'),k=document.getElementById('k');'789/456*123-0.=+C'.split('').forEach(c=>{const b=document.createElement('button');b.textContent=c;b.style.cssText='font-size:1.3rem;padding:14px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#e6edf3';b.onclick=()=>{if(c==='C')p.value='';else if(c==='='){try{p.value=/^[-+*/.() 0-9]+$/.test(p.value)?String(Function('return ('+p.value+')')()):'error'}catch(e){p.value='error'}}else p.value+=c};k.appendChild(b)});"),
@@ -137,7 +159,8 @@ export async function chat(history) {
 
   // apps
   if (/(crea|hazme|haz|genera|quiero|móntame|montame)/.test(t) || /^(reloj|notas|calculadora)$/.test(t)) {
-    const kind = /reloj|hora/.test(t) ? 'reloj' : /nota/.test(t) ? 'notas' : /calcul/.test(t) ? 'calculadora' : null;
+    const kind = /reloj|hora/.test(t) ? 'reloj' : /nota/.test(t) ? 'notas' : /calcul/.test(t) ? 'calculadora'
+      : /(arte|part[ií]culas|galaxia|aurora|webgl)/.test(t) ? 'arte' : null;
     if (kind) return call({ tool: 'app.create', args: { name: kind, html: APPS[kind]() } });
     if (/(app|aplicaci|web|página|pagina|juego|dashboard|panel)/.test(t))
       return call({ tool: 'app.create', args: { name: 'boceto', html: generic(text) } });

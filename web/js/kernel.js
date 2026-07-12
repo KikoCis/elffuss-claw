@@ -192,14 +192,19 @@ function refreshModelOptions() {
   ui.rebuildModelSelect(modelOptions(), activeModel);
 }
 
-// Splash de primera visita: la promesa de privacidad, con guiño incluido.
+// Splash de primera visita: galaxia WebGL + promesa de privacidad + guiño.
 const splash = document.getElementById('splash');
 if (!localStorage.getItem('elffuss.welcomed')) {
   splash.hidden = false;
+  let galaxy = null;
+  import('./splash-gl.js')
+    .then(m => { galaxy = m.startGalaxy(splash); })
+    .catch(() => {}); // sin WebGL queda el gradiente CSS
   document.getElementById('splash-enter').addEventListener('click', () => {
     localStorage.setItem('elffuss.welcomed', '1');
+    galaxy?.burst(); // las estrellas salen despedidas al entrar
     splash.style.opacity = '0';
-    setTimeout(() => { splash.hidden = true; }, 600);
+    setTimeout(() => { splash.hidden = true; galaxy?.stop(); }, 800);
   });
 }
 
