@@ -101,6 +101,8 @@ export function askPermission(scope, meta, detail) {
 }
 
 // ---------- visualizador ----------
+const isMobile = () => matchMedia('(max-width: 700px)').matches;
+
 export function renderApp(name, html) {
   $('vista-empty').hidden = true;
   const frame = $('appframe');
@@ -108,6 +110,13 @@ export function renderApp(name, html) {
   frame.srcdoc = html;
   selectTab('vista');
   refreshApps();
+  if (isMobile()) flipTo('viz'); // en móvil, saltar a ver la app recién creada
+}
+
+// móvil: una sola columna, chat ↔ visualizador conmutables
+function flipTo(side) {
+  document.body.classList.toggle('show-viz', side === 'viz');
+  $('btn-flip').textContent = side === 'viz' ? '💬 Chat' : '✳ Vista';
 }
 
 // ---------- pestañas ----------
@@ -374,6 +383,8 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
     c.addEventListener('click', () => onSend(c.textContent)));
   document.querySelectorAll('#tabs button').forEach(b =>
     b.addEventListener('click', () => selectTab(b.dataset.tab)));
-  $('btn-perms').addEventListener('click', () => selectTab('permisos'));
+  $('btn-perms').addEventListener('click', () => { selectTab('permisos'); if (isMobile()) flipTo('viz'); });
   $('model-select').addEventListener('change', e => onModelChange(e.target.value));
+  $('btn-flip').addEventListener('click', () =>
+    flipTo(document.body.classList.contains('show-viz') ? 'chat' : 'viz'));
 }
