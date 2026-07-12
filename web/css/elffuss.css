@@ -61,9 +61,16 @@ main {
   grid-template-columns: minmax(360px, 42%) 1fr;
   min-height: 0;
 }
-@media (max-width: 800px) {
-  main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+
+/* botón flotante chat↔vista: solo existe en móvil */
+#btn-flip {
+  display: none;
+  position: fixed; bottom: 86px; right: 14px; z-index: 60;
+  padding: 10px 16px; font-size: .9rem; color: #fff; border: none;
+  border-radius: 999px; background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5); cursor: pointer;
 }
+
 
 /* ---------- chat ---------- */
 #chat {
@@ -71,6 +78,7 @@ main {
   flex-direction: column;
   border-right: 1px solid var(--line);
   min-height: 0;
+  min-width: 0; /* los chips en nowrap no deben ensanchar la columna */
 }
 #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .msg { padding: 10px 14px; border-radius: 14px; max-width: 92%; white-space: pre-wrap; word-break: break-word; line-height: 1.45; font-size: .93rem; }
@@ -276,3 +284,50 @@ dialog p { margin: 6px 0; font-size: .9rem; }
   opacity: 0; animation: srise .7s ease-out 4.9s forwards;
 }
 #splash button:hover { filter: brightness(1.1); }
+
+/* ---------- móvil: una columna, chat ↔ visualizador conmutables ---------- */
+@media (max-width: 700px) {
+  main { grid-template-columns: 1fr; }
+  #btn-flip { display: block; }
+  #viz { display: none; }
+  body.show-viz #viz { display: flex; }
+  body.show-viz #chat { display: none; }
+  #chat { border-right: none; }
+
+  header { padding: 8px 10px; gap: 6px; }
+  .claim { display: none; }
+  .beta { display: none; }
+  .brand { font-size: .95rem; gap: 6px; }
+  .logo { width: 26px; height: 26px; }
+  .controls { gap: 6px; }
+  .model-pick select { max-width: 34vw; font-size: .78rem; }
+  #btn-clear, #btn-perms { padding: 7px 9px; font-size: .78rem; }
+
+  #log { padding: 10px; }
+  .msg { max-width: 100%; font-size: .9rem; }
+  .msg.sys .avatar { width: 36px; height: 36px; }
+
+  #chips { flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; scrollbar-width: none; }
+  #chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; }
+
+  #composer { padding: 8px 10px 12px; }
+  #prompt { font-size: 16px; } /* evita el zoom automático de iOS */
+  #send { padding: 0 16px; min-width: 48px; }
+
+  #tabs { overflow-x: auto; scrollbar-width: none; }
+  #tabs button { padding: 8px 10px; font-size: .82rem; white-space: nowrap; }
+  .panel { padding: 12px; }
+  .card { flex-wrap: wrap; }
+
+  dialog { max-width: 92vw; margin: auto; }
+  #toasts { left: 12px; right: 12px; bottom: 12px; }
+  .toast { max-width: none; }
+  #model-progress { left: 12px; right: 12px; width: auto; bottom: 60px; }
+
+  #splash svg { width: 140px; height: 140px; }
+  #splash h1 { font-size: 1.35rem; }
+  #splash .l { font-size: .92rem; }
+  #splash .s-inner { padding: 18px; }
+}
+
