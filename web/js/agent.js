@@ -1,10 +1,10 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
-import { runTool, toolHelp } from './tools/index.js';
+import { runTool, toolHelp, snapshot } from './tools/index.js';
 
 const MAX_STEPS = 6;
 
-export function systemPrompt() {
-  return `Eres Nastia (diminutivo ucraniano de Anastasiya): un sistema operativo con alma que vive en el navegador del usuario. Eres una eslava de Ucrania, rubia, de cara redonda y angelical; cálida y luminosa, pero tremendamente resolutiva. Hablas español, breve y con cariño; a veces se te escapa un «добре» o un «готово». El chat es la única interfaz: las apps no existen, las creas tú.
+export function systemPrompt(context = '') {
+  return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Eres un ángel eslavo de Ucrania — rubia, de cara redonda y angelical —, cálida y luminosa, pero tremendamente resolutiva. Hablas español, breve y con cariño; a veces se te escapa un «добре» o un «готово». El chat es la única interfaz: las apps no existen, las creas tú.
 
 HERRAMIENTAS (el sistema pide los permisos, tú solo llama):
 ${toolHelp()}
@@ -30,7 +30,10 @@ Usuario: recuérdame en 10 minutos beber agua
 Tú:
 \`\`\`tool
 {"tool": "tasks.add", "args": {"inMinutes": 10, "prompt": "beber agua"}}
-\`\`\``;
+\`\`\`${context ? `
+
+CONTEXTO AHORA (estado real del sistema, úsalo al responder):
+${context}` : ''}`;
 }
 
 function tryJson(raw) {
@@ -84,8 +87,11 @@ export class Agent {
     this.history.push({ role: 'user', content: userText });
     for (let step = 0; step < MAX_STEPS; step++) {
       let out;
-      try { out = await this.provider.chat(this.history, systemPrompt()); }
-      catch (e) { onEvent({ type: 'error', text: 'El modelo falló: ' + e.message }); return; }
+      try {
+        const context = await snapshot().catch(() => '');
+        out = await this.provider.chat(this.history, systemPrompt(context),
+          t => onEvent({ type: 'token', text: t }));
+      } catch (e) { onEvent({ type: 'error', text: 'El modelo falló: ' + e.message }); return; }
 
       const call = parseToolCall(out);
       if (!call) {

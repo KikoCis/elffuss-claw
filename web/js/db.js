@@ -1,5 +1,5 @@
 // IndexedDB mínima: stores clave→valor.
-const NAME = 'nastia', VERSION = 1;
+const NAME = 'elffuss', VERSION = 1;
 const STORES = ['kv', 'apps', 'tasks', 'vault', 'fs'];
 let dbPromise = null;
 

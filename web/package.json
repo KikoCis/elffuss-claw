@@ -1,6 +1,6 @@
 {
-  "name": "nastia-web",
+  "name": "elffuss-web",
   "private": true,
   "type": "module",
-  "description": "Nastia: SO agéntico en el navegador. Sin build: ES modules vanilla."
+  "description": "Elffuss: SO agéntico en el navegador. Sin build: ES modules vanilla."
 }

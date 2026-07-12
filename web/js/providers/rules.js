@@ -16,14 +16,14 @@ const APPS = {
     "const f=()=>{const n=new Date();document.getElementById('t').textContent=n.toLocaleTimeString('es-ES');document.getElementById('d').textContent=n.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'})};f();setInterval(f,1000);"),
   notas: () => SHELL('Notas',
     '<h2>📝 Notas</h2><textarea id="n" style="width:82vw;height:60vh;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:14px;font-size:16px;resize:none" placeholder="Escribe aquí…"></textarea><p id="s" style="color:#8b949e;font-size:.85rem"></p>',
-    "let mem={};let store;try{store=localStorage;store.getItem('x')}catch(e){store={getItem:k=>mem[k],setItem:(k,v)=>mem[k]=v}}const n=document.getElementById('n'),s=document.getElementById('s');n.value=store.getItem('nastia.notas')||'';n.oninput=()=>{store.setItem('nastia.notas',n.value);s.textContent='guardado '+new Date().toLocaleTimeString('es-ES')};"),
+    "let mem={};let store;try{store=localStorage;store.getItem('x')}catch(e){store={getItem:k=>mem[k],setItem:(k,v)=>mem[k]=v}}const n=document.getElementById('n'),s=document.getElementById('s');n.value=store.getItem('elffuss.notas')||'';n.oninput=()=>{store.setItem('elffuss.notas',n.value);s.textContent='guardado '+new Date().toLocaleTimeString('es-ES')};"),
   calculadora: () => SHELL('Calculadora',
     '<div><input id="p" readonly style="width:288px;font-size:1.6rem;text-align:right;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:10px;margin-bottom:10px;box-sizing:border-box"><div id="k" style="display:grid;grid-template-columns:repeat(4,64px);gap:8px"></div></div>',
     "const p=document.getElementById('p'),k=document.getElementById('k');'789/456*123-0.=+C'.split('').forEach(c=>{const b=document.createElement('button');b.textContent=c;b.style.cssText='font-size:1.3rem;padding:14px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#e6edf3';b.onclick=()=>{if(c==='C')p.value='';else if(c==='='){try{p.value=/^[-+*/.() 0-9]+$/.test(p.value)?String(Function('return ('+p.value+')')()):'error'}catch(e){p.value='error'}}else p.value+=c};k.appendChild(b)});"),
 };
 
 const generic = desc => SHELL('Boceto',
-  `<div style="max-width:560px;text-align:center;padding:20px"><h2>✳ Boceto de app</h2><p style="color:#8b949e">Esto es un boceto del modo básico. Pediste:</p><blockquote style="background:#161b22;border-left:3px solid #ff4d8d;padding:12px;border-radius:8px;text-align:left">${desc.replace(/</g, '&lt;')}</blockquote><p style="color:#8b949e">Carga un modelo (selector 🧠 arriba) y Nastia generará esta app de verdad, a medida.</p></div>`, '');
+  `<div style="max-width:560px;text-align:center;padding:20px"><h2>✳ Boceto de app</h2><p style="color:#8b949e">Esto es un boceto del modo básico. Pediste:</p><blockquote style="background:#161b22;border-left:3px solid #ff4d8d;padding:12px;border-radius:8px;text-align:left">${desc.replace(/</g, '&lt;')}</blockquote><p style="color:#8b949e">Carga un modelo (selector 🧠 arriba) y Elffuss generará esta app de verdad, a medida.</p></div>`, '');
 
 const HELP = `Estoy en modo básico (sin modelo). Entiendo órdenes directas:
 • «hazme un reloj / una app de notas / una calculadora»

@@ -7,7 +7,7 @@
 // sube las carpetas a web/models/<id>/ y pon selfHosted: true.
 // Ver README § «Modelo propio».
 export const MODEL = {
-  label: 'Nastia LM (Qwen2.5-0.5B · ONNX)',
+  label: 'Elffuss LM (Qwen2.5-0.5B · ONNX)',
   id: 'onnx-community/Qwen2.5-0.5B-Instruct',
   dtype: 'q4',            // ¡NO q4f16! genera basura vía WebGPU (verificado en la bitácora)
   selfHosted: false,

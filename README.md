@@ -1,11 +1,11 @@
-# ✳ Nastia — el sistema operativo que vive en tu navegador
+# ✳ Elffuss — el sistema operativo que vive en tu navegador
 
-**Las apps no existen: se crean.** Nastia es un SO web agéntico: el chat es la única
-interfaz, y cuando necesitas una app, Nastia la genera como HTML y aparece al instante
+**Las apps no existen: se crean.** Elffuss es un SO web agéntico: el chat es la única
+interfaz, y cuando necesitas una app, Elffuss la genera como HTML y aparece al instante
 en el visualizador. Sin instalar nada, sin backend obligatorio, con el modelo corriendo
 **dentro del navegador** (ONNX Runtime Web / LiteRT.js de Google, sobre WebGPU).
 
-> Proyecto hermano de **osin/Vilma** (SO agéntico físico). Nastia es la misma idea
+> Proyecto hermano de **osin/Vilma** (SO agéntico físico). Elffuss es la misma idea
 > llevada al navegador: BOOM 💥.
 
 ## Qué hace hoy
@@ -15,7 +15,7 @@ en el visualizador. Sin instalar nada, sin backend obligatorio, con el modelo co
 | **Apps que se crean** | El agente genera HTML autocontenido → iframe sandbox en el visualizador. Se guardan en IndexedDB y se reabren desde la pestaña *Apps*. |
 | **Modelo en el navegador** | 3 cerebros conmutables: **Básico** (reglas, 0 descarga), **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B, dtype `q4`) y **LiteRT-LM** (Google, Gemma-4 E2B, early preview). |
 | **Permisos** | Cada ámbito (archivos, apps, vault, tareas, internet) pide permiso la primera vez; revocables en la pestaña *Permisos*. |
-| **Tus carpetas** | File System Access API (Chrome/Edge): autorizas una carpeta y Nastia lista/lee/escribe dentro. Doble permiso: el de Nastia + el nativo del navegador. |
+| **Tus carpetas** | File System Access API (Chrome/Edge): autorizas una carpeta y Elffuss lista/lee/escribe dentro. Doble permiso: el de Elffuss + el nativo del navegador. |
 | **Vault** | Secretos cifrados con AES-256-GCM, clave derivada por PBKDF2 (310k iter.) de tu contraseña maestra. Autobloqueo a los 5 min. Nada sale de tu máquina. |
 | **Tareas programadas** | «Recuérdame dentro de 20 minutos…» → el prompt se auto-dispara en el futuro (mientras la pestaña esté abierta). |
 | **Internet** | `web.fetch` con fetch directo (CORS) y fallback a proxy `/proxy?url=` del servidor. |
@@ -71,7 +71,7 @@ Gotchas verificados (¡no re-descubrir!):
   GPU tenga `shader-f16`).
 - LiteRT-LM es **solo WebGPU** y el `.litertlm` debe traer artefactos WebGPU.
 
-## Deploy — nastia.utopiaia.com
+## Deploy — elffuss.utopiaia.com
 
 Contenido 100% estático (web/) + proxy. Mismo esquema que vilma.utopiaia.com:
 rsync al servidor + nginx + certbot. Ver `deploy.sh`.

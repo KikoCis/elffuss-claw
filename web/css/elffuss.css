@@ -1,4 +1,4 @@
-/* Nastia — tema oscuro, acento rosa/violeta */
+/* Elffuss — tema oscuro, acento rosa/violeta */
 :root {
   --bg: #0b0d12;
   --bg2: #11141c;
@@ -78,7 +78,25 @@ main {
 .msg.user { background: var(--accent2); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
 .msg.assistant { background: var(--bg3); border: 1px solid var(--line); align-self: flex-start; border-bottom-left-radius: 4px; }
 .msg.err { border-color: #a03050; }
-.msg.thinking { color: var(--muted); background: none; animation: pulse 1.2s infinite; }
+.msg.thinking {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--bg3); border: 1px dashed var(--line);
+  align-self: flex-start; color: var(--muted); font-size: .85rem;
+}
+.msg.thinking .mini { width: 22px; height: 22px; }
+.msg.thinking .dots i {
+  display: inline-block; width: 6px; height: 6px; margin-left: 4px;
+  border-radius: 50%; background: var(--accent);
+  animation: bounce 1.2s ease-in-out infinite;
+}
+.msg.thinking .dots i:nth-child(2) { animation-delay: .2s; }
+.msg.thinking .dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-5px); opacity: 1; } }
+.msg.thinking .gen {
+  width: 100%; font-family: ui-monospace, monospace; font-size: .72rem;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 76px; overflow: hidden; color: #5f6880;
+}
 .msg.tool { color: var(--accent); font-size: .8rem; background: none; padding: 0 14px; }
 .msg.tool-result { font-size: .8rem; color: var(--muted); background: var(--bg2); border: 1px dashed var(--line); border-radius: 10px; padding: 6px 10px; }
 .msg.tool-result.err summary { color: var(--warn); }

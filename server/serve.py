@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Servidor de desarrollo de Nastia: sirve web/ y hace de proxy CORS en /proxy?url=…
+"""Servidor de desarrollo de Elffuss: sirve web/ y hace de proxy CORS en /proxy?url=…
 
 Uso:  python3 server/serve.py [puerto]   (por defecto 8642)
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 import os
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8642
-ROOT = os.environ.get('NASTIA_ROOT') or str(Path(__file__).resolve().parent.parent / 'web')
+ROOT = os.environ.get('ELFFUSS_ROOT') or str(Path(__file__).resolve().parent.parent / 'web')
 MAX_PROXY_BYTES = 2_000_000
 
 
@@ -36,7 +36,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not url or not url.startswith(('http://', 'https://')):
             return self.send_error(400, 'url invalida')
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Nastia)'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Elffuss)'})
             with urllib.request.urlopen(req, timeout=20) as r:
                 body = r.read(MAX_PROXY_BYTES)
                 self.send_response(200)
@@ -54,5 +54,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer(('', PORT), Handler) as httpd:
-        print(f'✳ Nastia · http://localhost:{PORT}')
+        print(f'✳ Elffuss · http://localhost:{PORT}')
         httpd.serve_forever()
