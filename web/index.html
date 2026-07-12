@@ -16,12 +16,7 @@
   </div>
   <div class="controls">
     <label class="model-pick">🧠
-      <select id="model-select">
-        <option value="remote">Ornith 9B · servidor</option>
-        <option value="onnx">Elffuss LM · ONNX/WebGPU</option>
-        <option value="litert">Gemma-4 E2B · LiteRT-LM</option>
-        <option value="rules" selected>Básico (sin modelo)</option>
-      </select>
+      <select id="model-select"><!-- lo rellena kernel.js (locales + externos activados) --></select>
     </label>
     <span id="model-status" class="dot off" title="estado del modelo"></span>
     <button id="btn-clear" class="ghost" title="Nueva conversación">🧹</button>
@@ -58,6 +53,7 @@
       <button data-tab="tareas">Tareas</button>
       <button data-tab="vault">Vault</button>
       <button data-tab="permisos">Permisos</button>
+      <button data-tab="ajustes">⚙️</button>
     </nav>
     <div class="panel active" id="panel-vista">
       <div id="vista-empty">
@@ -71,6 +67,7 @@
     <div class="panel" id="panel-tareas"></div>
     <div class="panel" id="panel-vault"></div>
     <div class="panel" id="panel-permisos"></div>
+    <div class="panel" id="panel-ajustes"></div>
   </section>
 </main>
 
