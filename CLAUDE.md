@@ -27,6 +27,15 @@ for f in web/js/**/*.js web/js/*.js; do node --check "$f" || echo "FALLO: $f"; d
 - Los permisos de Elffuss son un primer filtro de UX; la seguridad dura la dan el
   sandbox del iframe (`sandbox="allow-scripts …"`, sin `allow-same-origin`), el
   permiso nativo de File System Access y el cifrado del vault.
+- **Ornith 9B (servidor)**: temp 1.0 / top_p 0.95 SIEMPRE (con temp baja entra en
+  bucles) y `enable_thinking:false` por defecto (en CPU genera a ~3.5 t/s; razonar
+  = >5 min/turno). Servido por `elffuss-lm.service` (llama.cpp :8644) + nginx `/v1`.
+- **Contexto**: `context.js` (ACE-lite: eviction BM25-lite+IDF con presupuesto,
+  portado del attention_eviction de agentic-install — turboquant es de PESOS, no
+  de contexto) + CONTEXTO AHORA (`snapshot()`) + idioma del navegador en la persona.
+- **Persistencia navegador**: histórico en IndexedDB `kv/history` (restaurado al
+  abrir; 🧹 lo borra) y memoria de hechos en el store `memory` (herramientas
+  `memory.*`, entra en el CONTEXTO). Nada de esto sale del navegador del usuario.
 
 ## Dónde se enchufa el modelo propio
 
@@ -49,10 +58,11 @@ archivos al día tras cada prueba.
 
 ## Personalidad
 
-Elffuss es una eslava ucraniana angelical: rubia, cara redonda, cálida y
-resolutiva; español conciso con algún «добре»/«готово». Vive en
-`systemPrompt()` (agent.js), el avatar en `web/img/elffuss.svg`. Mantener la
-persona corta: los modelos pequeños se degradan con prompts largos.
+Elffuss es una elfa eslava ucraniana: rubia, orejas élficas, corona de hojas,
+cara redonda angelical; cálida y resolutiva; español conciso con algún
+«добре»/«готово». Vive en `systemPrompt()` (agent.js), el avatar en
+`web/img/elffuss.svg`. Mantener la persona corta: los modelos pequeños se
+degradan con prompts largos.
 
 ## Deploy
 

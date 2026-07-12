@@ -9,6 +9,7 @@ export const SCOPES = {
   vault: { icon: '🔐', label: 'Vault', desc: 'Guardar y leer secretos cifrados' },
   tasks: { icon: '⏰', label: 'Tareas', desc: 'Programar tareas que se ejecutan solas' },
   web:   { icon: '🌐', label: 'Internet', desc: 'Visitar páginas web en tu nombre' },
+  memory: { icon: '🧠', label: 'Memoria', desc: 'Recordar cosas de ti entre sesiones (solo en este navegador)' },
 };
 
 export function setAsker(fn) { asker = fn; }

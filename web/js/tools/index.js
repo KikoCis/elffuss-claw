@@ -4,8 +4,9 @@ import * as apps from './apps.js';
 import * as vault from './vault.js';
 import * as tasks from './tasks.js';
 import * as web from './web.js';
+import * as memory from './memory.js';
 
-export { fs, apps, vault, tasks, web };
+export { fs, apps, vault, tasks, web, memory };
 
 export const TOOLS = {
   'fs.pick_folder': { desc: 'Pedir al usuario que autorice una carpeta de su ordenador', params: {}, run: () => fs.pickFolder() },
@@ -22,6 +23,9 @@ export const TOOLS = {
   'tasks.list':   { desc: 'Ver las tareas programadas', params: {}, run: () => tasks.listTasks() },
   'tasks.remove': { desc: 'Borrar una tarea programada', params: { id: 'id de la tarea' }, run: a => tasks.removeTask(a) },
   'web.fetch': { desc: 'Visitar una URL y devolver su texto', params: { url: 'https://…' }, run: a => web.fetchUrl(a) },
+  'memory.save':   { desc: 'Recordar un hecho sobre el usuario PARA SIEMPRE (memoria persistente)', params: { fact: 'el hecho' }, run: a => memory.save(a) },
+  'memory.list':   { desc: 'Ver todo lo recordado', params: {}, run: () => memory.listFacts() },
+  'memory.forget': { desc: 'Olvidar un hecho por id', params: { id: 'id del hecho' }, run: a => memory.forget(a) },
 };
 
 export function toolHelp() {
@@ -37,11 +41,13 @@ export async function runTool(name, args) {
 
 // Estado real del sistema, inyectado al modelo en cada turno (CONTEXTO AHORA).
 export async function snapshot() {
-  const [appList, pendingTasks, folderList] = await Promise.all([
-    apps.allApps(), tasks.pending(), fs.folders(),
+  const [appList, pendingTasks, folderList, facts] = await Promise.all([
+    apps.allApps(), tasks.pending(), fs.folders(), memory.recent(8),
   ]);
   const next = pendingTasks.sort((a, b) => a.when - b.when)[0];
   return [
+    'Memoria (hechos que recuerdas del usuario): ' +
+      (facts.length ? facts.map(f => f.fact).join(' · ') : 'nada aún'),
     'Fecha y hora: ' + new Date().toLocaleString('es-ES'),
     'Apps ya creadas: ' + (appList.length ? appList.map(a => a.name).join(', ') : 'ninguna'),
     'App abierta en el visualizador: ' + (apps.currentApp() || 'ninguna'),

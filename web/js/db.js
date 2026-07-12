@@ -1,6 +1,6 @@
 // IndexedDB mínima: stores clave→valor.
-const NAME = 'elffuss', VERSION = 1;
-const STORES = ['kv', 'apps', 'tasks', 'vault', 'fs'];
+const NAME = 'elffuss', VERSION = 2;
+const STORES = ['kv', 'apps', 'tasks', 'vault', 'fs', 'memory'];
 let dbPromise = null;
 
 function open() {

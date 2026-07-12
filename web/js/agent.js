@@ -3,8 +3,20 @@ import { runTool, toolHelp, snapshot } from './tools/index.js';
 
 const MAX_STEPS = 6;
 
+const LANGS = {
+  es: 'español', en: 'English', uk: 'українська', ru: 'русский', fr: 'français',
+  de: 'Deutsch', it: 'italiano', pt: 'português', pl: 'polski', ca: 'català',
+  gl: 'galego', eu: 'euskera', nl: 'Nederlands', ro: 'română', tr: 'Türkçe',
+};
+
+export function userLang() {
+  const code = (navigator.language || 'es').toLowerCase();
+  return { code, name: LANGS[code.split('-')[0]] || code };
+}
+
 export function systemPrompt(context = '') {
-  return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Eres un ángel eslavo de Ucrania — rubia, de cara redonda y angelical —, cálida y luminosa, pero tremendamente resolutiva. Hablas español, breve y con cariño; a veces se te escapa un «добре» o un «готово». El chat es la única interfaz: las apps no existen, las creas tú.
+  const lang = userLang();
+  return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Eres una elfa eslava de Ucrania — rubia, orejitas élficas, cara redonda y angelical —, cálida y luminosa, pero tremendamente resolutiva. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}) — breve y con cariño; a veces se te escapa un «добре» o un «готово». Si el usuario cambia de idioma, síguele. El chat es la única interfaz: las apps no existen, las creas tú.
 
 HERRAMIENTAS (el sistema pide los permisos, tú solo llama):
 ${toolHelp()}
@@ -14,11 +26,11 @@ Cómo actuar:
 \`\`\`tool
 {"tool": "fs.list", "args": {}}
 \`\`\`
-2) Para crear una app responde SOLO con el documento HTML completo (autocontenido, CSS/JS inline, fondo oscuro, en español):
+2) Para crear una app responde SOLO con el documento HTML completo (autocontenido, CSS/JS inline, fondo oscuro, en el idioma del usuario):
 \`\`\`html
 <!doctype html><html>…</html>
 \`\`\`
-3) Tras un [resultado], o si no hace falta herramienta, responde texto normal en español.
+3) Tras un [resultado], o si no hace falta herramienta, responde texto normal en el idioma del usuario.
 
 Ejemplos:
 Usuario: ¿qué archivos tengo?
@@ -63,9 +75,13 @@ export function parseToolCall(text) {
   // 2) Atajo apps: un fence ```html (o una respuesta que ES un documento html)
   //    se convierte en app.create — mucho más fiable para modelos pequeños que
   //    escapar todo el HTML dentro de un string JSON.
+  //    Un fence SIN CERRAR (el modelo agotó max_tokens a media app) también
+  //    vale: los navegadores toleran HTML truncado.
+  const openFence = text.match(/```html[ \t]*\n?([\s\S]*)$/i);
   const html = fences.find(f =>
     (f.lang === 'html' && /<\w+[\s>]/.test(f.body)) || /^(<!doctype|<html)/i.test(f.body))?.body
-    || (/^(<!doctype html|<html)/i.test(text.trim()) ? text.trim() : null);
+    || (/^(<!doctype html|<html)/i.test(text.trim()) ? text.trim() : null)
+    || (!fences.length && openFence && /^(<!doctype|<html)/i.test(openFence[1].trim()) ? openFence[1].trim() : null);
   if (html) {
     const title = html.match(/<title>([^<]{1,40})<\/title>/i)?.[1]
       || html.match(/<h1[^>]*>([^<]{1,40})</i)?.[1] || 'app';
