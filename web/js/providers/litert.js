@@ -1,0 +1,42 @@
+// Gemma-4 E2B vía LiteRT-LM de Google (early preview, solo WebGPU).
+// Patrón copiado de la demo verificada en agentic-install
+// (lab/bitacora/posts/08-jspace-live.html). El plan «modelo propio» es
+// fusionar un LoRA sobre gemma-4-E2B-it y convertirlo a .litertlm
+// (ai-edge-torch); entonces MODEL_URL pasará a /models/nastia-e2b.litertlm.
+export const name = 'Gemma-4 E2B · LiteRT-LM';
+
+const MODEL_URL =
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
+
+let engine = null, conversation = null, sentCount = 0, sys = '';
+
+export async function load(onProgress = () => {}) {
+  if (!navigator.gpu) throw new Error('LiteRT-LM necesita WebGPU (Chrome/Edge modernos)');
+  const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm');
+  onProgress('Descargando Gemma-4 E2B (varios GB la primera vez; luego queda cacheado)…');
+  engine = await litertlm.Engine.create({
+    model: MODEL_URL,
+    mainExecutorSettings: { maxNumTokens: 4096 },
+  });
+}
+
+export async function chat(history, system) {
+  if (!engine) throw new Error('Modelo no cargado');
+  if (!conversation || system !== sys) {
+    sys = system;
+    conversation = await engine.createConversation({
+      preface: { messages: [{ role: 'system', content: system }] },
+    });
+    sentCount = 0;
+  }
+  // La conversación LiteRT mantiene su propio KV-cache: enviamos solo lo nuevo.
+  const fresh = history.slice(sentCount).filter(m => m.role === 'user');
+  sentCount = history.length;
+  const text = fresh.map(m => m.content).join('\n') || history.at(-1).content;
+
+  let out = '';
+  for await (const chunk of conversation.sendMessageStreaming(text))
+    for (const item of (chunk.content || []))
+      if (item.type === 'text') out += item.text;
+  return out.trim();
+}

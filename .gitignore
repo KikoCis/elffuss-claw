@@ -1,0 +1,5 @@
+.DS_Store
+*.log
+# pesos de modelos autoalojados: se suben por rsync, no por git
+web/models/*
+!web/models/README.md
