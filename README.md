@@ -19,7 +19,9 @@ en el visualizador. Sin instalar nada, sin backend obligatorio, con el modelo co
 | **Memoria + histórico** | El histórico de conversación persiste en IndexedDB (refrescar no borra nada; 🧹 = nueva conversación) y `memory.*` guarda hechos para siempre en el navegador — entran en el CONTEXTO de cada turno. |
 | **Contexto ACE-lite** | Eviction de historial por relevancia (BM25-lite + IDF, portado del attention-context-eviction de agentic-install) con presupuesto de tokens + CONTEXTO AHORA (estado real del sistema) + idioma del navegador. |
 | **Permisos** | Cada ámbito (archivos, apps, vault, tareas, internet) pide permiso la primera vez; revocables en la pestaña *Permisos*. |
-| **Tus carpetas** | File System Access API (Chrome/Edge): autorizas una carpeta y Elffuss lista/lee/escribe dentro. Doble permiso: el de Elffuss + el nativo del navegador. |
+| **Tus carpetas** | File System Access API (Chrome/Edge): autorizas una carpeta y Elffuss lista/lee/escribe dentro (los **.xlsx los lee de verdad**, vía SheetJS). Doble permiso: el de Elffuss + el nativo del navegador. |
+| **Datos → gráficos** | «visualiza ventas.xlsx» → lee el Excel/CSV y genera una app de gráfico de barras en el visualizador (funciona hasta en modo básico). |
+| **Automatización de carpetas** | «vigila la carpeta entrada y deja lo procesado en salida» → dejas un fichero en una carpeta y Elffuss lo coge, lo procesa (Excel→CSV; resto, copia) y te lo deja en la otra, avisando por chat. También `fs.copy` one-shot con patrón. |
 | **Vault** | Secretos cifrados con AES-256-GCM, clave derivada por PBKDF2 (310k iter.) de tu contraseña maestra. Autobloqueo a los 5 min. Nada sale de tu máquina. |
 | **Tareas programadas** | «Recuérdame dentro de 20 minutos…» → el prompt se auto-dispara en el futuro (mientras la pestaña esté abierta). |
 | **Internet** | `web.fetch` con fetch directo (CORS) y fallback a proxy `/proxy?url=` del servidor. |

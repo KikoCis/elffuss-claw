@@ -22,6 +22,30 @@ const APPS = {
     "const p=document.getElementById('p'),k=document.getElementById('k');'789/456*123-0.=+C'.split('').forEach(c=>{const b=document.createElement('button');b.textContent=c;b.style.cssText='font-size:1.3rem;padding:14px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#e6edf3';b.onclick=()=>{if(c==='C')p.value='';else if(c==='='){try{p.value=/^[-+*/.() 0-9]+$/.test(p.value)?String(Function('return ('+p.value+')')()):'error'}catch(e){p.value='error'}}else p.value+=c};k.appendChild(b)});"),
 };
 
+// CSV → app de gráfico de barras (canvas, sin librerías): primera columna =
+// etiqueta, primera columna numérica = valor.
+function chartApp(fileName, csv) {
+  const lines = csv.trim().split(/\r?\n/).filter(l => l.trim() && !l.startsWith('['));
+  const rows = lines.map(l => l.split(/[,;\t]/).map(c => c.trim()));
+  const head = rows.shift() || [];
+  let valCol = head.findIndex((_, i) =>
+    i > 0 && rows.length && rows.every(r => r[i] !== undefined && r[i] !== '' && !isNaN(parseFloat(r[i]))));
+  if (valCol < 1) valCol = 1;
+  const data = rows.slice(0, 24).map(r => ({ label: r[0], value: parseFloat(r[valCol]) || 0 }));
+  return SHELL('Gráfico ' + fileName,
+    `<h2 style="margin:10px">📊 ${fileName}${head[valCol] ? ' — ' + head[valCol] : ''}</h2><canvas id="c" width="760" height="430" style="max-width:94vw"></canvas>`,
+    `const data=${JSON.stringify(data)};const c=document.getElementById('c'),x=c.getContext('2d');
+const W=c.width,H=c.height,p=48,max=Math.max(...data.map(d=>d.value))||1,bw=(W-p*2)/data.length;
+x.strokeStyle='#30363d';x.beginPath();x.moveTo(p,12);x.lineTo(p,H-p);x.lineTo(W-12,H-p);x.stroke();
+data.forEach((d,i)=>{const h=(H-p-24)*d.value/max,bx=p+8+i*bw;
+const g=x.createLinearGradient(0,H-p-h,0,H-p);g.addColorStop(0,'#ff4d8d');g.addColorStop(1,'#7c5cff');
+x.fillStyle=g;x.fillRect(bx,H-p-h,Math.max(bw-16,4),h);
+x.fillStyle='#e6edf3';x.font='12px system-ui';x.textAlign='center';
+x.fillText(String(d.value),bx+(bw-16)/2,H-p-h-7);
+x.save();x.translate(bx+(bw-16)/2,H-p+13);x.rotate(.5);x.fillStyle='#8b949e';x.textAlign='left';
+x.fillText(String(d.label).slice(0,14),0,0);x.restore();});`);
+}
+
 const generic = desc => SHELL('Boceto',
   `<div style="max-width:560px;text-align:center;padding:20px"><h2>✳ Boceto de app</h2><p style="color:#8b949e">Esto es un boceto del modo básico. Pediste:</p><blockquote style="background:#161b22;border-left:3px solid #ff4d8d;padding:12px;border-radius:8px;text-align:left">${desc.replace(/</g, '&lt;')}</blockquote><p style="color:#8b949e">Carga un modelo (selector 🧠 arriba) y Elffuss generará esta app de verdad, a medida.</p></div>`, '');
 
@@ -37,10 +61,19 @@ export async function chat(history) {
   const last = history[history.length - 1];
   const text = (last?.content || '').trim();
 
-  // Tras una herramienta: convertir su resultado en la respuesta.
+  // Tras una herramienta: convertir su resultado en la respuesta…
   if (text.startsWith('[resultado')) {
     const body = text.slice(text.indexOf('\n') + 1).trim();
-    return body.startsWith('ERROR:') ? 'No pude: ' + body.slice(6).trim() : body;
+    if (body.startsWith('ERROR:')) return 'No pude: ' + body.slice(6).trim();
+    // …o encadenar: si lo leído era para un gráfico, generar la app ahora.
+    if (text.startsWith('[resultado fs.read')) {
+      const prevUser = [...history].reverse().find(m => m.role === 'user' && !m.content.startsWith('['));
+      if (prevUser && /(grafic|visualiza|gr[aá]fico|chart|barras)/i.test(prevUser.content)) {
+        const file = prevUser.content.match(/(\S+\.(?:csv|tsv|xlsx?))/i)?.[1] || 'datos';
+        return call({ tool: 'app.create', args: { name: 'gráfico ' + file, html: chartApp(file, body) } });
+      }
+    }
+    return body;
   }
 
   const t = text.toLowerCase();
@@ -72,6 +105,25 @@ export async function chat(history) {
     return call({ tool: 'vault.list', args: {} });
   const mGet = text.match(/(?:dame|lee|cu[aá]l es) (?:el |la )?(?:secreto|contraseña)(?: de)? ([\w.@-]+)/i);
   if (mGet) return call({ tool: 'vault.get', args: { name: mGet[1] } });
+
+  // datos → gráfico (lee el archivo; el [resultado] de arriba crea la app)
+  const mViz = text.match(/(?:grafica|graficar|visualiza|visualizar|gr[aá]fico|chart|barras)\b.*?(\S+\.(?:csv|tsv|xlsx?))/i);
+  if (mViz) return call({ tool: 'fs.read', args: { path: mViz[1] } });
+
+  // automatización entre carpetas
+  const mWatch = text.match(/(?:vigila|automatiza|observa|monitoriza|cuando\s+(?:deje|ponga|caiga)\s+(?:un\s+)?(?:archivo|fichero)?\s*(?:en)?)\s+(?:la\s+carpeta\s+)?([\w.-]+).*?\b(?:en|a|hacia)\s+(?:la\s+carpeta\s+)?([\w.-]+)/i);
+  if (mWatch && /(vigila|automatiza|observa|monitoriza|cuando)/.test(t) && /(procesa|deja|salida|convierte|→|copia)/.test(t))
+    return call({ tool: 'fs.watch', args: { from: mWatch[1], to: mWatch[2] } });
+  if (/(lista|ver|muestra|qué|que).*(automatizaciones|vigilancias)/.test(t))
+    return call({ tool: 'fs.watch_list', args: {} });
+
+  // copia one-shot entre carpetas
+  const mCopy = text.match(/copia(?:r)?\s+(?:todos\s+)?(?:los\s+)?([\w*.]+)\s+de\s+([\w.-]+)\s+a\s+([\w.-]+)/i);
+  if (mCopy) {
+    let pattern = mCopy[1];
+    if (!pattern.includes('*')) pattern = '*' + (pattern.startsWith('.') ? pattern : '.' + pattern);
+    return call({ tool: 'fs.copy', args: { pattern, from: mCopy[2], to: mCopy[3] } });
+  }
 
   // archivos
   if (/(autoriza|elige|selecciona|añade|conecta).*(carpeta|directorio)/.test(t))

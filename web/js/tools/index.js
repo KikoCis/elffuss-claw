@@ -5,14 +5,19 @@ import * as vault from './vault.js';
 import * as tasks from './tasks.js';
 import * as web from './web.js';
 import * as memory from './memory.js';
+import * as watch from './watch.js';
 
-export { fs, apps, vault, tasks, web, memory };
+export { fs, apps, vault, tasks, web, memory, watch };
 
 export const TOOLS = {
   'fs.pick_folder': { desc: 'Pedir al usuario que autorice una carpeta de su ordenador', params: {}, run: () => fs.pickFolder() },
   'fs.list':  { desc: 'Listar archivos de una ruta relativa dentro de la carpeta autorizada', params: { path: 'ruta relativa (opcional)' }, run: a => fs.list(a) },
   'fs.read':  { desc: 'Leer un archivo de texto', params: { path: 'ruta relativa' }, run: a => fs.read(a) },
   'fs.write': { desc: 'Escribir o crear un archivo de texto', params: { path: 'ruta', content: 'contenido' }, run: a => fs.write(a) },
+  'fs.copy':  { desc: 'Copiar archivos entre dos carpetas autorizadas (una vez)', params: { pattern: '*.txt', from: 'carpeta origen', to: 'carpeta destino' }, run: a => fs.copy(a) },
+  'fs.watch': { desc: 'AUTOMATIZACIÓN: vigilar una carpeta — lo que se deje ahí se procesa (Excel→CSV, resto copia) y se deja en otra', params: { from: 'carpeta origen', to: 'carpeta destino', pattern: 'opcional, p.ej. *.xlsx' }, run: a => watch.add(a) },
+  'fs.watch_list':   { desc: 'Ver las automatizaciones de carpetas', params: {}, run: () => watch.listWatches() },
+  'fs.watch_remove': { desc: 'Quitar una automatización', params: { id: 'id' }, run: a => watch.removeWatch(a) },
   'app.create': { desc: 'Crear una app: documento HTML completo y autocontenido que se muestra al instante en el visualizador', params: { name: 'nombre corto', html: 'HTML completo' }, run: a => apps.create(a) },
   'app.open':   { desc: 'Abrir una app ya creada', params: { name: 'nombre' }, run: a => apps.open(a) },
   'app.list':   { desc: 'Listar las apps creadas', params: {}, run: () => apps.listApps() },
@@ -41,8 +46,8 @@ export async function runTool(name, args) {
 
 // Estado real del sistema, inyectado al modelo en cada turno (CONTEXTO AHORA).
 export async function snapshot() {
-  const [appList, pendingTasks, folderList, facts] = await Promise.all([
-    apps.allApps(), tasks.pending(), fs.folders(), memory.recent(8),
+  const [appList, pendingTasks, folderList, facts, watches] = await Promise.all([
+    apps.allApps(), tasks.pending(), fs.folders(), memory.recent(8), watch.allWatches(),
   ]);
   const next = pendingTasks.sort((a, b) => a.when - b.when)[0];
   return [
@@ -54,6 +59,8 @@ export async function snapshot() {
     'Carpetas autorizadas: ' + (folderList.length ? folderList.join(', ') : 'ninguna (usa fs.pick_folder)'),
     `Tareas pendientes: ${pendingTasks.length}` +
       (next ? ` (próxima ${new Date(next.when).toLocaleTimeString('es-ES')}: «${next.prompt}»)` : ''),
+    'Automatizaciones de carpetas: ' +
+      (watches.length ? watches.map(w => `${w.from}→${w.to}`).join(', ') : 'ninguna'),
     'Vault: ' + (vault.isUnlocked() ? 'desbloqueado' : 'bloqueado'),
   ].join('\n');
 }

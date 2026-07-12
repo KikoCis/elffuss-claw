@@ -1,0 +1,11 @@
+{
+  "name": "elffuss-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "node e2e_datos.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
+}
