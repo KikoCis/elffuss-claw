@@ -6,12 +6,12 @@
 <title>Nastia — el SO que vive en tu navegador</title>
 <meta name="description" content="Nastia: un sistema operativo agéntico en tu navegador. Las apps no existen: se crean.">
 <link rel="stylesheet" href="css/nastia.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✳️</text></svg>">
+<link rel="icon" href="img/nastia.svg">
 </head>
 <body>
 
 <header>
-  <div class="brand"><span class="logo">✳</span><b>Nastia</b><span class="beta">β</span>
+  <div class="brand"><img class="logo" src="img/nastia.svg" alt="Nastia"><b>Nastia</b><span class="beta">β</span>
     <span class="claim">las apps no existen: se crean</span>
   </div>
   <div class="controls">
@@ -30,10 +30,11 @@
 <main>
   <section id="chat">
     <div id="log">
-      <div class="msg sys"><b>Hola, soy Nastia.</b> Un sistema operativo que vive en tu navegador.
+      <div class="msg sys"><img class="avatar" src="img/nastia.svg" alt=""><b>Привіт 👋 Soy Nastia.</b>
+        Un sistema operativo con alma que vive en tu navegador.
         Aquí las apps no se instalan: <i>se crean</i> cuando las pides y aparecen a la derecha.
         Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados,
-        programar tareas y navegar por ti. Todo se queda en tu máquina.</div>
+        programar tareas y navegar por ti. Todo se queda en tu máquina. добре ✨</div>
     </div>
     <div id="chips">
       <span class="chip">Hazme un reloj</span>
@@ -58,7 +59,7 @@
     </nav>
     <div class="panel active" id="panel-vista">
       <div id="vista-empty">
-        <div class="big">✳</div>
+        <img class="big" src="img/nastia.svg" alt="Nastia">
         <p>Aquí aparece lo que Nastia crea.<br>Prueba: <i>«hazme un reloj»</i></p>
       </div>
       <iframe id="appframe" title="app generada"

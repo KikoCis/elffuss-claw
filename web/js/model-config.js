@@ -13,3 +13,6 @@ export const MODEL = {
   selfHosted: false,
   basePath: '/models/',   // solo se usa con selfHosted: true
 };
+// NO subir a Qwen2.5-1.5B: su q4 (1.8 GB) revienta onnxruntime-web al crear la
+// sesión (OOM del heap wasm de 4 GB, throw numérico ~3.3e9). Límite práctico
+// medido: ≤~1 GB en disco → ver coordinacion/ERRORES.md E-005 y NECESIDADES N-002.
