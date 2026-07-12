@@ -1,5 +1,5 @@
 // Permisos por ámbito: nada corre sin consentimiento explícito del usuario.
-const KEY = 'nastia.grants';
+const KEY = 'elffuss.grants';
 const granted = new Set(JSON.parse(localStorage.getItem(KEY) || '[]'));
 let asker = async () => false; // la UI lo sustituye por el modal real
 

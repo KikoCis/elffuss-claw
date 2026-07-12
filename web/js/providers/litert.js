@@ -2,7 +2,7 @@
 // Patrón copiado de la demo verificada en agentic-install
 // (lab/bitacora/posts/08-jspace-live.html). El plan «modelo propio» es
 // fusionar un LoRA sobre gemma-4-E2B-it y convertirlo a .litertlm
-// (ai-edge-torch); entonces MODEL_URL pasará a /models/nastia-e2b.litertlm.
+// (ai-edge-torch); entonces MODEL_URL pasará a /models/elffuss-e2b.litertlm.
 export const name = 'Gemma-4 E2B · LiteRT-LM';
 
 const MODEL_URL =
@@ -20,10 +20,13 @@ export async function load(onProgress = () => {}) {
   });
 }
 
-export async function chat(history, system) {
+export async function chat(history, system, onToken = () => {}) {
   if (!engine) throw new Error('Modelo no cargado');
-  if (!conversation || system !== sys) {
-    sys = system;
+  // Comparar solo la parte estática del prompt: el CONTEXTO AHORA va al final
+  // y cambia cada turno — recrear la conversación tiraría el KV-cache.
+  const sysKey = system.slice(0, 200);
+  if (!conversation || sysKey !== sys) {
+    sys = sysKey;
     conversation = await engine.createConversation({
       preface: { messages: [{ role: 'system', content: system }] },
     });
@@ -35,8 +38,9 @@ export async function chat(history, system) {
   const text = fresh.map(m => m.content).join('\n') || history.at(-1).content;
 
   let out = '';
-  for await (const chunk of conversation.sendMessageStreaming(text))
+  for await (const chunk of conversation.sendMessageStreaming(text)) {
     for (const item of (chunk.content || []))
-      if (item.type === 'text') out += item.text;
+      if (item.type === 'text') { out += item.text; onToken(item.text); }
+  }
   return out.trim();
 }

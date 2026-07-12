@@ -38,6 +38,43 @@ export function addToolResult(tool, result) {
   $('log').scrollTop = $('log').scrollHeight;
 }
 
+// Burbuja de «pensando»: visible, con avatar, puntos animados y el texto
+// del modelo en streaming (cola de 240 caracteres).
+export function thinkingBubble() {
+  const div = document.createElement('div');
+  div.className = 'msg thinking';
+  const img = document.createElement('img');
+  img.src = 'img/elffuss.svg';
+  img.className = 'mini';
+  img.alt = '';
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = 'Elffuss está pensando';
+  const dots = document.createElement('span');
+  dots.className = 'dots';
+  dots.append(...[0, 1, 2].map(() => document.createElement('i')));
+  const gen = document.createElement('div');
+  gen.className = 'gen';
+  div.append(img, label, dots, gen);
+  $('log').appendChild(div);
+  $('log').scrollTop = $('log').scrollHeight;
+  let buf = '';
+  return {
+    tick(t) {
+      buf += t;
+      label.textContent = `Elffuss está escribiendo · ${buf.length}`;
+      gen.textContent = (buf.length > 240 ? '…' : '') + buf.slice(-240);
+      $('log').scrollTop = $('log').scrollHeight;
+    },
+    tool(name) {
+      buf = '';
+      gen.textContent = '';
+      label.textContent = `Elffuss está usando ${name}`;
+    },
+    remove() { div.remove(); },
+  };
+}
+
 export function toast(text, ms = 4500) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -106,7 +143,7 @@ export async function refreshApps() {
   const panel = $('panel-apps');
   panel.replaceChildren(el('h3', null, 'Apps creadas'));
   if (!list.length) {
-    panel.appendChild(el('p', 'muted', 'Ninguna aún. Pídele una a Nastia.'));
+    panel.appendChild(el('p', 'muted', 'Ninguna aún. Pídele una a Elffuss.'));
     return;
   }
   for (const app of list) {
@@ -202,7 +239,7 @@ export async function refreshPerms() {
   panel.replaceChildren(el('h3', null, 'Permisos concedidos'));
   const g = perms.grants();
   if (!g.length)
-    panel.appendChild(el('p', 'muted', 'Ninguno. Nastia pedirá permiso la primera vez que necesite algo.'));
+    panel.appendChild(el('p', 'muted', 'Ninguno. Elffuss pedirá permiso la primera vez que necesite algo.'));
   for (const scope of g) {
     const meta = perms.SCOPES[scope] || {};
     panel.appendChild(card(

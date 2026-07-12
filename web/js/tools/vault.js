@@ -44,7 +44,7 @@ export async function unlock(master) {
     salt = crypto.getRandomValues(new Uint8Array(16));
     key = await derive(master, salt);
     await db.set('vault', '__salt', salt);
-    await db.set('vault', '__check', await encrypt('nastia-ok'));
+    await db.set('vault', '__check', await encrypt('elffuss-ok'));
     armLock();
     return 'Vault creado y desbloqueado. Guarda bien tu contraseña maestra: sin ella no hay recuperación.';
   }

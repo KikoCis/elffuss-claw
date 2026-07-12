@@ -3,22 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nastia — el SO que vive en tu navegador</title>
-<meta name="description" content="Nastia: un sistema operativo agéntico en tu navegador. Las apps no existen: se crean.">
-<link rel="stylesheet" href="css/nastia.css">
-<link rel="icon" href="img/nastia.svg">
+<title>Elffuss — el SO que vive en tu navegador</title>
+<meta name="description" content="Elffuss: un sistema operativo agéntico en tu navegador. Las apps no existen: se crean.">
+<link rel="stylesheet" href="css/elffuss.css">
+<link rel="icon" href="img/elffuss.svg">
 </head>
 <body>
 
 <header>
-  <div class="brand"><img class="logo" src="img/nastia.svg" alt="Nastia"><b>Nastia</b><span class="beta">β</span>
+  <div class="brand"><img class="logo" src="img/elffuss.svg" alt="Elffuss"><b>Elffuss</b><span class="beta">β</span>
     <span class="claim">las apps no existen: se crean</span>
   </div>
   <div class="controls">
     <label class="model-pick">🧠
       <select id="model-select">
         <option value="rules" selected>Básico (sin modelo)</option>
-        <option value="onnx">Nastia LM · ONNX/WebGPU</option>
+        <option value="onnx">Elffuss LM · ONNX/WebGPU</option>
         <option value="litert">Gemma-4 E2B · LiteRT-LM</option>
       </select>
     </label>
@@ -30,7 +30,7 @@
 <main>
   <section id="chat">
     <div id="log">
-      <div class="msg sys"><img class="avatar" src="img/nastia.svg" alt=""><b>Привіт 👋 Soy Nastia.</b>
+      <div class="msg sys"><img class="avatar" src="img/elffuss.svg" alt=""><b>Привіт 👋 Soy Elffuss.</b>
         Un sistema operativo con alma que vive en tu navegador.
         Aquí las apps no se instalan: <i>se crean</i> cuando las pides y aparecen a la derecha.
         Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados,
@@ -59,8 +59,8 @@
     </nav>
     <div class="panel active" id="panel-vista">
       <div id="vista-empty">
-        <img class="big" src="img/nastia.svg" alt="Nastia">
-        <p>Aquí aparece lo que Nastia crea.<br>Prueba: <i>«hazme un reloj»</i></p>
+        <img class="big" src="img/elffuss.svg" alt="Elffuss">
+        <p>Aquí aparece lo que Elffuss crea.<br>Prueba: <i>«hazme un reloj»</i></p>
       </div>
       <iframe id="appframe" title="app generada"
               sandbox="allow-scripts allow-forms allow-modals allow-popups" hidden></iframe>

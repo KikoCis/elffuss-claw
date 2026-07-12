@@ -1,8 +1,8 @@
-# ERRORES — pruebas de modelo en Nastia
+# ERRORES — pruebas de modelo en Elffuss
 
 Registro de fallos encontrados probando modelos en el navegador (Playwright +
-Chromium WebGPU contra Nastia). Hermano: [NECESIDADES.md](NECESIDADES.md).
-Estados: `ABIERTO / MITIGADO (workaround en Nastia) / CERRADO`.
+Chromium WebGPU contra Elffuss). Hermano: [NECESIDADES.md](NECESIDADES.md).
+Estados: `ABIERTO / MITIGADO (workaround en Elffuss) / CERRADO`.
 El agente de agentic-install puede usar estos casos como set de evaluación de
 los modelos que nos sirva.
 
@@ -18,7 +18,7 @@ genérico.
 - **Visto**: el modelo emitió el JSON correcto de forma pero dentro de
   ` ```javascript ` (no ` ```tool `): `{"tool": "tasks.add", …}` → el parser no
   lo reconocía y el usuario veía JSON crudo como texto.
-- **Mitigación en Nastia**: `agent.js` ahora intenta parsear CUALQUIER fence
+- **Mitigación en Elffuss**: `agent.js` ahora intenta parsear CUALQUIER fence
   como tool-call JSON (salvo ```html). Para el fine-tune (N-002): entrenar con
   la etiqueta ` ```tool ` consistente.
 
@@ -35,9 +35,9 @@ genérico.
 ## E-003 · Español conversacional pobre — **ABIERTO** *(2026-07-12)*
 - **Repro**: «¿qué puedes hacer por mí? responde en una frase»
 - **Visto**: «Me dirijo a tu terminal y ejecuto `npm start` para iniciar la
-  aplicación.» — sin sentido para Nastia.
+  aplicación.» — sin sentido para Elffuss.
 - **Nota**: Qwen2.5-0.5B genérico no conoce su rol ni habla buen español pese
-  al system prompt. Para N-001/N-002: incluir en el SFT identidad de Nastia
+  al system prompt. Para N-001/N-002: incluir en el SFT identidad de Elffuss
   (ángel eslava ucraniana, español cálido y conciso, «добре/готово»)
   y ejemplos [resultado]→respuesta.
 

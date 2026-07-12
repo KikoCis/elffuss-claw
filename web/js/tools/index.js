@@ -18,7 +18,7 @@ export const TOOLS = {
   'vault.set':  { desc: 'Guardar un secreto cifrado (requiere vault desbloqueado)', params: { name: 'nombre', secret: 'valor' }, run: a => vault.setSecret(a) },
   'vault.get':  { desc: 'Leer un secreto del vault', params: { name: 'nombre' }, run: a => vault.getSecret(a) },
   'vault.list': { desc: 'Listar los nombres de los secretos', params: {}, run: () => vault.listSecrets() },
-  'tasks.add':    { desc: 'Programar una tarea futura (Nastia se enviará ese prompt)', params: { inMinutes: 'minutos desde ahora', at: 'fecha ISO (alternativa)', prompt: 'qué hacer' }, run: a => tasks.add(a) },
+  'tasks.add':    { desc: 'Programar una tarea futura (Elffuss se enviará ese prompt)', params: { inMinutes: 'minutos desde ahora', at: 'fecha ISO (alternativa)', prompt: 'qué hacer' }, run: a => tasks.add(a) },
   'tasks.list':   { desc: 'Ver las tareas programadas', params: {}, run: () => tasks.listTasks() },
   'tasks.remove': { desc: 'Borrar una tarea programada', params: { id: 'id de la tarea' }, run: a => tasks.removeTask(a) },
   'web.fetch': { desc: 'Visitar una URL y devolver su texto', params: { url: 'https://…' }, run: a => web.fetchUrl(a) },
@@ -33,4 +33,21 @@ export async function runTool(name, args) {
   const tool = TOOLS[name];
   if (!tool) throw new Error(`Herramienta desconocida: ${name}`);
   return tool.run(args || {});
+}
+
+// Estado real del sistema, inyectado al modelo en cada turno (CONTEXTO AHORA).
+export async function snapshot() {
+  const [appList, pendingTasks, folderList] = await Promise.all([
+    apps.allApps(), tasks.pending(), fs.folders(),
+  ]);
+  const next = pendingTasks.sort((a, b) => a.when - b.when)[0];
+  return [
+    'Fecha y hora: ' + new Date().toLocaleString('es-ES'),
+    'Apps ya creadas: ' + (appList.length ? appList.map(a => a.name).join(', ') : 'ninguna'),
+    'App abierta en el visualizador: ' + (apps.currentApp() || 'ninguna'),
+    'Carpetas autorizadas: ' + (folderList.length ? folderList.join(', ') : 'ninguna (usa fs.pick_folder)'),
+    `Tareas pendientes: ${pendingTasks.length}` +
+      (next ? ` (próxima ${new Date(next.when).toLocaleTimeString('es-ES')}: «${next.prompt}»)` : ''),
+    'Vault: ' + (vault.isUnlocked() ? 'desbloqueado' : 'bloqueado'),
+  ].join('\n');
 }

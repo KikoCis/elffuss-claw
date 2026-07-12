@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Nastia: ángel eslava — halo, melena rubia, cara redonda angelical -->
+  <!-- Elffuss: ángel eslava — halo, melena rubia, cara redonda angelical -->
   <ellipse cx="64" cy="16" rx="24" ry="6.5" fill="none" stroke="#ffd76a" stroke-width="5" opacity=".95"/>
   <!-- alitas -->
   <path d="M18 74 C 8 66 10 52 20 48 C 16 60 20 68 30 72 Z" fill="#ffffff" opacity=".8"/>

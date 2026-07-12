@@ -1,4 +1,4 @@
-// Tareas programadas: prompts que Nastia se lanza a sí misma en el futuro.
+// Tareas programadas: prompts que Elffuss se lanza a sí misma en el futuro.
 // El planificador corre mientras la pestaña esté abierta (cada 15 s).
 import * as db from '../db.js';
 import { require as requirePerm } from '../permissions.js';
