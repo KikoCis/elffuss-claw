@@ -192,6 +192,17 @@ function refreshModelOptions() {
   ui.rebuildModelSelect(modelOptions(), activeModel);
 }
 
+// Splash de primera visita: la promesa de privacidad, con guiño incluido.
+const splash = document.getElementById('splash');
+if (!localStorage.getItem('elffuss.welcomed')) {
+  splash.hidden = false;
+  document.getElementById('splash-enter').addEventListener('click', () => {
+    localStorage.setItem('elffuss.welcomed', '1');
+    splash.style.opacity = '0';
+    setTimeout(() => { splash.hidden = true; }, 600);
+  });
+}
+
 ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
 refreshModelOptions();
 restoreHistory().then(restoreQueue);
