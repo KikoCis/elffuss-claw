@@ -26,7 +26,7 @@ Cómo actuar:
 \`\`\`tool
 {"tool": "fs.list", "args": {}}
 \`\`\`
-2) Para crear una app responde SOLO con el documento HTML completo (autocontenido, CSS/JS inline, fondo oscuro, en el idioma del usuario):
+2) Para crear una app responde SOLO con el documento HTML completo (autocontenido, CSS/JS inline, fondo oscuro, en el idioma del usuario). Si la app es visual o creativa (juegos, arte, música, datos, ambientes), usa <canvas> con WebGL o efectos de partículas/glow — que luzca espectacular, no un formulario gris:
 \`\`\`html
 <!doctype html><html>…</html>
 \`\`\`
