@@ -7,8 +7,8 @@
 // sube las carpetas a web/models/<id>/ y pon selfHosted: true.
 // Ver README § «Modelo propio».
 export const MODEL = {
-  label: 'Elffuss LM (LFM2.5-1.2B · ONNX)',
-  id: 'LiquidAI/LFM2.5-1.2B-Instruct-ONNX',
+  label: 'Elffuss LM (healed · LFM2.5-1.2B)',
+  id: 'KikoCis/Elffuss-LM-1.2B-ONNX',   // nuestro heal agéntico de LFM2.5 (tool-calls + apps)
   dtype: 'q4',            // ¡NO q4f16! genera basura vía WebGPU (verificado en la bitácora)
   selfHosted: false,
   basePath: '/models/',   // solo se usa con selfHosted: true

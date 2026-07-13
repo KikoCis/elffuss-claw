@@ -46,18 +46,19 @@ const ELFFUSS_LITERT_READY = false;
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · LFM2.5 (WebGPU, ligero) — por defecto' });
-  if (navigator.gpu) local.push({ id: 'litert:gemma-e2b', label: 'Local · Gemma-4 E2B · LiteRT-LM (~2 GB)' });
-  if (navigator.gpu) local.push({ id: 'litert:gemma-e4b', label: 'Local · Gemma-4 E4B · LiteRT-LM (~4 GB)' });
+  local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) ★ — por defecto' });
+  if (navigator.gpu) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
+  if (navigator.gpu) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~4 GB)' });
   if (navigator.gpu && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
 
 const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:');
-// Móvil (o GPU débil): el E4B de 4 GB es demasiado → E2B de 2 GB.
-const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
-const defaultBrain = () => !navigator.gpu ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
+// Por defecto: el Elffuss LM healed (ONNX 850 MB) — NUESTRO modelo, afinado
+// para tool-calls y apps, ruta fiable (transformers.js). Los Gemma de LiteRT
+// (2/4 GB) quedan como opciones «más grandes» elegibles a mano.
+const defaultBrain = () => 'onnx';
 
 const agent = new Agent(rules);
 let busy = false;
