@@ -32,31 +32,63 @@ export let ctxTokens = 4096; // efectivo tras load() (la UI puede leerlo)
 export async function load(onProgress = () => {}) {
   if (!navigator.gpu) throw new Error('LiteRT-LM necesita WebGPU (Chrome/Edge modernos)');
   const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm');
-  // LiteRT-LM descarga los GB sin reportar loaded/total → segundos + barra indeterminada.
-  const t0 = performance.now();
-  const beat = () => onProgress(`Descargando ${curLabel}… ${Math.round((performance.now() - t0) / 1000)}s · varios GB la 1ª vez, luego queda cacheado`);
-  beat();
-  const hb = setInterval(beat, 1000);
-  try {
-    let lastErr = null;
-    for (const n of CTX_LADDER) {
-      try {
-        engine = await litertlm.Engine.create({
-          model: MODEL_URL,
-          mainExecutorSettings: { maxNumTokens: n },
-        });
-        ctxTokens = n;
-        lastErr = null;
-        break;
-      } catch (e) {
-        lastErr = e;
-        // Errores de formato/carga no dependen del contexto: no insistir con la escalera.
-        if (/not supported|tokenizer|format/i.test(String(e?.message))) throw e;
-        onProgress(`Contexto ${n} no cabe, probando ${n / 2}…`);
-      }
+  // El .litertlm lo descargamos NOSOTROS (cache-first en Cache Storage) y se lo
+  // pasamos a Engine.create como Blob (la API acepta string|Blob|ReadableStream).
+  // Motivo: el fetch interno de LiteRT baja el peso con XHR+Range desde un WORKER
+  // que el service worker no intercepta → antes se re-descargaba SIEMPRE. Bajándolo
+  // aquí queda cacheado de verdad y damos progreso real en MB.
+  const model = await cachedModelBlob(MODEL_URL, onProgress);
+  onProgress(`Preparando ${curLabel} en la GPU…`);
+  let lastErr = null;
+  for (const n of CTX_LADDER) {
+    try {
+      engine = await litertlm.Engine.create({ model, mainExecutorSettings: { maxNumTokens: n } });
+      ctxTokens = n;
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      // Errores de formato/carga no dependen del contexto: no insistir con la escalera.
+      if (/not supported|tokenizer|format/i.test(String(e?.message))) throw e;
+      onProgress(`Contexto ${n} no cabe, probando ${n / 2}…`);
     }
-    if (lastErr) throw lastErr;
-  } finally { clearInterval(hb); }
+  }
+  if (lastErr) throw lastErr;
+}
+
+const MODEL_CACHE = 'elffuss-models-v1';
+// Devuelve el .litertlm como Blob desde Cache Storage; si no está, lo descarga
+// con progreso real y lo cachea (persistente). Ante cualquier fallo, devuelve la
+// URL para que LiteRT lo baje por su cuenta (nunca bloquea la carga del modelo).
+export async function cachedModelBlob(url, onProgress = () => {}) {
+  if (!self.caches) return url;
+  try {
+    const cache = await caches.open(MODEL_CACHE);
+    const hit = await cache.match(url);
+    if (hit) { onProgress(`Cargando ${curLabel} desde caché (sin descargar)…`); return await hit.blob(); }
+    const net = await fetch(url);
+    if (!net.ok || !net.body) return url;
+    const total = +net.headers.get('content-length') || 0;
+    const t0 = performance.now();
+    const [prog, toCache] = net.body.tee();
+    (async () => {
+      const r = prog.getReader(); let loaded = 0;
+      for (;;) { const { done, value } = await r.read(); if (done) break; loaded += value.length; onProgress(fmtBytes(loaded, total, t0)); }
+    })().catch(() => {});
+    const headers = { 'Content-Type': 'application/octet-stream' };
+    if (total) headers['Content-Length'] = String(total);
+    await cache.put(url, new Response(toCache, { headers }));
+    const cached = await cache.match(url);
+    return cached ? await cached.blob() : url;
+  } catch { return url; }
+}
+function fmtBytes(loaded, total, t0) {
+  const mb = n => (n / 1048576).toFixed(0);
+  const secs = (performance.now() - t0) / 1000;
+  const spd = secs > 0 ? (loaded / 1048576 / secs).toFixed(1) : '0';
+  return total
+    ? `Descargando ${curLabel}… ${mb(loaded)}/${mb(total)} MB (${spd} MB/s) · se cachea para la próxima vez`
+    : `Descargando ${curLabel}… ${mb(loaded)} MB (${spd} MB/s)`;
 }
 
 // Liberar el modelo (vigilante de RAM).
