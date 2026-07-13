@@ -287,11 +287,13 @@ export function modelProgress(p) {
   box.hidden = false;
   if (typeof p === 'string') {
     $('model-progress-text').textContent = p;
-    $('model-bar').style.width = '100%';
+    $('model-bar').classList.add('indet');  // sin % conocido → barra animada
+    $('model-bar').style.width = '';
     return;
   }
   if (p.status === 'progress' && p.total) {
     const pct = Math.round(p.loaded / p.total * 100);
+    $('model-bar').classList.remove('indet');
     $('model-bar').style.width = pct + '%';
     $('model-progress-text').textContent =
       `Descargando modelo · ${pct}% · ${(p.loaded / 1e6 | 0)}/${(p.total / 1e6 | 0)} MB`;

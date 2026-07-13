@@ -14,11 +14,17 @@ let engine = null, conversation = null, sentCount = 0, sys = '';
 export async function load(onProgress = () => {}) {
   if (!navigator.gpu) throw new Error('LiteRT-LM necesita WebGPU (Chrome/Edge modernos)');
   const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm');
-  onProgress('Descargando Gemma-4 E2B (varios GB la primera vez; luego queda cacheado)…');
-  engine = await litertlm.Engine.create({
-    model: MODEL_URL,
-    mainExecutorSettings: { maxNumTokens: 4096 },
-  });
+  // LiteRT-LM descarga los GB sin reportar loaded/total → segundos + barra indeterminada.
+  const t0 = performance.now();
+  const beat = () => onProgress(`Descargando Gemma-4 E4B… ${Math.round((performance.now() - t0) / 1000)}s · varios GB la 1ª vez, luego queda cacheado`);
+  beat();
+  const hb = setInterval(beat, 1000);
+  try {
+    engine = await litertlm.Engine.create({
+      model: MODEL_URL,
+      mainExecutorSettings: { maxNumTokens: 4096 },
+    });
+  } finally { clearInterval(hb); }
 }
 
 // Liberar el modelo (vigilante de RAM).

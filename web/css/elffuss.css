@@ -248,6 +248,8 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 }
 #model-progress .track { height: 4px; background: var(--bg); border-radius: 2px; margin-bottom: 6px; overflow: hidden; }
 #model-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s; }
+#model-bar.indet { width: 35%; animation: indet 1.1s ease-in-out infinite; }
+@keyframes indet { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 
 /* ---------- splash de primera visita ---------- */
 #splash {
