@@ -83,6 +83,17 @@ es incluir en el dataset del heal el protocolo de Code:
 Mismo empaquetado ONNX (cirugía de los 92 linears), mismo URL HF → cero cambios
 en las apps.
 
+**Evidencia empírica (2026-07-13)**: montamos un arnés SWE-style en el navegador
+(`elffuss-code/tests/swe_bench.mjs`, 6 repos con bug + test real). El healed
+`KikoCis/Elffuss-LM-1.2B-ONNX` en Code: **0/3 resolved**, y capturando eventos se
+ve la causa exacta → **no tool-callea el protocolo `code.*`**: en `add-sub`
+alucina Node (`const fs = require('fs')…`), en `unique` apunta al fichero
+equivocado (`spec/unique.md` en vez de `src/unique.js`). Con el arnés
+determinista (solver scripted) el mismo repo da 6/6, así que el arnés y la
+verificación son correctos: el cuello de botella es el modelo. Este es el caso de
+prueba objetivo para el heal-de-Code: al reentrenar, medidlo con `SOLVER=model
+M=onnx node tests/swe_bench.mjs` (debería subir de 0/6).
+
 ## N-004 · Reproducir la SWE-30 con el agente de Elffuss Code — PENDIENTE
 *2026-07-13 · prioridad media · pregunta de reproducción*
 
