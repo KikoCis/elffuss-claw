@@ -3,11 +3,24 @@
 // (lab/bitacora/posts/08-jspace-live.html). El plan «modelo propio» es
 // fusionar un LoRA sobre gemma-4-E2B-it y convertirlo a .litertlm
 // (ai-edge-torch); entonces MODEL_URL pasará a /models/elffuss-e2b.litertlm.
-export const name = 'Elffuss · Gemma-4 E4B (healed) · LiteRT-LM';
+export let name = 'Gemma · LiteRT-LM';
 
-// Our own agentic heal of Gemma-4 E4B, converted to .litertlm — the brain trained for Elffuss's job.
-const MODEL_URL =
-  'https://huggingface.co/KikoCis/Elffuss-Gemma4-E4B-litert/resolve/main/model.litertlm';
+// Builds .litertlm elegibles. Los «-web» OFICIALES de Google (litert-community)
+// están exportados en formato artisan → SÍ cargan en el navegador (son los que
+// usaba la demo original). El healed de Elffuss es prefill_decode → hoy no carga
+// (E-010), por eso está gateado en el selector.
+export const MODELS = {
+  'gemma-e2b': { url: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm', label: 'Gemma-4 E2B', tag: '~2 GB · ligero' },
+  'gemma-e4b': { url: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm', label: 'Gemma-4 E4B', tag: '~4 GB · el mejor' },
+  'elffuss-e4b': { url: 'https://huggingface.co/KikoCis/Elffuss-Gemma4-E4B-litert/resolve/main/model.litertlm', label: 'Elffuss E4B (healed)', tag: 'modelo propio' },
+};
+
+let MODEL_URL = MODELS['gemma-e2b'].url;
+let curLabel = MODELS['gemma-e2b'].label;
+export function configure(key) {
+  const m = MODELS[key] || MODELS['gemma-e2b'];
+  MODEL_URL = m.url; curLabel = m.label; name = 'Gemma · LiteRT-LM (' + m.label + ')';
+}
 
 let engine = null, conversation = null, sentCount = 0, sys = '';
 
@@ -21,7 +34,7 @@ export async function load(onProgress = () => {}) {
   const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm');
   // LiteRT-LM descarga los GB sin reportar loaded/total → segundos + barra indeterminada.
   const t0 = performance.now();
-  const beat = () => onProgress(`Descargando Gemma-4 E4B… ${Math.round((performance.now() - t0) / 1000)}s · varios GB la 1ª vez, luego queda cacheado`);
+  const beat = () => onProgress(`Descargando ${curLabel}… ${Math.round((performance.now() - t0) / 1000)}s · varios GB la 1ª vez, luego queda cacheado`);
   beat();
   const hb = setInterval(beat, 1000);
   try {

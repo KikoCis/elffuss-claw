@@ -6,6 +6,7 @@ import * as tasks from './tasks.js';
 import * as web from './web.js';
 import * as memory from './memory.js';
 import * as watch from './watch.js';
+import * as skills from '../skills.js';
 
 export { fs, apps, vault, tasks, web, memory, watch };
 
@@ -30,6 +31,8 @@ export const TOOLS = {
   'web.search': { desc: 'Buscar en internet (texto): devuelve títulos, enlaces y fragmentos', params: { query: 'qué buscar' }, run: a => web.search(a) },
   'web.images': { desc: 'Buscar imágenes en internet y mostrarlas en una galería', params: { query: 'qué imágenes' }, run: a => imagesGallery(a) },
   'web.fetch': { desc: 'Visitar una URL concreta y devolver su texto', params: { url: 'https://…' }, run: a => web.fetchUrl(a) },
+  'skill.create': { desc: 'CREAR una skill propia: instrucciones especializadas que seguirás siempre (para automatizar/optimizar lo que el usuario pida)', params: { name: 'nombre corto', description: 'para qué sirve', instructions: 'instrucciones detalladas en markdown' }, run: a => skills.createSkill(a) },
+  'skill.list':   { desc: 'Ver las skills instaladas', params: {}, run: async () => { const s = skills.installed(); return s.length ? s.map(x => `• ${x.name}: ${x.description || ''}`).join('\n') : 'No hay skills. Pídeme «créame una skill para…».'; } },
   'memory.save':   { desc: 'Recordar un hecho sobre el usuario PARA SIEMPRE (memoria persistente)', params: { fact: 'el hecho' }, run: a => memory.save(a) },
   'memory.list':   { desc: 'Ver todo lo recordado', params: {}, run: () => memory.listFacts() },
   'memory.forget': { desc: 'Olvidar un hecho por id', params: { id: 'id del hecho' }, run: a => memory.forget(a) },

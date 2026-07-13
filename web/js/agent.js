@@ -45,6 +45,11 @@ Tú:
 \`\`\`tool
 {"tool": "web.search", "args": {"query": "ganador Champions 2026"}}
 \`\`\`
+Usuario: créame una skill para revisar mis finanzas cada mes
+Tú:
+\`\`\`tool
+{"tool": "skill.create", "args": {"name": "Revisor de finanzas", "description": "Ayuda a revisar finanzas mensuales", "instructions": "Cuando el usuario hable de finanzas: 1) pide o lee su archivo de gastos, 2) resume ingresos/gastos por categoría, 3) señala gastos inusuales, 4) propone un ahorro. Sé concreto y usa tablas."}}
+\`\`\`
 Usuario: ¿qué archivos tengo?
 Tú:
 \`\`\`tool

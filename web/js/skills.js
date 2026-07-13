@@ -100,6 +100,22 @@ export function parseSkill(md, fallbackName = 'skill') {
   return { name, description, content };
 }
 
+// Creador de skills: Elffuss fabrica una skill propia (SKILL.md) a partir de
+// lo que el usuario quiere, y la instala al instante. Aparece en la pestaña
+// Skills y se inyecta en el prompt de los siguientes turnos.
+export async function createSkill({ name, description, instructions } = {}) {
+  if (!name || !instructions) throw new Error('Faltan name o instructions');
+  const skill = {
+    name: String(name).slice(0, 48),
+    description: (description || '').slice(0, 240),
+    content: String(instructions).slice(0, MAX_SKILL),
+    repo: 'creada por Elffuss',
+    path: 'local/' + Date.now(),
+  };
+  await install(skill);
+  return `Skill «${skill.name}» creada e instalada. Ya la sigo en cada conversación (mírala en la pestaña Skills).`;
+}
+
 // Bloque para el systemPrompt (síncrono, desde la caché).
 export function skillsPromptBlock() {
   if (!cache.length) return '';

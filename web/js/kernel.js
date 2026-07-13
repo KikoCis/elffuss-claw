@@ -22,6 +22,11 @@ const localProviders = {
 async function resolveProvider(id) {
   if (id === 'rules') return null;
   if (localProviders[id]) return localProviders[id]();
+  if (id.startsWith('litert:')) {           // Gemma vía LiteRT-LM (build elegido)
+    const mod = await import('./providers/litert.js');
+    mod.configure(id.slice(7));
+    return mod;
+  }
   if (id.startsWith('ext:')) {
     const cfg = settings.get(id.slice(4));
     if (!cfg) throw new Error('proveedor externo desconocido');
@@ -32,22 +37,27 @@ async function resolveProvider(id) {
   throw new Error('proveedor desconocido: ' + id);
 }
 
-// El cerebro Elffuss (E4B healed, 4.12 GB) NO carga aún en navegador: su export
-// es prefill_decode y el runtime web solo corre artisan/aot (E-010). Hasta que
-// se reexporte, NO se ofrece ni autocarga — descargar 4 GB de un modelo que
-// falla cuelga/OOMea la pestaña. Poner true cuando el .litertlm sea artisan.
-const LITERT_READY = false;
+// El Elffuss E4B HEALED no carga aún en navegador (export prefill_decode, E-010):
+// se oculta hasta el reexport artisan. Los Gemma E2B/E4B OFICIALES (build -web
+// de Google) SÍ cargan y se ofrecen como elegibles (no default: se bajan GB solo
+// si el usuario los elige). Poner true cuando el healed sea artisan.
+const ELFFUSS_LITERT_READY = false;
 
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (navigator.gpu && LITERT_READY) local.push({ id: 'litert', label: 'Local · Elffuss Gemma-4 E4B ★' });
-  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · LFM2.5 (WebGPU, ligero)' });
+  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · LFM2.5 (WebGPU, ligero) — por defecto' });
+  if (navigator.gpu) local.push({ id: 'litert:gemma-e2b', label: 'Local · Gemma-4 E2B · LiteRT-LM (~2 GB)' });
+  if (navigator.gpu) local.push({ id: 'litert:gemma-e4b', label: 'Local · Gemma-4 E4B · LiteRT-LM (~4 GB)' });
+  if (navigator.gpu && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
 
-const isLocal = id => id === 'onnx' || id === 'litert';
+const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:');
+// Móvil (o GPU débil): el E4B de 4 GB es demasiado → E2B de 2 GB.
+const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
+const defaultBrain = () => !navigator.gpu ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
 
 const agent = new Agent(rules);
 let busy = false;
@@ -188,10 +198,11 @@ async function changeModel(id) {
   } catch (e) {
     ui.modelProgress(null);
     console.error('[elffuss] fallo cargando modelo', e);
-    // Gemma E4B aún no carga en navegador (export prefill_decode) → LFM2.5 sola.
-    if (id === 'litert' && localProviders.onnx && !_fellBack) {
+    // Si un Gemma (LiteRT) no cabe/ falla, cae a LFM2.5 en vez de dejar sin cerebro.
+    if (id.startsWith('litert') && !_fellBack) {
       _fellBack = true;
-      ui.toast('Gemma aún no carga en el navegador — uso LFM2.5 (ligero).');
+      sessionStorage.setItem('elffuss.skipGemma', '1'); // no reintentar el pesado esta sesión
+      ui.toast('Ese Gemma no cargó aquí (memoria/GPU) — uso LFM2.5 (ligero).');
       const ok = await changeModel('onnx');
       _fellBack = false;
       if (ok) return true;
@@ -232,20 +243,23 @@ ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshMo
 refreshModelOptions();
 restoreHistory().then(restoreQueue);
 
-// Autocarga SOLO LOCAL: lo último elegido (si sigue disponible) → ONNX local
-// si hay WebGPU → modo básico. Nunca tira de un modelo externo/servidor por su
-// cuenta: eso es siempre elección explícita del usuario (config avanzada).
+// Autocarga SOLO LOCAL. Por defecto Gemma-4 E4B (escritorio) o E2B (móvil/GPU
+// débil), vía LiteRT-LM; si no cabe, cae a LFM2.5. Respeta lo último elegido.
 (async () => {
   try {
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     const available = new Set(modelOptions().map(o => o.id));
-    // Autocarga SOLO de modelos que de verdad cargan (available filtra el E4B
-    // roto). Elffuss E4B volverá a ser el default en cuanto LITERT_READY=true.
-    const chain = [...new Set([saved, navigator.gpu ? 'onnx' : null]
+    // si un Gemma pesado ya falló esta sesión, no reintentar (evita re-crash)
+    const skipGemma = sessionStorage.getItem('elffuss.skipGemma') === '1';
+    const def = skipGemma ? 'onnx' : defaultBrain();
+    const chain = [...new Set([saved, def, navigator.gpu ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
-    ui.toast('Cargando el cerebro local… mientras, el modo básico te atiende.');
+    const first = chain[0];
+    ui.toast(first.startsWith('litert')
+      ? 'Cargando Gemma (varios GB la 1ª vez)… mientras, el modo básico te atiende.'
+      : 'Cargando el cerebro local… mientras, el modo básico te atiende.');
     for (const id of chain)
       if (await changeModel(id)) return;
   } finally {
