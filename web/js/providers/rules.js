@@ -105,6 +105,15 @@ export async function chat(history) {
   if (url && /(abre|visita|entra|descarga|mira|lee|busca|ve a)/.test(t))
     return call({ tool: 'web.fetch', args: { url: url[0] } });
 
+  // crear skill (modo básico: plantilla a partir de la descripción)
+  const mSkill = text.match(/(?:cr[eé]a(?:me)?|hazme|genera)\s+una\s+skill\s+(?:para|de|que)\s+(.+)/i);
+  if (mSkill) {
+    const what = mSkill[1].replace(/[?.!]+$/, '').trim();
+    return call({ tool: 'skill.create', args: { name: what.slice(0, 40), description: 'Skill para ' + what,
+      instructions: 'Cuando el usuario pida «' + what + '», ayúdale paso a paso, sé concreto y usa las herramientas disponibles (archivos, web, apps) cuando aporten.' } });
+  }
+  if (/(lista|ver|muestra|qué|que).*skills/.test(t)) return call({ tool: 'skill.list', args: {} });
+
   // búsqueda de imágenes
   const mImg = text.match(/(?:busca(?:r)?|encuentra|ens[eé]ñame|muestra|quiero)\b.*?\b(?:fotos?|im[aá]genes?|gr[aá]ficos?|dibujos?|fotograf[ií]as?)\s+(?:de\s+)?(.+)/i);
   if (mImg && !url) return call({ tool: 'web.images', args: { query: mImg[1].replace(/[?.!]+$/, '').trim() } });
