@@ -9,6 +9,7 @@ export const name = MODEL.label;
 let generator = null, TextStreamer = null;
 
 export async function load(onProgress = () => {}) {
+  if (generator) return; // un solo modelo: nunca recargar/duplicar la sesión
   const tf = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4');
   TextStreamer = tf.TextStreamer;
   if (MODEL.selfHosted) {
