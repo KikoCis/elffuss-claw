@@ -3,10 +3,10 @@
 // (lab/bitacora/posts/08-jspace-live.html). El plan «modelo propio» es
 // fusionar un LoRA sobre gemma-4-E2B-it y convertirlo a .litertlm
 // (ai-edge-torch); entonces MODEL_URL pasará a /models/elffuss-e2b.litertlm.
-export const name = 'Gemma-4 E2B · LiteRT-LM';
+export const name = 'Gemma-4 E4B · LiteRT-LM';
 
 const MODEL_URL =
-  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
+  'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm';
 
 let engine = null, conversation = null, sentCount = 0, sys = '';
 

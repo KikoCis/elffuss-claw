@@ -31,8 +31,8 @@ async function resolveProvider(id) {
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · ONNX/WebGPU (Qwen 0.5B)' });
-  if (navigator.gpu) local.push({ id: 'litert', label: 'Local · LiteRT-LM (Gemma E2B)' });
+  if (navigator.gpu) local.push({ id: 'litert', label: 'Local · LiteRT-LM (Gemma-4 E4B) ★' });
+  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · ONNX/WebGPU (Qwen 0.5B, ligero)' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
@@ -222,7 +222,7 @@ restoreHistory().then(restoreQueue);
     const available = new Set(modelOptions().map(o => o.id));
     // el guardado se respeta aunque sea externo (el usuario ya lo activó);
     // el ÚNICO respaldo automático es local (onnx) — jamás un externo.
-    const chain = [...new Set([saved, navigator.gpu ? 'onnx' : null]
+    const chain = [...new Set([saved, navigator.gpu ? 'litert' : null, navigator.gpu ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
     ui.toast('Cargando el cerebro de Elffuss… mientras, el modo básico te atiende.');
