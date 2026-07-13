@@ -64,3 +64,21 @@ sigue teniendo valor para pulir persona/español/uso del CONTEXTO.
   `selfHosted: true` en `web/js/model-config.js`.
 - **Aceptación**: igual que N-001 pero vía transformers.js; además ≥8 de 10
   tool-calls válidos en las frases de prueba de ERRORES.md.
+
+## N-003 · Heal del modelo TAMBIÉN para el protocolo de Elffuss Code — PENDIENTE
+*2026-07-13 · prioridad alta*
+
+El healed `KikoCis/Elffuss-LM-1.2B-ONNX` clava las tool-calls en **Claw**
+(fs.list, tasks.add, app.create — VERIFICADO en navegador real: reloj neón OK).
+Pero en **Code** aluciona: da consejos genéricos, no llama `code.read`, e
+inventa herramientas inexistentes (`code.create-mcp-server`, `CLAUDE.conf`).
+
+Causa: el heal se entrenó con las herramientas de Claw, no con las de Code
+(`code.tree/read/write/search`). Mitigado del lado cliente (grounding: se
+inyecta README/config + archivo abierto; prompt endurecido), pero lo correcto
+es incluir en el dataset del heal el protocolo de Code:
+- user→```tool code.read/tree/search sobre preguntas «¿qué hace este código?»,
+  «¿qué mejorarías?», «busca X».
+- Prohibir explícitamente inventar herramientas; SIEMPRE leer antes de opinar.
+Mismo empaquetado ONNX (cirugía de los 92 linears), mismo URL HF → cero cambios
+en las apps.

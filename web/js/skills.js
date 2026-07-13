@@ -12,6 +12,7 @@ const MAX_SKILL = 12_000;      // caracteres del cuerpo que se inyectan al model
 
 export const CATALOG_REPO = 'anthropics/skills';
 export const DEFAULT_SOURCES = [
+  { repo: 'bbgnsurftech/claude-skills-collection', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
   { repo: 'anthropics/skills', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
   { repo: 'anthropics/claude-plugins-official', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
 ];
@@ -29,9 +30,27 @@ export function isInstalled(repo, path) { return cache.some(s => s.repo === repo
 
 export async function install(skill) {
   cache = cache.filter(s => !(s.repo === skill.repo && s.path === skill.path) && s.name !== skill.name);
-  cache.push({ ...skill, content: (skill.content || '').slice(0, MAX_SKILL) });
+  const entry = { ...skill, content: (skill.content || '').slice(0, MAX_SKILL) };
+  cache.push(entry);
   await db.set('kv', KEY, cache);
-  return skill.name;
+  return entry;                       // devuelve la skill completa (name, description…)
+}
+
+// Mensaje «cómo usarla» tras instalar: qué hace + un ejemplo de qué pedir.
+export function usageMessage(skill) {
+  const desc = (skill.description || '').trim();
+  const ejemplo = firstExample(skill) || `algo relacionado con «${skill.name}»`;
+  return `✳ **Skill «${skill.name}» instalada.**\n\n` +
+    (desc ? desc + '\n\n' : '') +
+    `Ya la sigo en cada conversación. Para usarla, pídeme por ejemplo:\n\n> ${ejemplo}`;
+}
+
+// Intenta sacar un ejemplo de uso del cuerpo del SKILL.md (líneas de ejemplo/uso).
+function firstExample(skill) {
+  const body = skill.content || '';
+  const m = body.match(/(?:ejemplo|example|uso|usage|prueba|try)[^\n:]*[:：]\s*["“]?([^\n"”]{6,90})/i)
+    || body.match(/^[-*]\s+([A-ZÁÉÍÓÚ][^\n]{10,80})/m);
+  return m ? m[1].trim().replace(/[.*_`]+$/, '') : null;
 }
 
 export async function remove(nameOrPath) {

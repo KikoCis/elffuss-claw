@@ -46,19 +46,20 @@ const ELFFUSS_LITERT_READY = false;
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) ★ — por defecto' });
+  if (navigator.gpu) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~4 GB) ★ — por defecto' });
   if (navigator.gpu) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
-  if (navigator.gpu) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~4 GB)' });
+  local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) — ligero' });
   if (navigator.gpu && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
 
 const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:');
-// Por defecto: el Elffuss LM healed (ONNX 850 MB) — NUESTRO modelo, afinado
-// para tool-calls y apps, ruta fiable (transformers.js). Los Gemma de LiteRT
-// (2/4 GB) quedan como opciones «más grandes» elegibles a mano.
-const defaultBrain = () => 'onnx';
+// Por defecto: Gemma-4 grande vía LiteRT-LM (build oficial -web, VERIFICADO que
+// carga y hace tool-calls). E4B en escritorio, E2B en móvil/GPU débil. Si no
+// cabe, cae al Elffuss LM healed (onnx, 850 MB) — cerebro seguro siempre.
+const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
+const defaultBrain = () => !navigator.gpu ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
 
 const agent = new Agent(rules);
 let busy = false;

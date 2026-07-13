@@ -34,14 +34,14 @@ export async function chat(history, system, onToken = () => {}) {
   if (!generator) throw new Error('Modelo no cargado');
   // ACE-lite: eviction por relevancia con presupuesto corto — los modelos
   // pequeños se pierden (y se ralentizan) con historiales largos.
-  const messages = [{ role: 'system', content: system }, ...packHistory(history, 28000)];
+  const messages = [{ role: 'system', content: system }, ...packHistory(history, 5000)];
   const streamer = new TextStreamer(generator.tokenizer, {
     skip_prompt: true,
     skip_special_tokens: true,
     callback_function: onToken,
   });
   const out = await generator(messages, {
-    max_new_tokens: 2048,
+    max_new_tokens: 1024,
     do_sample: false,          // determinista: los tool calls JSON lo agradecen
     repetition_penalty: 1.1,
     return_full_text: false,
