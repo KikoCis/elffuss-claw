@@ -29,11 +29,17 @@ async function resolveProvider(id) {
   throw new Error('proveedor desconocido: ' + id);
 }
 
+// El cerebro Elffuss (E4B healed, 4.12 GB) NO carga aún en navegador: su export
+// es prefill_decode y el runtime web solo corre artisan/aot (E-010). Hasta que
+// se reexporte, NO se ofrece ni autocarga — descargar 4 GB de un modelo que
+// falla cuelga/OOMea la pestaña. Poner true cuando el .litertlm sea artisan.
+const LITERT_READY = false;
+
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (navigator.gpu) local.push({ id: 'litert', label: 'Local · Elffuss Gemma-4 E4B (healed) ★' });
-  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · ONNX/WebGPU (Qwen 0.5B, ligero)' });
+  if (navigator.gpu && LITERT_READY) local.push({ id: 'litert', label: 'Local · Elffuss Gemma-4 E4B ★' });
+  if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · LFM2.5 (WebGPU, ligero)' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
@@ -231,14 +237,12 @@ restoreHistory().then(restoreQueue);
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     const available = new Set(modelOptions().map(o => o.id));
-    // el guardado se respeta aunque sea externo (el usuario ya lo activó);
-    // el ÚNICO respaldo automático es local (onnx) — jamás un externo.
-    // SIEMPRE se intenta primero el cerebro Elffuss (Gemma-4 E4B healed, litert);
-    // si su export aún no carga en navegador, cae solo a LFM2.5.
-    const chain = [...new Set([saved, navigator.gpu ? 'litert' : null, navigator.gpu ? 'onnx' : null]
+    // Autocarga SOLO de modelos que de verdad cargan (available filtra el E4B
+    // roto). Elffuss E4B volverá a ser el default en cuanto LITERT_READY=true.
+    const chain = [...new Set([saved, navigator.gpu ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
-    ui.toast('Cargando el cerebro Elffuss (Gemma-4 E4B)… mientras, el modo básico te atiende.');
+    ui.toast('Cargando el cerebro local… mientras, el modo básico te atiende.');
     for (const id of chain)
       if (await changeModel(id)) return;
   } finally {
