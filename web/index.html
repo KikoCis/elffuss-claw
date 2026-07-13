@@ -15,11 +15,11 @@
     <span class="claim">las apps no existen: se crean</span><span class="claim" id="build">__BUILD__</span>
   </div>
   <div class="controls">
-    <label class="model-pick">🧠
+    <label class="model-pick"><span id="model-ico" class="icon-inline"></span>
       <select id="model-select"><!-- lo rellena kernel.js (locales + externos activados) --></select>
     </label>
     <span id="model-status" class="dot off" title="estado del modelo"></span>
-    <button id="btn-clear" class="ghost" title="Nueva conversación">🧹</button>
+    <button id="btn-clear" class="ghost icon-btn" title="Nueva conversación"></button>
     <button id="btn-perms" class="ghost">Permisos</button>
   </div>
 </header>
@@ -27,11 +27,11 @@
 <main>
   <section id="chat">
     <div id="log">
-      <div class="msg sys"><img class="avatar" src="img/elffuss.svg" alt=""><b>Привіт 👋 Soy Elffuss.</b>
+      <div class="msg sys"><img class="avatar" src="img/elffuss.svg" alt=""><b>Привіт, soy Elffuss.</b>
         Un sistema operativo con alma que vive en tu navegador.
         Aquí las apps no se instalan: <i>se crean</i> cuando las pides y aparecen a la derecha.
         Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados,
-        programar tareas y navegar por ti. Todo se queda en tu máquina. добре ✨</div>
+        programar tareas y navegar por ti. Todo se queda en tu máquina. добре</div>
     </div>
     <div id="chips">
       <span class="chip">Hazme un reloj</span>
@@ -40,9 +40,11 @@
       <span class="chip">Recuérdame dentro de 1 minuto que estire las piernas</span>
       <span class="chip">Abre https://example.com</span>
     </div>
+    <div id="cmd-menu" hidden></div>
     <form id="composer">
-      <input id="prompt" autocomplete="off" placeholder="Pídeme lo que necesites…">
-      <button type="submit" id="send" title="Enviar">➤</button>
+      <button type="button" id="btn-slash" class="icon-btn" title="Comandos y skills"></button>
+      <input id="prompt" autocomplete="off" placeholder="Pídeme lo que necesites…  (/ para comandos)">
+      <button type="submit" id="send" title="Enviar"></button>
     </form>
   </section>
 
@@ -52,8 +54,9 @@
       <button data-tab="apps">Apps</button>
       <button data-tab="tareas">Tareas</button>
       <button data-tab="vault">Vault</button>
+      <button data-tab="skills">Skills</button>
       <button data-tab="permisos">Permisos</button>
-      <button data-tab="ajustes">⚙️</button>
+      <button data-tab="ajustes">Ajustes</button>
     </nav>
     <div class="panel active" id="panel-vista">
       <div id="vista-empty">
@@ -66,6 +69,7 @@
     <div class="panel" id="panel-apps"></div>
     <div class="panel" id="panel-tareas"></div>
     <div class="panel" id="panel-vault"></div>
+    <div class="panel" id="panel-skills"></div>
     <div class="panel" id="panel-permisos"></div>
     <div class="panel" id="panel-ajustes"></div>
   </section>
@@ -81,7 +85,7 @@
   </div>
 </dialog>
 
-<button id="btn-flip" title="cambiar entre chat y vista">✳ Vista</button>
+<button id="btn-flip" title="cambiar entre chat y vista">Vista</button>
 <div id="toasts"></div>
 <div id="model-progress" hidden>
   <div class="track"><div id="model-bar"></div></div>
@@ -119,12 +123,12 @@
       <circle cx="84" cy="83" r="5" fill="#ffb3c0" opacity=".55"/>
       <path d="M56 87 Q 64 94 72 87" fill="none" stroke="#d4826a" stroke-width="3" stroke-linecap="round"/>
     </svg>
-    <h1>Привіт 👋 soy <b>Elffuss Claw</b></h1>
+    <h1>Привіт, soy <b>Elffuss Claw</b></h1>
     <p class="l l1">Un sistema operativo con alma que vive aquí, en tu navegador.</p>
     <p class="l l2">Todo lo que pase entre nosotros ocurre <b>solo en tu ordenador</b>.</p>
     <p class="l l3">Nadie lo registra. Nada sale de tu máquina.</p>
     <p class="l l4">Queda entre tú y yo… 😉</p>
-    <button id="splash-enter">Entrar ✳</button>
+    <button id="splash-enter">Entrar</button>
   </div>
 </div>
 
