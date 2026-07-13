@@ -56,7 +56,29 @@ function tryJson(raw) {
   return null;
 }
 
+// Formato NATIVO de LFM2.5 (y afines): <|tool_call_start|>[ name(k="v", n=3) ]<|tool_call_end|>
+// o simplemente name(k="v") en su línea. Se parsea a {tool, args}.
+export function parseNativeCall(text) {
+  const m = text.match(/<\|tool_call_start\|>\s*\[?\s*([\w.]+)\s*\(([\s\S]*?)\)\s*\]?\s*<\|tool_call_end\|>/)
+    || text.match(/^\s*\[\s*([\w.]+)\s*\(([\s\S]*?)\)\s*\]\s*$/m);
+  if (!m) return null;
+  const args = {};
+  const re = /([\w]+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,)]+)/g;
+  let a;
+  while ((a = re.exec(m[2]))) {
+    let v = a[2].trim();
+    if (/^["']/.test(v)) v = v.slice(1, -1).replace(/\\(.)/g, '$1');
+    else if (/^-?\d+(\.\d+)?$/.test(v)) v = Number(v);
+    else if (v === 'true' || v === 'false') v = v === 'true';
+    args[a[1]] = v;
+  }
+  return { tool: m[1], args };
+}
+
 export function parseToolCall(text) {
+  const native = parseNativeCall(text);
+  if (native) return native;
+
   const fences = [...text.matchAll(/```(\w*)[ \t]*\n?([\s\S]*?)```/g)]
     .map(m => ({ lang: (m[1] || '').toLowerCase(), body: m[2].trim() }));
 
