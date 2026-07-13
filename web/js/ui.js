@@ -6,6 +6,7 @@ import * as skills from './skills.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
 import { renderMarkdown } from './md.js';
 import { UI } from './icons.js';
+import { cacheEstimate, clearModelCache } from './model-cache.js';
 
 let onSettingsChangedCb = () => {};
 let onSkillInstalledCb = () => {};
@@ -382,6 +383,25 @@ export function refreshSettings() {
     wrap.appendChild(btn('Guardar', 'primary', () => { save(); toast('Guardado'); }));
     panel.appendChild(wrap);
   }
+
+  // --- Almacenamiento del modelo (caché persistente) ---
+  const store = el('div', 'card col');
+  store.appendChild(el('b', null, 'Modelo descargado (cacheado en tu navegador)'));
+  const info = el('span', 'muted', 'Calculando espacio…');
+  store.appendChild(info);
+  const clearBtn = btn('Vaciar caché del modelo', 'ghost', async () => {
+    info.textContent = 'Vaciando…'; await clearModelCache(); await paintStore(); toast('Caché vaciada');
+  });
+  store.appendChild(clearBtn);
+  panel.appendChild(store);
+  async function paintStore() {
+    const { usage, quota, persisted } = await cacheEstimate();
+    const gb = n => (n / 1073741824).toFixed(2) + ' GB';
+    info.textContent = (usage ? `${gb(usage)} en caché · ` : 'Nada cacheado todavía · ')
+      + (persisted ? '✓ persistente (no se borra solo)' : '⚠ sin persistencia')
+      + (quota ? ` · límite ~${gb(quota)}` : '');
+  }
+  paintStore();
 
   panel.appendChild(el('p', 'muted', 'Las skills y plugins están en su propia pestaña «Skills».'));
 }
