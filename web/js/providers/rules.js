@@ -105,6 +105,14 @@ export async function chat(history) {
   if (url && /(abre|visita|entra|descarga|mira|lee|busca|ve a)/.test(t))
     return call({ tool: 'web.fetch', args: { url: url[0] } });
 
+  // búsqueda de imágenes
+  const mImg = text.match(/(?:busca(?:r)?|encuentra|ens[eé]ñame|muestra|quiero)\b.*?\b(?:fotos?|im[aá]genes?|gr[aá]ficos?|dibujos?|fotograf[ií]as?)\s+(?:de\s+)?(.+)/i);
+  if (mImg && !url) return call({ tool: 'web.images', args: { query: mImg[1].replace(/[?.!]+$/, '').trim() } });
+  // búsqueda web (texto)
+  const mSearch = text.match(/(?:busca(?:r)?|buscame|google(?:a)?|encuentra|investiga)\s+(?:en\s+(?:internet|la\s+web|google)\s+)?(.+)/i);
+  if (mSearch && !url && /(busca|google|encuentra|investiga)/.test(t))
+    return call({ tool: 'web.search', args: { query: mSearch[1].replace(/[?.!]+$/, '').trim() } });
+
   // tareas
   const mTask = text.match(/dentro de (\d+)\s*min(?:uto)?s?\s*(?:que\s*)?(.*)/i);
   if (mTask && /(recu[eé]rdame|av[ií]same|programa|dentro de \d+ *min)/.test(t))

@@ -5,7 +5,10 @@ import * as rules from './providers/rules.js';
 import * as db from './db.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
+import { applyI18n } from './i18n.js';
 import { tasks, watch } from './tools/index.js';
+
+applyI18n(); // traduce el chrome al idioma del navegador antes de nada
 
 // Proveedores LOCALES (corren en TU navegador). Los externos (OpenAI,
 // Anthropic, Ollama, servidor) son configuración avanzada y se resuelven
