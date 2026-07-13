@@ -233,10 +233,12 @@ restoreHistory().then(restoreQueue);
     const available = new Set(modelOptions().map(o => o.id));
     // el guardado se respeta aunque sea externo (el usuario ya lo activó);
     // el ÚNICO respaldo automático es local (onnx) — jamás un externo.
+    // SIEMPRE se intenta primero el cerebro Elffuss (Gemma-4 E4B healed, litert);
+    // si su export aún no carga en navegador, cae solo a LFM2.5.
     const chain = [...new Set([saved, navigator.gpu ? 'litert' : null, navigator.gpu ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
-    ui.toast('Cargando el cerebro de Elffuss… mientras, el modo básico te atiende.');
+    ui.toast('Cargando el cerebro Elffuss (Gemma-4 E4B)… mientras, el modo básico te atiende.');
     for (const id of chain)
       if (await changeModel(id)) return;
   } finally {

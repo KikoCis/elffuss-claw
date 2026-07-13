@@ -91,3 +91,17 @@ genérico.
 ## Benignos (no actuar)
 - Warnings de onnxruntime `VerifyEachNodeIsAssignedToAnEp` (ops de shape en
   CPU): normales, sin impacto visible.
+
+## E-010 · Modelo Elffuss E4B healed no carga en navegador — **BLOQUEO (export)** *(2026-07-13)*
+El cerebro Elffuss (KikoCis/Elffuss-Gemma4-E4B-litert, model.litertlm 4.12 GB)
+es la PRIMERA opción que Claw y Code intentan cargar. Estado del runtime web
+(@litert-lm/core):
+- Tokenizer: **resuelto** (SP_Tokenizer, ya no `HF_Tokenizer_Zlib`).
+- Bloqueo actual: **`Streaming kTfLitePrefillDecode models is not supported yet`**.
+  El .litertlm es un export **prefill_decode**; el runtime web de Google solo
+  corre los builds tipo **artisan / aot_backend** (los que usa en sus demos web).
+
+**Necesidad para el agente de modelos**: reexportar el E4B healed con el
+backend **artisan (aot)** de ai-edge-torch, no prefill_decode. Mismo URL en HF
+= cero cambios en las apps; en cuanto cargue, todos arrancan con Elffuss solo.
+Mientras tanto, Claw/Code caen automáticamente a LFM2.5 (fallback litert→onnx).
