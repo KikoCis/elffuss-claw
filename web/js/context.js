@@ -9,7 +9,7 @@
 // sustituyen por una marca de omisión para que el modelo sepa que falta algo.
 
 const RECENT = 6;
-const MAX_MSG_CHARS = 32000; // ningún mensaje (p.ej. un README enorme) revienta el contexto
+const MAX_MSG_CHARS = 4000; // ningún mensaje (p.ej. un README enorme) revienta el contexto
 
 // Trunca por el MEDIO conservando cabeza y cola (útil para código/documentos).
 function clampMsg(m) {

@@ -8,6 +8,7 @@ import { renderMarkdown } from './md.js';
 import { UI } from './icons.js';
 
 let onSettingsChangedCb = () => {};
+let onSkillInstalledCb = () => {};
 
 const $ = id => document.getElementById(id);
 
@@ -424,7 +425,11 @@ async function browseSkillRepo(panel, repo) {
       const on = skills.isInstalled(sk.repo, sk.path);
       const b = btn(on ? 'Instalada ✓' : 'Instalar', on ? 'ghost' : 'primary', async () => {
         b.textContent = '…';
-        try { await skills.installFromRepo(sk); b.textContent = 'Instalada ✓'; } catch (e) { b.textContent = 'Instalar'; toast('⚠️ ' + e.message); }
+        try {
+          const entry = await skills.installFromRepo(sk);
+          b.textContent = 'Instalada ✓';
+          onSkillInstalledCb(entry);           // → mensaje «cómo usarla» en el chat
+        } catch (e) { b.textContent = 'Instalar'; toast('⚠️ ' + e.message); }
       });
       c.append(el('b', null, sk.name), el('span', 'muted', sk.dir), b);
       box.appendChild(c);
@@ -443,6 +448,11 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
   perms.setAsker(askPermission);
   apps.setRenderer(renderApp);
   onSettingsChangedCb = onSettingsChanged || (() => {});
+  // al instalar una skill: mensaje «cómo usarla» en el chat + volver al chat en móvil
+  onSkillInstalledCb = entry => {
+    addMsg('assistant', skills.usageMessage(entry)); // addMsg renderiza markdown en 'assistant'
+    if (isMobile()) flipTo('chat');
+  };
 
   $('composer').addEventListener('submit', e => {
     e.preventDefault();
