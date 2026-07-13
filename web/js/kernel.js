@@ -4,6 +4,7 @@ import * as ui from './ui.js';
 import * as rules from './providers/rules.js';
 import * as db from './db.js';
 import * as settings from './settings.js';
+import * as skills from './skills.js';
 import { tasks, watch } from './tools/index.js';
 
 // Proveedores LOCALES (corren en TU navegador). Los externos (OpenAI,
@@ -208,6 +209,7 @@ if (!localStorage.getItem('elffuss.welcomed')) {
   });
 }
 
+skills.initSkills();
 ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
 refreshModelOptions();
 restoreHistory().then(restoreQueue);

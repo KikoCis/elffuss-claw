@@ -2,6 +2,7 @@
 import * as db from './db.js';
 import * as perms from './permissions.js';
 import * as settings from './settings.js';
+import * as skills from './skills.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
 import { renderMarkdown } from './md.js';
 
@@ -367,6 +368,60 @@ export function refreshSettings() {
     wrap.appendChild(btn('Guardar', 'primary', () => { save(); toast('Guardado'); }));
     panel.appendChild(wrap);
   }
+
+  // --- Skills de Claude Code ---
+  panel.appendChild(el('h3', null, '🧩 Skills de Claude Code'));
+  panel.appendChild(el('p', 'muted',
+    'Instala instrucciones especializadas (SKILL.md) desde repos públicos. Se ve el repo y ' +
+    'lo que se inyecta; todo se guarda en tu navegador.'));
+  renderSkills(panel);
+}
+
+async function renderSkills(panel) {
+  const inst = skills.installed();
+  panel.appendChild(el('div', 'muted', `Instaladas: ${inst.length}`));
+  for (const s of inst) {
+    const c = el('div', 'card');
+    c.append(el('b', null, s.name), el('span', 'muted', s.repo || 'local'),
+      btn('Quitar', 'ghost', async () => { await skills.remove(s.name); refreshSettings(); }));
+    panel.appendChild(c);
+  }
+  const srcs = await skills.sources();
+  for (const src of srcs) {
+    const c = el('div', 'card');
+    const link = document.createElement('a');
+    link.href = 'https://github.com/' + src.repo; link.target = '_blank'; link.textContent = src.repo + ' ↗';
+    link.style.cssText = 'color:var(--accent2);font-size:.74rem;text-decoration:none';
+    c.append(el('b', null, src.label), link,
+      btn('Explorar', 'primary', () => browseSkillRepo(panel, src.repo)));
+    panel.appendChild(c);
+  }
+  const row = el('div', 'row');
+  const inp = el('input'); inp.placeholder = 'owner/repo o URL (p. ej. OpenClaude/…)';
+  row.append(inp, btn('Añadir repo', 'primary', async () => {
+    try { await skills.addSource(inp.value); refreshSettings(); } catch (e) { toast('⚠️ ' + e.message); }
+  }));
+  panel.appendChild(row);
+}
+
+async function browseSkillRepo(panel, repo) {
+  const box = el('div');
+  box.appendChild(el('div', 'muted', `Cargando ${repo}…`));
+  panel.appendChild(box);
+  try {
+    const found = await skills.listFromRepo(repo);
+    box.replaceChildren(el('div', 'muted', `${repo} — ${found.length} skills`));
+    for (const sk of found.slice(0, 120)) {
+      const c = el('div', 'card');
+      const on = skills.isInstalled(sk.repo, sk.path);
+      const b = btn(on ? 'Instalada ✓' : 'Instalar', on ? 'ghost' : 'primary', async () => {
+        b.textContent = '…';
+        try { await skills.installFromRepo(sk); b.textContent = 'Instalada ✓'; } catch (e) { b.textContent = 'Instalar'; toast('⚠️ ' + e.message); }
+      });
+      c.append(el('b', null, sk.name), el('span', 'muted', sk.dir), b);
+      box.appendChild(c);
+    }
+  } catch (e) { box.replaceChildren(el('div', 'muted', '⚠️ ' + e.message)); }
 }
 
 function labeled(label, input) {
