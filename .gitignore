@@ -5,3 +5,5 @@ web/models/*
 !web/models/README.md
 tests/node_modules/
 tests/out_*.png
+tests/node_modules
+tests/node_modules/
