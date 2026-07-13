@@ -31,9 +31,20 @@ Cómo actuar:
 \`\`\`html
 <!doctype html><html>…</html>
 \`\`\`
-3) Tras un [resultado], o si no hace falta herramienta, responde texto normal en el idioma del usuario.
+3) Tras un [resultado], o si no hace falta herramienta, responde texto normal en el idioma del usuario. NO repitas la misma herramienta; una app creada YA está hecha: responde y para.
+4) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.
 
 Ejemplos:
+Usuario: busca fotos de perros
+Tú:
+\`\`\`tool
+{"tool": "web.images", "args": {"query": "perros"}}
+\`\`\`
+Usuario: busca en internet quién ganó la Champions 2026
+Tú:
+\`\`\`tool
+{"tool": "web.search", "args": {"query": "ganador Champions 2026"}}
+\`\`\`
 Usuario: ¿qué archivos tengo?
 Tú:
 \`\`\`tool
@@ -114,6 +125,12 @@ export function parseToolCall(text) {
   return null;
 }
 
+// Cierre amable cuando el bucle se corta: usa el último resultado útil.
+function closingLine(done, lastResult) {
+  if (lastResult && !lastResult.startsWith('ERROR')) return lastResult;
+  return 'Hecho. ¿Algo más?';
+}
+
 export class Agent {
   constructor(provider) {
     this.provider = provider;
@@ -124,6 +141,8 @@ export class Agent {
 
   async handle(userText, onEvent) {
     this.history.push({ role: 'user', content: userText });
+    const done = [];            // firmas de tool calls ya ejecutadas este turno
+    let lastResult = '';
     for (let step = 0; step < MAX_STEPS; step++) {
       let out;
       try {
@@ -139,16 +158,33 @@ export class Agent {
         return;
       }
 
+      // Anti-bucle: los modelos pequeños repiten la misma herramienta. Si ya se
+      // ejecutó esta llamada (misma firma) o ya se creó una app, se corta y se
+      // cierra con una respuesta en vez de girar hasta agotar los pasos.
+      const sig = call.tool + ':' + JSON.stringify(call.args || {});
+      if (done.includes(sig)) {
+        onEvent({ type: 'text', text: closingLine(done, lastResult) });
+        return;
+      }
+      done.push(sig);
+
       onEvent({ type: 'tool', call });
       let result;
       try { result = await runTool(call.tool, call.args); }
       catch (e) { result = 'ERROR: ' + e.message; }
       const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+      lastResult = resultStr;
       onEvent({ type: 'tool_result', tool: call.tool, result: resultStr });
 
       this.history.push({ role: 'assistant', content: out });
       this.history.push({ role: 'user', content: `[resultado ${call.tool}]\n${resultStr}` });
+
+      // Tras crear/abrir una app, la tarea suele estar hecha: cierra ya.
+      if ((call.tool === 'app.create' || call.tool === 'app.open') && !resultStr.startsWith('ERROR')) {
+        onEvent({ type: 'text', text: '¡Listo! ' + resultStr + ' ¿Quieres que le cambie algo?' });
+        return;
+      }
     }
-    onEvent({ type: 'text', text: '(Me quedé sin pasos: demasiadas herramientas seguidas.)' });
+    onEvent({ type: 'text', text: closingLine(done, lastResult) });
   }
 }

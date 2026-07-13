@@ -27,7 +27,9 @@ export const TOOLS = {
   'tasks.add':    { desc: 'Programar una tarea futura (Elffuss se enviará ese prompt)', params: { inMinutes: 'minutos desde ahora', at: 'fecha ISO (alternativa)', prompt: 'qué hacer' }, run: a => tasks.add(a) },
   'tasks.list':   { desc: 'Ver las tareas programadas', params: {}, run: () => tasks.listTasks() },
   'tasks.remove': { desc: 'Borrar una tarea programada', params: { id: 'id de la tarea' }, run: a => tasks.removeTask(a) },
-  'web.fetch': { desc: 'Visitar una URL y devolver su texto', params: { url: 'https://…' }, run: a => web.fetchUrl(a) },
+  'web.search': { desc: 'Buscar en internet (texto): devuelve títulos, enlaces y fragmentos', params: { query: 'qué buscar' }, run: a => web.search(a) },
+  'web.images': { desc: 'Buscar imágenes en internet y mostrarlas en una galería', params: { query: 'qué imágenes' }, run: a => imagesGallery(a) },
+  'web.fetch': { desc: 'Visitar una URL concreta y devolver su texto', params: { url: 'https://…' }, run: a => web.fetchUrl(a) },
   'memory.save':   { desc: 'Recordar un hecho sobre el usuario PARA SIEMPRE (memoria persistente)', params: { fact: 'el hecho' }, run: a => memory.save(a) },
   'memory.list':   { desc: 'Ver todo lo recordado', params: {}, run: () => memory.listFacts() },
   'memory.forget': { desc: 'Olvidar un hecho por id', params: { id: 'id del hecho' }, run: a => memory.forget(a) },
@@ -36,6 +38,25 @@ export const TOOLS = {
 export function toolHelp() {
   return Object.entries(TOOLS).map(([n, t]) =>
     `- ${n}(${Object.keys(t.params).join(', ')}): ${t.desc}`).join('\n');
+}
+
+// web.images → galería HTML mostrada al instante en el visualizador.
+async function imagesGallery({ query } = {}) {
+  const res = await web.images({ query });
+  let data;
+  try { data = JSON.parse(res); } catch { return res; } // era «sin imágenes»
+  const cards = data.images.map(i =>
+    `<a href="${i.url}" target="_blank" rel="noopener"><img src="${i.thumb}" loading="lazy" alt="${(i.title || '').replace(/"/g, '')}"><span>${i.by ? '© ' + i.by : ''}</span></a>`).join('');
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${query}</title><style>
+body{margin:0;background:#0d1117;color:#e6edf3;font-family:system-ui;padding:14px}
+h2{font-weight:600;margin:4px 0 14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+a{display:block;border-radius:10px;overflow:hidden;background:#161b22;border:1px solid #30363d;position:relative}
+img{width:100%;height:140px;object-fit:cover;display:block}
+span{position:absolute;bottom:0;left:0;right:0;font-size:.6rem;color:#c9d1d9;background:linear-gradient(transparent,#000a);padding:8px 6px 4px}
+</style></head><body><h2>🔎 ${query}</h2><div class="grid">${cards}</div></body></html>`;
+  await apps.create({ name: 'imágenes ' + query, html });
+  return `Galería con ${data.images.length} imágenes de «${query}» abierta en el visualizador.`;
 }
 
 export async function runTool(name, args) {
