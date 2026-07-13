@@ -9,6 +9,16 @@
 // sustituyen por una marca de omisión para que el modelo sepa que falta algo.
 
 const RECENT = 6;
+const MAX_MSG_CHARS = 12000; // ningún mensaje (p.ej. un README enorme) revienta el contexto
+
+// Trunca por el MEDIO conservando cabeza y cola (útil para código/documentos).
+function clampMsg(m) {
+  const c = m.content || '';
+  if (c.length <= MAX_MSG_CHARS) return m;
+  const head = Math.floor(MAX_MSG_CHARS * 0.7);
+  const tail = MAX_MSG_CHARS - head - 40;
+  return { ...m, content: c.slice(0, head) + `\n… [recortado ${c.length - MAX_MSG_CHARS} caracteres] …\n` + c.slice(-tail) };
+}
 const STOP = new Set(('de la que el en y a los del se las por un para con no una su al lo como más pero sus le ' +
   'ya o este sí porque esta entre cuando muy sin sobre también me hasta hay donde quien desde todo nos durante ' +
   'todos uno les ni contra otros ese eso ante ellos e esto mí antes algunos qué unos yo otro otras otra él tanto ' +
@@ -47,7 +57,9 @@ const shrink = m => m.content.startsWith('[resultado') && m.content.length > 600
 
 export function packHistory(history, budgetTokens = 2200) {
   if (!history.length) return history;
-  const recent = history.slice(-RECENT);
+  // los recientes también se recortan por mensaje: un solo tool-result gigante
+  // (README de un repo grande) reventaba el contexto → «Too many tokens».
+  const recent = history.slice(-RECENT).map(clampMsg);
   let used = recent.reduce((s, m) => s + tokEstimate(m), 0);
   const old = history.slice(0, -RECENT).map(shrink);
   if (!old.length || used >= budgetTokens) return recent;
