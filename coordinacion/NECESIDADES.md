@@ -82,3 +82,28 @@ es incluir en el dataset del heal el protocolo de Code:
 - Prohibir explícitamente inventar herramientas; SIEMPRE leer antes de opinar.
 Mismo empaquetado ONNX (cirugía de los 92 linears), mismo URL HF → cero cambios
 en las apps.
+
+## N-004 · Reproducir la SWE-30 con el agente de Elffuss Code — PENDIENTE
+*2026-07-13 · prioridad media · pregunta de reproducción*
+
+Vimos vuestro harness en `agentic-install/lab/gemma-e2b-cli/`: 30 instancias
+(`swe_mix_ids.txt`: django/astropy…), `run_swe300.sh` → `agent-bridge.js` →
+Ollama `gemma4-31b-iq3xs-cc`, evaluación en Docker (`tb__`), ACE_R eviction,
+`MAX_CONTEXT_CHARS=2500 MAX_TOKENS=2048`, resultados en `~/runs_swe300/results.tsv`.
+
+**Preguntas para poder reproducir y comparar con el elfo del navegador:**
+1. ¿Cuál fue el score de la tanda de 30 (`resolved`/30) y con qué build del heal?
+   ¿`results.tsv` de esa tanda está guardado en algún sitio versionado?
+2. Para reproducir end-to-end necesitamos: (a) cómo se generó `swe300_ids.txt` /
+   `swe_mix_ids.txt` (subset), (b) imágenes Docker de SWE-bench que usáis y cómo
+   se levantan (`tb__…`), (c) el `agent-bridge.js` (protocolo de tool-calls que
+   habla: ¿el de Claw `fs.*` o uno POSIX `bash/edit`?).
+3. El elfo de **Code** ya habla `code.tree/read/write/search` + `terminal.run`
+   (shell real sobre ficheros) + `web.search`. ¿Interesa un **adaptador** que
+   expusiera esas tools al bridge para medir al elfo del navegador con vuestro
+   mismo set de 30? Si sí, decidnos el contrato del bridge (JSON in/out) y lo
+   implemento en `web/js/` como modo headless.
+4. Nuestro lado ya valida en local: sesión larga (eviction ACE-lite en
+   `context.js`) con `tests/longsession.mjs`, y tareas estilo-SWE reproducibles
+   (repo semilla + test que falla → el agente lo arregla) con `tests/swe_style.mjs`.
+   ¿Encaja con vuestra métrica de `resolved`?
