@@ -74,6 +74,11 @@ export async function chat(history, system, onToken = () => {}) {
     sys = sysKey;
     conversation = await engine.createConversation({
       preface: { messages: [{ role: 'system', content: system }] },
+      // Exprimir el navegador: no persistir los tokens de canal (tool-call/thinking)
+      // del modelo en el KV-cache → libera KV → más contexto útil. Y prefill del
+      // system prompt al crear la conversación → primera respuesta más rápida.
+      filterChannelContentFromKvCache: true,
+      prefillPrefaceOnInit: true,
     });
     sentCount = 0;
   }

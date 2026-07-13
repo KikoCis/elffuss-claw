@@ -6,6 +6,7 @@ import * as db from './db.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
 import { applyI18n } from './i18n.js';
+import { ensureModelCache } from './model-cache.js';
 import { tasks, watch } from './tools/index.js';
 
 applyI18n(); // traduce el chrome al idioma del navegador antes de nada
@@ -249,6 +250,9 @@ restoreHistory().then(restoreQueue);
 // débil), vía LiteRT-LM; si no cabe, cae a LFM2.5. Respeta lo último elegido.
 (async () => {
   try {
+    // Caché de modelos (persistente + service worker) ANTES de descargar nada,
+    // para que hasta la primera descarga de pesos quede cacheada y no se repita.
+    await ensureModelCache();
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     const available = new Set(modelOptions().map(o => o.id));
