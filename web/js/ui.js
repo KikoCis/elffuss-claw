@@ -3,6 +3,7 @@ import * as db from './db.js';
 import * as perms from './permissions.js';
 import * as settings from './settings.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
+import { renderMarkdown } from './md.js';
 
 let onSettingsChangedCb = () => {};
 
@@ -12,7 +13,13 @@ const $ = id => document.getElementById(id);
 export function addMsg(cls, text) {
   const div = document.createElement('div');
   div.className = 'msg ' + cls;
-  div.textContent = text;
+  // las respuestas de Elffuss se renderizan como markdown; lo del usuario, plano
+  if (cls === 'assistant') {
+    div.classList.add('md');
+    div.innerHTML = renderMarkdown(text);
+  } else {
+    div.textContent = text;
+  }
   $('log').appendChild(div);
   $('log').scrollTop = $('log').scrollHeight;
   return div;

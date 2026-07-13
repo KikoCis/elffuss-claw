@@ -331,3 +331,26 @@ dialog p { margin: 6px 0; font-size: .9rem; }
   #splash .s-inner { padding: 18px; }
 }
 
+
+/* ---------- markdown en el chat (estilo plugin de Claude Code) ---------- */
+.msg.md { white-space: normal; }
+.msg.md code {
+  background: #0d1117; border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 6px; font-family: ui-monospace, monospace; font-size: .8em; color: #ffb3c9;
+}
+.msg.md pre.codeblock {
+  position: relative; background: #0d1117; border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0; overflow-x: auto;
+}
+.msg.md pre.codeblock code {
+  background: none; border: none; padding: 0; color: #c9d1d9;
+  font-size: .78rem; line-height: 1.5; white-space: pre;
+}
+.msg.md pre.codeblock .lang {
+  position: absolute; top: 4px; right: 8px; font-size: .64rem;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
+}
+.msg.md h4 { margin: 10px 0 4px; font-size: .95rem; }
+.msg.md ul { margin: 4px 0; padding-left: 18px; }
+.msg.md li { margin: 2px 0; }
+.msg.md b { color: #fff; }
