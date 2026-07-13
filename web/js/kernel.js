@@ -31,7 +31,7 @@ async function resolveProvider(id) {
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (navigator.gpu) local.push({ id: 'litert', label: 'Local · LiteRT-LM (Gemma-4 E4B) ★' });
+  if (navigator.gpu) local.push({ id: 'litert', label: 'Local · Elffuss Gemma-4 E4B (healed) ★' });
   if (navigator.gpu) local.push({ id: 'onnx', label: 'Local · ONNX/WebGPU (Qwen 0.5B, ligero)' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
