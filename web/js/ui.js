@@ -454,11 +454,32 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
     if (isMobile()) flipTo('chat');
   };
 
+  // Historial del prompt: ↑/↓ recuperan lo enviado (como una shell). Persistente.
+  const HKEY = 'elffuss.promptHistory';
+  let hist = []; try { hist = JSON.parse(localStorage.getItem(HKEY) || '[]'); } catch { /* corrupto */ }
+  let hIdx = -1, draft = '';
+  $('prompt').addEventListener('keydown', e => {
+    if (!$('cmd-menu').hidden) return;             // el menú «/» ya usa ↑/↓
+    const inp = e.target;
+    if (e.key === 'ArrowUp') {
+      if (!hist.length) return;
+      if (hIdx === -1) { draft = inp.value; hIdx = hist.length; }
+      hIdx = Math.max(0, hIdx - 1); inp.value = hist[hIdx]; e.preventDefault();
+      requestAnimationFrame(() => inp.setSelectionRange(inp.value.length, inp.value.length));
+    } else if (e.key === 'ArrowDown') {
+      if (hIdx === -1) return;
+      hIdx++; inp.value = hIdx >= hist.length ? (hIdx = -1, draft) : hist[hIdx]; e.preventDefault();
+    }
+  });
   $('composer').addEventListener('submit', e => {
     e.preventDefault();
     const text = $('prompt').value.trim();
     if (!text) return;
     $('prompt').value = '';
+    if (hist[hist.length - 1] !== text) hist.push(text);
+    if (hist.length > 100) hist = hist.slice(-100);
+    try { localStorage.setItem(HKEY, JSON.stringify(hist)); } catch { /* lleno */ }
+    hIdx = -1; draft = '';
     onSend(text);
   });
   document.querySelectorAll('#chips .chip').forEach(c =>
