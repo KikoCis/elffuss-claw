@@ -5,6 +5,7 @@ import * as settings from './settings.js';
 import * as skills from './skills.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
 import { renderMarkdown } from './md.js';
+import { UI } from './icons.js';
 
 let onSettingsChangedCb = () => {};
 
@@ -138,6 +139,18 @@ export function selectTab(name) {
   if (name === 'vault') refreshVault();
   if (name === 'permisos') refreshPerms();
   if (name === 'ajustes') refreshSettings();
+  if (name === 'skills') refreshSkillsPanel();
+}
+
+// Skills en su propia pestaña (visible y descubrible)
+export function refreshSkillsPanel() {
+  const panel = $('panel-skills');
+  panel.replaceChildren(el('h3', null, 'Skills de Claude Code'));
+  panel.appendChild(el('p', 'muted',
+    'Instala instrucciones especializadas (SKILL.md) y plugins desde repos públicos: ' +
+    'anthropics/skills (oficial), claude-plugins-official, o cualquier repo (comunidad tipo OpenClaude). ' +
+    'Se ve el repo y lo que se inyecta; todo se guarda en tu navegador.'));
+  renderSkills(panel);
 }
 
 function card(...children) {
@@ -369,12 +382,7 @@ export function refreshSettings() {
     panel.appendChild(wrap);
   }
 
-  // --- Skills de Claude Code ---
-  panel.appendChild(el('h3', null, '🧩 Skills de Claude Code'));
-  panel.appendChild(el('p', 'muted',
-    'Instala instrucciones especializadas (SKILL.md) desde repos públicos. Se ve el repo y ' +
-    'lo que se inyecta; todo se guarda en tu navegador.'));
-  renderSkills(panel);
+  panel.appendChild(el('p', 'muted', 'Las skills y plugins están en su propia pestaña «Skills».'));
 }
 
 async function renderSkills(panel) {
@@ -451,4 +459,38 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
   $('model-select').addEventListener('change', e => onModelChange(e.target.value));
   $('btn-flip').addEventListener('click', () =>
     flipTo(document.body.classList.contains('show-viz') ? 'chat' : 'viz'));
+
+  // iconos vectoriales (sin emojis)
+  $('model-ico').innerHTML = UI.code;
+  $('btn-clear').innerHTML = UI.clear;
+  $('send').innerHTML = UI.send;
+  $('btn-slash').innerHTML = UI.slash;
+
+  // menú de comandos (/) en el chat, estilo plugin de Claude Code
+  const cmds = [
+    { label: '/reloj', hint: 'crear un reloj', run: () => onSend('hazme un reloj') },
+    { label: '/carpeta', hint: 'autorizar una carpeta', run: () => onSend('autoriza una carpeta') },
+    { label: '/skills', hint: 'gestionar skills y plugins', run: () => { selectTab('skills'); if (isMobile()) flipTo('viz'); } },
+    { label: '/modelo', hint: 'modelo y API keys', run: () => { selectTab('ajustes'); if (isMobile()) flipTo('viz'); } },
+    { label: '/tareas', hint: 'ver tareas programadas', run: () => { selectTab('tareas'); if (isMobile()) flipTo('viz'); } },
+    { label: '/vault', hint: 'secretos cifrados', run: () => { selectTab('vault'); if (isMobile()) flipTo('viz'); } },
+    { label: '/limpiar', hint: 'nueva conversación', run: () => $('btn-clear').click() },
+  ];
+  const cmdMenu = $('cmd-menu');
+  const openCmd = () => {
+    cmdMenu.replaceChildren();
+    for (const c of cmds) {
+      const row = document.createElement('button');
+      row.className = 'cmd-item';
+      row.innerHTML = `<b>${c.label}</b><span>${c.hint}</span>`;
+      row.onclick = () => { cmdMenu.hidden = true; c.run(); };
+      cmdMenu.appendChild(row);
+    }
+    cmdMenu.hidden = false;
+  };
+  $('btn-slash').addEventListener('click', () => cmdMenu.hidden ? openCmd() : (cmdMenu.hidden = true));
+  $('prompt').addEventListener('input', e => {
+    if (e.target.value === '/') openCmd(); else if (cmdMenu && !cmdMenu.hidden && !e.target.value.startsWith('/')) cmdMenu.hidden = true;
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('#cmd-menu, #btn-slash, #prompt')) cmdMenu.hidden = true; });
 }

@@ -140,7 +140,7 @@ async function restoreHistory() {
       else ui.addMsg('assistant', m.content);
     }
   }
-  ui.toast('Conversación restaurada 🌿 (🧹 para empezar de cero)');
+  ui.toast('Conversación restaurada (para empezar de cero)');
 }
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
@@ -174,19 +174,28 @@ async function changeModel(id) {
     ui.setModel(id);
     const where = isLocal(id) ? (navigator.gpu ? 'WebGPU local' : 'CPU/wasm local') : 'externo';
     ui.modelStatus(isLocal(id) && navigator.gpu ? 'gpu' : 'on');
-    ui.toast(`${mod.name} listo · ${where} · готово ✳`);
+    ui.toast(`${mod.name} listo · ${where}`);
     return true;
   } catch (e) {
     ui.modelProgress(null);
+    console.error('[elffuss] fallo cargando modelo', e);
+    // Gemma E4B aún no carga en navegador (export prefill_decode) → LFM2.5 sola.
+    if (id === 'litert' && localProviders.onnx && !_fellBack) {
+      _fellBack = true;
+      ui.toast('Gemma aún no carga en el navegador — uso LFM2.5 (ligero).');
+      const ok = await changeModel('onnx');
+      _fellBack = false;
+      if (ok) return true;
+    }
     ui.modelStatus('off');
     agent.setProvider(rules);
     activeModel = 'rules';
     ui.setModel('rules');
-    console.error('[elffuss] fallo cargando modelo', e);
     ui.toast('⚠️ No se pudo cargar ' + id + ': ' + (e?.message || String(e)));
     return false;
   }
 }
+let _fellBack = false;
 
 // Rehacer el selector (locales + externos activados) tras tocar la config.
 function refreshModelOptions() {
@@ -256,8 +265,8 @@ setInterval(async () => {
     ui.addMsg('assistant',
       '⚠️ Ojo: tu ordenador está muy a full de memoria — puedes experimentar caídas ' +
       'o rendimiento lento si sigues usándolo. Por el momento me he parado y he ' +
-      'liberado el modelo. Si quieres, me arrancas de nuevo desde el selector 🧠 ' +
-      'de arriba. добре 💛');
+      'liberado el modelo. Si quieres, me arrancas de nuevo desde el selector ' +
+      'de arriba. ');
     ui.toast('⚠️ RAM muy llena: modelo local liberado automáticamente');
   } else if (ratio > 0.82 && !ramWarned) {
     ramWarned = true;
@@ -267,8 +276,8 @@ setInterval(async () => {
 
 // Las tareas vencidas se auto-envían como prompts al agente.
 tasks.startScheduler(t => {
-  ui.toast('⏰ Tarea programada: ' + t.prompt);
-  send('⏰ [tarea programada] ' + t.prompt);
+  ui.toast('Tarea programada: ' + t.prompt);
+  send('[tarea programada] ' + t.prompt);
 });
 
 // Automatizaciones de carpetas: dejar un archivo en la de origen → Elffuss lo
