@@ -1,5 +1,6 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
 import { runTool, toolHelp, snapshot } from './tools/index.js';
+import { skillsPromptBlock } from './skills.js';
 
 const MAX_STEPS = 6;
 
@@ -42,7 +43,7 @@ Usuario: recuérdame en 10 minutos beber agua
 Tú:
 \`\`\`tool
 {"tool": "tasks.add", "args": {"inMinutes": 10, "prompt": "beber agua"}}
-\`\`\`${context ? `
+\`\`\`${skillsPromptBlock()}${context ? `
 
 CONTEXTO AHORA (estado real del sistema, úsalo al responder):
 ${context}` : ''}`;
