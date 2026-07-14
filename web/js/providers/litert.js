@@ -40,7 +40,7 @@ export async function load(onProgress = () => {}) {
   // que el service worker no intercepta → antes se re-descargaba SIEMPRE. Bajándolo
   // aquí queda cacheado de verdad y damos progreso real en MB.
   const model = await cachedModelBlob(MODEL_URL, onProgress);
-  onProgress(`Preparando ${curLabel} en la GPU…`);
+  onProgress('Preparando el modelo IA en la GPU…');
   let lastErr = null;
   for (const n of CTX_LADDER) {
     try {
@@ -67,7 +67,7 @@ export async function cachedModelBlob(url, onProgress = () => {}) {
   try {
     const cache = await caches.open(MODEL_CACHE);
     const hit = await cache.match(url);
-    if (hit) { onProgress(`Cargando ${curLabel} desde caché (sin descargar)…`); return await hit.blob(); }
+    if (hit) { onProgress('Cargando el modelo IA desde caché (sin descargar)…'); return await hit.blob(); }
     const net = await fetch(url);
     if (!net.ok || !net.body) return url;
     const total = +net.headers.get('content-length') || 0;
@@ -89,8 +89,8 @@ function fmtBytes(loaded, total, t0) {
   const secs = (performance.now() - t0) / 1000;
   const spd = secs > 0 ? (loaded / 1048576 / secs).toFixed(1) : '0';
   return total
-    ? `Descargando ${curLabel}… ${mb(loaded)}/${mb(total)} MB (${spd} MB/s) · se cachea para la próxima vez`
-    : `Descargando ${curLabel}… ${mb(loaded)} MB (${spd} MB/s)`;
+    ? `Descargando el modelo IA… ${mb(loaded)}/${mb(total)} MB (${spd} MB/s) · se cachea para la próxima vez`
+    : `Descargando el modelo IA… ${mb(loaded)} MB (${spd} MB/s)`;
 }
 
 // Liberar el modelo (vigilante de RAM).

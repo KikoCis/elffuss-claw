@@ -196,7 +196,7 @@ async function changeModel(id) {
     ui.setModel(id);
     const where = isLocal(id) ? (navigator.gpu ? 'WebGPU local' : 'CPU/wasm local') : 'externo';
     ui.modelStatus(isLocal(id) && navigator.gpu ? 'gpu' : 'on');
-    ui.toast(`${mod.name} listo · ${where}`);
+    ui.toast(`Modelo IA listo · ${where}`);
     return true;
   } catch (e) {
     ui.modelProgress(null);
