@@ -33,6 +33,13 @@ conversiones (ai-edge-torch / prefill_decode) no lo producen (ver E-010). Base
 Gemma es además **más capaz** que el healed 1.2B. Corolario: **la agéntica se
 sostiene 100% con el system prompt**, no con pesos → toda mejora va a `agent.js`.
 
+**Medición base Gemma E4B (2026-07-14)**: con el prompt endurecido, el arnés
+`tests/swe_bench.mjs` da **3/3 resolved (100%)** en modo modelo
+(`SOLVER=model M=litert:gemma-e4b`): lee con code.read y arregla con code.write en
+cada tarea (add-sub r2/w1, max-empty r1/w1, unique r1/w1). Frente al healed 1.2B
+(0/3, no tool-callea). VALIDA la decisión: base Gemma + prompt, sin fine-tune.
+
+
 **Consecuencia para estas peticiones:**
 - **N-001 → DESCARTADA** (fine-tune a `.litertlm`: bloqueada por artisan; se usa
   base Gemma).
