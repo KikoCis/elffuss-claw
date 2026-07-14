@@ -24,8 +24,27 @@ Contexto técnico para servir modelos a Elffuss:
 
 ---
 
-## N-001 · Modelo propio E2B → `.litertlm` (ruta principal) — **PENDIENTE**
-*2026-07-12 · prioridad alta*
+## ⚑ DECISIÓN 2026-07-14 · Cerebro = **Gemma base**, SIN fine-tune (Code y Claw web)
+El default pasa a ser **Gemma-4 base** (E4B escritorio / E2B móvil) de los builds
+oficiales `litert-community` (`*-web.litertlm`, formato **artisan** con artefactos
+WebGPU). Motivo: un modelo NUESTRO fine-tuneado NO se puede cargar en el navegador
+con `@litert-lm/core` porque exige el empaquetado **artisan** y nuestras
+conversiones (ai-edge-torch / prefill_decode) no lo producen (ver E-010). Base
+Gemma es además **más capaz** que el healed 1.2B. Corolario: **la agéntica se
+sostiene 100% con el system prompt**, no con pesos → toda mejora va a `agent.js`.
+
+**Consecuencia para estas peticiones:**
+- **N-001 → DESCARTADA** (fine-tune a `.litertlm`: bloqueada por artisan; se usa
+  base Gemma).
+- **N-003 → DESCARTADA para Code** (Code usará base Gemma vía prompt; el healed
+  no se reentrena para `code.*`). El healed ONNX sigue vivo SOLO como cerebro de
+  Claw y como fallback sin-GPU.
+- **N-002** queda como está (el healed ONNX ya entregado sirve a Claw / sin-GPU).
+
+---
+
+## N-001 · Modelo propio E2B → `.litertlm` (ruta principal) — **DESCARTADA (base Gemma)**
+*2026-07-12 · cerrada 2026-07-14 — ver DECISIÓN arriba*
 
 Queremos el primer **modelo propio** de Elffuss en el navegador. Base
 `google/gemma-4-E2B-it` (~2B activos), que es la única base vuestra que ya corre
@@ -65,8 +84,8 @@ sigue teniendo valor para pulir persona/español/uso del CONTEXTO.
 - **Aceptación**: igual que N-001 pero vía transformers.js; además ≥8 de 10
   tool-calls válidos en las frases de prueba de ERRORES.md.
 
-## N-003 · Heal del modelo TAMBIÉN para el protocolo de Elffuss Code — PENDIENTE
-*2026-07-13 · prioridad alta*
+## N-003 · Heal del modelo TAMBIÉN para el protocolo de Elffuss Code — **DESCARTADA para Code (base Gemma)**
+*2026-07-13 · cerrada 2026-07-14 — Code usa base Gemma vía prompt; el healed no se reentrena para code.\**
 
 El healed `KikoCis/Elffuss-LM-1.2B-ONNX` clava las tool-calls en **Claw**
 (fs.list, tasks.add, app.create — VERIFICADO en navegador real: reloj neón OK).

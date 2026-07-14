@@ -1,8 +1,10 @@
-// Gemma-4 E2B vía LiteRT-LM de Google (early preview, solo WebGPU).
+// Gemma-4 vía LiteRT-LM de Google (early preview, solo WebGPU).
 // Patrón copiado de la demo verificada en agentic-install
-// (lab/bitacora/posts/08-jspace-live.html). El plan «modelo propio» es
-// fusionar un LoRA sobre gemma-4-E2B-it y convertirlo a .litertlm
-// (ai-edge-torch); entonces MODEL_URL pasará a /models/elffuss-e2b.litertlm.
+// (lab/bitacora/posts/08-jspace-live.html).
+// DECISIÓN 2026-07-14: cerebro = Gemma BASE (builds oficiales litert-community,
+// formato artisan). NO fine-tune propio: `@litert-lm/core` exige empaquetado
+// artisan y nuestras conversiones no lo producen (E-010). La agéntica va por el
+// system prompt (agent.js), no por pesos.
 export let name = 'Gemma · LiteRT-LM';
 
 // Builds .litertlm elegibles. Los «-web» OFICIALES de Google (litert-community)
