@@ -19,6 +19,12 @@
 <meta name="description" content="Elffuss: un sistema operativo agéntico en tu navegador. Las apps no existen: se crean.">
 <link rel="stylesheet" href="css/elffuss.css">
 <link rel="icon" href="img/elffuss.svg">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
 </head>
 <body>
 
@@ -32,6 +38,7 @@
     </label>
     <span id="model-status" class="dot off" title="estado del modelo"></span>
     <button id="btn-clear" class="ghost icon-btn" title="Nueva conversación"></button>
+    <button id="btn-mind" class="ghost icon-btn" title="Mente de Elffuss — cerebro autónomo">🧠</button>
     <button id="btn-perms" class="ghost">Permisos</button>
   </div>
 </header>
