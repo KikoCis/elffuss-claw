@@ -57,7 +57,7 @@ function mountMusic(root) {
   wrap.className = 'mind-music';
   const url = 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(SOUNDCLOUD) +
     '&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&visual=false&color=%23ff4d8d';
-  wrap.innerHTML = '<iframe id="mind-sc" title="música" width="100%" height="120" frameborder="no" allow="autoplay" src="' + url + '"></iframe>' +
+  wrap.innerHTML = '<iframe id="mind-sc" title="música" width="100%" height="120" frameborder="no" allow="autoplay; encrypted-media" src="' + url + '"></iframe>' +
     '<div class="mind-music-cap">▶ Dekel · Baoba Festival — modo trance</div>';
   root.appendChild(wrap);
   const iframe = wrap.querySelector('#mind-sc');
