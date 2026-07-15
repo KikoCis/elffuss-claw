@@ -16,7 +16,17 @@ export async function load(onProgress = () => {}) {
     tf.env.allowRemoteModels = false;
     tf.env.localModelPath = MODEL.basePath;
   }
-  const device = navigator.gpu ? 'webgpu' : 'wasm';
+  // navigator.gpu puede EXISTIR como API sin que haya un adaptador real
+  // (ciertos Linux/drivers, entornos sandboxed, navegadores headless…) — usar
+  // solo la presencia del objeto como señal hace que pipeline() intente
+  // WebGPU, falle con "Failed to get GPU adapter" DESPUÉS de descargar el
+  // modelo entero, y en preloadModel() eso encadena a probar Gemma (varios
+  // GB) para nada. Comprobar el adaptador de verdad antes de elegir.
+  let device = 'wasm';
+  if (navigator.gpu) {
+    try { device = (await navigator.gpu.requestAdapter()) ? 'webgpu' : 'wasm'; }
+    catch { device = 'wasm'; }
+  }
   generator = await tf.pipeline('text-generation', MODEL.id, {
     device,
     dtype: MODEL.dtype,

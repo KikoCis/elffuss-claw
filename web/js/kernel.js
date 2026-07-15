@@ -47,13 +47,25 @@ async function resolveProvider(id) {
 // si el usuario los elige). Poner true cuando el healed sea artisan.
 const ELFFUSS_LITERT_READY = false;
 
+// navigator.gpu puede EXISTIR como API sin que haya un adaptador real (ciertos
+// Linux/drivers, entornos sandboxed/headless…) — comprobarlo UNA vez al
+// arrancar evita ofrecer/elegir Gemma (2-4 GB) cuando de todos modos va a
+// fallar al crear el motor (onnx.js y litert.js ya comprueban el adaptador
+// por su cuenta como defensa adicional, pero esto evita hasta OFRECERLO).
+let realGPU = !!navigator.gpu;
+const realGPUCheck = (async () => {
+  if (!navigator.gpu) return (realGPU = false);
+  try { return (realGPU = !!(await navigator.gpu.requestAdapter())); }
+  catch { return (realGPU = false); }
+})();
+
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (navigator.gpu) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~4 GB) ★ — por defecto' });
-  if (navigator.gpu) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
+  if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~4 GB) ★ — por defecto' });
+  if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
   local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) — ligero' });
-  if (navigator.gpu && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
+  if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
@@ -63,7 +75,7 @@ const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:
 // carga y hace tool-calls). E4B en escritorio, E2B en móvil/GPU débil. Si no
 // cabe, cae al Elffuss LM healed (onnx, 850 MB) — cerebro seguro siempre.
 const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
-const defaultBrain = () => !navigator.gpu ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
+const defaultBrain = () => !realGPU ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
 
 const agent = new Agent(rules);
 let busy = false;
@@ -197,8 +209,8 @@ async function changeModel(id) {
     activeMod = mod;
     localStorage.setItem('elffuss.model', id);
     ui.setModel(id);
-    const where = isLocal(id) ? (navigator.gpu ? 'WebGPU local' : 'CPU/wasm local') : 'externo';
-    ui.modelStatus(isLocal(id) && navigator.gpu ? 'gpu' : 'on');
+    const where = isLocal(id) ? (realGPU ? 'WebGPU local' : 'CPU/wasm local') : 'externo';
+    ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
     ui.toast(`Modelo IA listo · ${where}`);
     return true;
   } catch (e) {
@@ -323,13 +335,14 @@ if (ceo.wasEnabledLastSession()) ceo.enable();
     // Caché de modelos (persistente + service worker) ANTES de descargar nada,
     // para que hasta la primera descarga de pesos quede cacheada y no se repita.
     await ensureModelCache();
+    await realGPUCheck; // que defaultBrain()/modelOptions() vean el adaptador real, no solo la API
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     const available = new Set(modelOptions().map(o => o.id));
     // si un Gemma pesado ya falló esta sesión, no reintentar (evita re-crash)
     const skipGemma = sessionStorage.getItem('elffuss.skipGemma') === '1';
     const def = skipGemma ? 'onnx' : defaultBrain();
-    const chain = [...new Set([saved, def, navigator.gpu ? 'onnx' : null]
+    const chain = [...new Set([saved, def, realGPU ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
     const first = chain[0];
