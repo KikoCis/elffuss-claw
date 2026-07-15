@@ -33,6 +33,12 @@ export let ctxTokens = 4096; // efectivo tras load() (la UI puede leerlo)
 
 export async function load(onProgress = () => {}) {
   if (!navigator.gpu) throw new Error('LiteRT-LM necesita WebGPU (Chrome/Edge modernos)');
+  // navigator.gpu puede existir como API sin adaptador real (algunos Linux/
+  // drivers, entornos sandboxed…) — comprobarlo YA evita bajar 2-4 GB para
+  // descubrir el fallo solo al crear el motor, al final de todo.
+  let adapter = null;
+  try { adapter = await navigator.gpu.requestAdapter(); } catch { /* sin adaptador */ }
+  if (!adapter) throw new Error('No hay un adaptador WebGPU real disponible (la API existe pero no hay GPU accesible) — prueba con Elffuss LM, que corre en CPU/wasm.');
   const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm');
   // El .litertlm lo descargamos NOSOTROS (cache-first en Cache Storage) y se lo
   // pasamos a Engine.create como Blob (la API acepta string|Blob|ReadableStream).
