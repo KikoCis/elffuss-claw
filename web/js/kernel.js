@@ -8,6 +8,9 @@ import * as skills from './skills.js';
 import { applyI18n } from './i18n.js';
 import { ensureModelCache } from './model-cache.js';
 import { tasks, watch } from './tools/index.js';
+import * as ceo from './ceo.js';
+import * as mind from './mind.js';
+import { ceoWorkspace, CEO_DEFAULT_PROFILES } from './ceo-adapter.js';
 
 applyI18n(); // traduce el chrome al idioma del navegador antes de nada
 
@@ -245,6 +248,73 @@ skills.initSkills();
 ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
 refreshModelOptions();
 restoreHistory().then(restoreQueue);
+
+// ── Cerebro CEO autónomo + Mente de Elffuss ───────────────────────────────
+// Cuando NO le pides nada, Elffuss trabaja por su cuenta: revisa tus carpetas
+// autorizadas, tareas, apps y memoria, y propone mejoras (sin tocar nada por
+// su cuenta — la propuesta se ejecuta con el mismo camino real que el chat).
+// «Abrir en el editor» de un pensamiento no aplica aquí (no hay editor de
+// código) — en su lugar, pide en el chat el contenido de ese fichero.
+mind.setOpenFile(path => send('Muéstrame el contenido de ' + path));
+mind.setExecuteProposal(md => { mind.closeMind(); send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md); });
+mind.init({}); // sin ciudad de fondo (Claw v1): la Mente funciona igual sin ella
+const WEAK_RE = /^(no (encontr|hay|se me ocurre)|nada que|sin cambios|todo (está|esta) bien|no aplica)/i;
+function isNoteworthy(ev) {
+  const solid = (ev.proposals || []).filter(p => p.text && p.text.trim().length >= 60 && !WEAK_RE.test(p.text.trim()));
+  return solid.length >= 2; // al menos 2 líneas de pensamiento con algo sustancioso
+}
+function executeProposal(md) { send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md); }
+// SOLO notifica si el permiso YA está concedido — nunca lo pide aquí (fuera
+// de un gesto de usuario los navegadores lo bloquean en silencio de todos
+// modos); pedirlo vive únicamente en el clic del botón 🧠.
+function notify(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(title, { body, icon: 'img/elffuss.svg' }); } catch { /* */ }
+}
+function reportImprovements(ev) {
+  const props = ev.proposals || [];
+  if (!props.length) return;
+  const firstLine = t => (t || '').split('\n').find(l => l.trim())?.trim().slice(0, 160) || '';
+  const body = `💡 **Mientras estabas fuera revisé tu espacio y encontré ${props.length} mejora${props.length === 1 ? '' : 's'}:**\n\n` +
+    props.map(p => `**${p.dept}** — ${firstLine(p.text)}`).join('\n\n') +
+    (ev.path ? `\n\n_Guardado en \`${ev.path}\`. Pulsa 🧠 para verlo en la Mente._` : '');
+  const div = ui.addMsg('assistant', body);
+  const md = ev.md || body;
+  if (div) {
+    const btn = document.createElement('button');
+    btn.className = 'proposal-exec-btn';
+    btn.textContent = '▶ Ejecutar esta propuesta';
+    btn.onclick = () => { btn.disabled = true; btn.textContent = '▶ enviado a la cola…'; executeProposal(md); };
+    div.appendChild(btn);
+  }
+  if (isNoteworthy(ev)) notify(`Elffuss encontró ${props.length} mejora${props.length === 1 ? '' : 's'}`, props.map(p => p.dept).join(' · '));
+}
+ceo.init({
+  namespace: 'elffuss',
+  workspace: ceoWorkspace,
+  defaultProfiles: CEO_DEFAULT_PROFILES,
+  defaultMission: 'Revisar tu espacio (carpetas, apps, tareas, memoria) y proponer mejoras concretas y accionables.',
+  provider: () => agent.provider,
+  // el usuario tiene PRIORIDAD: si hay algo en cola o procesándose, el cerebro espera
+  isBusy: () => pumping || queue.length > 0,
+  onEvent: (ch, ev) => {
+    mind.pushThought(ch, ev);
+    if (ch === 'ceo' && ev.type === 'built') reportImprovements(ev);
+  },
+});
+// cualquier interacción FUERA de la Mente cuenta como actividad → pausa el CEO
+const noteAct = e => { if (!e.target.closest?.('#mind-overlay')) ceo.noteActivity(); };
+document.addEventListener('pointerdown', noteAct, true);
+document.addEventListener('keydown', noteAct, true);
+document.getElementById('btn-mind').addEventListener('click', () => {
+  // auto-activa SOLO la primera vez (nunca decidiste play/stop); si lo
+  // pausaste a propósito, abrir la Mente NO debe reactivarlo por sorpresa.
+  if (!ceo.isEnabled() && !ceo.hasDecided()) ceo.enable();
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* */ }
+  mind.openMind();
+});
+// restaura tu última elección (play o stop) tal cual la dejaste
+if (ceo.wasEnabledLastSession()) ceo.enable();
 
 // Autocarga SOLO LOCAL. Por defecto Gemma-4 E4B (escritorio) o E2B (móvil/GPU
 // débil), vía LiteRT-LM; si no cabe, cae a LFM2.5. Respeta lo último elegido.
