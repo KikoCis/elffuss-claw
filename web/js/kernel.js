@@ -11,8 +11,10 @@ import { tasks, watch } from './tools/index.js';
 import * as ceo from './ceo.js';
 import * as mind from './mind.js';
 import { ceoWorkspace, CEO_DEFAULT_PROFILES } from './ceo-adapter.js';
+import * as telemetry from './telemetry.js';
 
 applyI18n(); // traduce el chrome al idioma del navegador antes de nada
+telemetry.init('elffuss-claw'); // opt-in, apagado por defecto — ver Ajustes
 
 // Proveedores LOCALES (corren en TU navegador). Los externos (OpenAI,
 // Anthropic, Ollama, servidor) son configuración avanzada y se resuelven
