@@ -7,6 +7,7 @@ import { fs, apps, vault, tasks } from './tools/index.js';
 import { renderMarkdown } from './md.js';
 import { UI } from './icons.js';
 import { cacheEstimate, clearModelCache } from './model-cache.js';
+import * as telemetry from './telemetry.js';
 
 let onSettingsChangedCb = () => {};
 let onSkillInstalledCb = () => {};
@@ -402,6 +403,33 @@ export function refreshSettings() {
       + (quota ? ` · límite ~${gb(quota)}` : '');
   }
   paintStore();
+
+  // --- 📨 Errores y feedback (opt-in — apagado no sale NADA de tu máquina) ---
+  const telCard = el('div', 'card col');
+  telCard.innerHTML =
+    `<b>📨 Errores y feedback</b>` +
+    `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:6px">` +
+    `<input type="checkbox" id="tel-enabled"> ` +
+    `<span>Enviar automáticamente los errores técnicos que ocurran, para poder arreglarlos</span>` +
+    `</label>` +
+    `<span class="muted">Apagado por defecto — tu conversación y el contenido de tus apps/archivos NUNCA se incluyen, solo el mensaje de error técnico, la pila y datos del navegador.</span>` +
+    `<label class="muted" style="font-size:.8em;margin-top:4px">O manda algo tú directamente (un fallo que viste, algo que eches en falta…)</label>` +
+    `<textarea id="tel-feedback" rows="2" style="width:100%;resize:vertical" placeholder="Cuéntanos qué ha pasado o qué te gustaría que hiciera…"></textarea>`;
+  const telSendBtn = btn('Enviar', 'primary', async () => {
+    const ta = telCard.querySelector('#tel-feedback');
+    const text = ta.value.trim();
+    if (!text) { toast('escribe algo primero'); return; }
+    const wasEnabled = telemetry.isEnabled();
+    if (!wasEnabled) telemetry.setEnabled(true); // envío manual es explícito, se permite aunque el automático esté apagado
+    await telemetry.sendFeedback(text);
+    if (!wasEnabled) telemetry.setEnabled(false); // no activa el automático de fondo si no lo pidió
+    ta.value = '';
+    toast('¡enviado, gracias!');
+  });
+  telCard.appendChild(telSendBtn);
+  panel.appendChild(telCard);
+  telCard.querySelector('#tel-enabled').checked = telemetry.isEnabled();
+  telCard.querySelector('#tel-enabled').onchange = e => telemetry.setEnabled(e.target.checked);
 
   panel.appendChild(el('p', 'muted', 'Las skills y plugins están en su propia pestaña «Skills».'));
 }

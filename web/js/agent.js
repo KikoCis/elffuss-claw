@@ -1,6 +1,7 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
 import { runTool, toolHelp, snapshot } from './tools/index.js';
 import { skillsPromptBlock } from './skills.js';
+import * as telemetry from './telemetry.js';
 
 const MAX_STEPS = 6;
 
@@ -154,7 +155,11 @@ export class Agent {
         const context = await snapshot().catch(() => '');
         out = await this.provider.chat(this.history, systemPrompt(context),
           t => onEvent({ type: 'token', text: t }));
-      } catch (e) { onEvent({ type: 'error', text: 'El modelo falló: ' + e.message }); return; }
+      } catch (e) {
+        telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });
+        onEvent({ type: 'error', text: 'El modelo falló: ' + e.message });
+        return;
+      }
 
       const call = parseToolCall(out);
       if (!call) {
