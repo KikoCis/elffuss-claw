@@ -95,7 +95,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """Recibe {app, kind, message, stack, url, userAgent, extra} y lo
         anexa a REPORTS_PATH. Solo texto/metadatos — nunca código ni
         contenido del proyecto del usuario (eso jamás sale de su navegador)."""
-        ip = self.client_address[0]
+        # nginx (proxy_pass sin X-Forwarded-For) hace que client_address SIEMPRE
+        # sea 127.0.0.1 — con la cabecera, el rate-limit es por IP real de verdad.
+        ip = (self.headers.get('X-Forwarded-For') or '').split(',')[0].strip() or self.client_address[0]
         now = time.time()
         hits = [t for t in REPORT_RATE.get(ip, []) if now - t < RATE_WINDOW_S]
         if len(hits) >= RATE_MAX:
