@@ -1,93 +1,92 @@
-# ✳ Elffuss — el sistema operativo que vive en tu navegador
+# ✳️ Elffuss Claw — an agentic OS that lives in your browser
 
-**Las apps no existen: se crean.** Elffuss es un SO web agéntico: el chat es la única
-interfaz, y cuando necesitas una app, Elffuss la genera como HTML y aparece al instante
-en el visualizador. Sin instalar nada, sin backend obligatorio, con el modelo corriendo
-**dentro del navegador** (ONNX Runtime Web / LiteRT.js de Google, sobre WebGPU).
+**Apps don't exist here: they get created.** Elffuss Claw is a chat-first agentic
+"operating system" — the chat *is* the interface, and when you need an app you just ask
+for it. The agent generates it as self-contained HTML and it appears instantly in the
+viewer. Nothing to install, no mandatory backend, and the model runs **inside your
+browser** (WebGPU) — everything stays on your machine.
 
-> Proyecto hermano de **osin/Vilma** (SO agéntico físico). Elffuss es la misma idea
-> llevada al navegador: BOOM 💥.
+**[▶️ Live demo](https://elffuss-claw.utopiaia.com)** ·
+**[🧑‍💻 Elffuss Code (sibling project)](https://github.com/KikoCis/elffuss-code)** ·
+**[🧬 Shared core](https://github.com/KikoCis/elffuss)** ·
+**License: Apache-2.0**
 
-## Qué hace hoy
+<p align="center">
+  <a href="https://elffuss-claw.utopiaia.com">
+    <img src="https://utopiaia.com/demos/elffuss/elffuss-claw-demo.gif" alt="Elffuss Claw — ask for a notes app and it's generated and rendered on the spot" width="820">
+  </a>
+</p>
 
-| Pilar | Cómo |
+> In the demo above I ask for a notes app — the model (running **100% in the browser**)
+> generates it as HTML and it renders live in the viewer on the right. No install, no
+> server.
+
+---
+
+## Why it's different
+
+- **The chat is the whole interface.** No menus, no dashboards — you talk, things happen.
+- **Apps are generated on demand**, as self-contained HTML in a sandboxed iframe, and
+  saved locally so you can reopen them.
+- **The model runs on *your* machine** via WebGPU — it never reaches for an external API
+  on its own.
+- **It has memory, tasks and secrets** — persistent memory, scheduled reminders, and an
+  encrypted vault, all in your browser.
+- **Zero install, zero build.** Vanilla ES modules. Open the URL and you're in.
+
+## What it does today
+
+| Pillar | How |
 |---|---|
-| **Apps que se crean** | El agente genera HTML autocontenido → iframe sandbox en el visualizador. Se guardan en IndexedDB y se reabren desde la pestaña *Apps*. |
-| **Local por defecto** | Cerebros que corren en TU navegador: **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B `q4`), **LiteRT-LM** (Gemma-4 E2B) y **Básico** (reglas, 0 descarga). Autocarga solo-local (WebGPU → básico); **nunca** tira de un modelo externo por su cuenta. |
-| **Modelos externos (avanzado)** | Pestaña ⚙️: conecta **OpenAI**, **Anthropic (Claude)**, **Ollama local** o el **servidor Ornith 9B** — opt-in. Las claves se guardan solo en tu navegador y las llamadas van directas al proveedor. |
-| **Cola de mensajes** | Puedes encolar varios mensajes; se procesan en orden y **persisten en IndexedDB**: un refresco a media respuesta no pierde ninguno (se recuperan y siguen). |
-| **Memoria + histórico** | El histórico de conversación persiste en IndexedDB (refrescar no borra nada; 🧹 = nueva conversación) y `memory.*` guarda hechos para siempre en el navegador — entran en el CONTEXTO de cada turno. |
-| **Contexto ACE-lite** | Eviction de historial por relevancia (BM25-lite + IDF, portado del attention-context-eviction de agentic-install) con presupuesto de tokens + CONTEXTO AHORA (estado real del sistema) + idioma del navegador. |
-| **Permisos** | Cada ámbito (archivos, apps, vault, tareas, internet) pide permiso la primera vez; revocables en la pestaña *Permisos*. |
-| **Tus carpetas** | File System Access API (Chrome/Edge): autorizas una carpeta y Elffuss lista/lee/escribe dentro (los **.xlsx los lee de verdad**, vía SheetJS). Doble permiso: el de Elffuss + el nativo del navegador. |
-| **Datos → gráficos** | «visualiza ventas.xlsx» → lee el Excel/CSV y genera una app de gráfico de barras en el visualizador (funciona hasta en modo básico). |
-| **Automatización de carpetas** | «vigila la carpeta entrada y deja lo procesado en salida» → dejas un fichero en una carpeta y Elffuss lo coge, lo procesa (Excel→CSV; resto, copia) y te lo deja en la otra, avisando por chat. También `fs.copy` one-shot con patrón. |
-| **Vault** | Secretos cifrados con AES-256-GCM, clave derivada por PBKDF2 (310k iter.) de tu contraseña maestra. Autobloqueo a los 5 min. Nada sale de tu máquina. |
-| **Tareas programadas** | «Recuérdame dentro de 20 minutos…» → el prompt se auto-dispara en el futuro (mientras la pestaña esté abierta). |
-| **Internet** | `web.fetch` con fetch directo (CORS) y fallback a proxy `/proxy?url=` del servidor. |
+| **Apps that get created** | The agent generates self-contained HTML → sandboxed iframe in the viewer. Saved to IndexedDB and reopened from the *Apps* tab. |
+| **Local by default** | Brains that run in YOUR browser: **LiteRT-LM** (Gemma-4 E2B) and **ONNX/WebGPU** (transformers.js + Qwen2.5-0.5B `q4`), plus a **Basic** rule-based mode (zero download). It **never** pulls an external model on its own. |
+| **External models (advanced)** | ⚙️ tab: connect **OpenAI**, **Anthropic (Claude)**, **local Ollama** — opt-in. Keys stay in your browser; calls go straight to the provider. |
+| **Message queue** | Queue several messages; they're processed in order and **persist in IndexedDB** — a refresh mid-answer loses none of them. |
+| **Memory + history** | Conversation history persists in IndexedDB (a refresh erases nothing; 🧹 = new conversation), and `memory.*` stores facts permanently — they enter the CONTEXT of every turn. |
+| **ACE-lite context** | Relevance-based history eviction (BM25-lite + IDF) with a token budget + a live "CONTEXT NOW" system snapshot + the browser's language. |
+| **Permissions** | Every scope (files, apps, vault, tasks, internet) asks the first time; revocable in the *Permissions* tab. |
+| **Your folders** | File System Access API (Chrome/Edge): authorize a folder and Elffuss lists/reads/writes inside it (**.xlsx read for real**, via SheetJS). |
+| **Data → charts** | "visualize sales.xlsx" → reads the Excel/CSV and generates a bar-chart app in the viewer (works even in Basic mode). |
+| **Folder automation** | "watch the *inbox* folder and drop processed files in *outbox*" → you drop a file, Elffuss picks it up, processes it (Excel→CSV; else copy) and leaves it in the other folder, pinging you in chat. |
+| **Vault** | Secrets encrypted with AES-256-GCM, key derived via PBKDF2 (310k iters) from your master password. Auto-locks after 5 min. Nothing leaves your machine. |
+| **Scheduled tasks** | "Remind me in 20 minutes…" → the prompt auto-fires in the future (while the tab is open). |
+| **Internet** | `web.fetch` with a direct fetch (CORS) and a `/proxy?url=` server fallback. |
 
-## Correr en local
+## Run locally
 
 ```bash
 python3 server/serve.py        # → http://localhost:8642
 ```
 
-Chrome/Edge recomendado (WebGPU + File System Access). El modo **Básico** funciona
-sin descargar nada; los modelos se bajan del CDN/HF la primera vez y quedan cacheados.
+Chrome/Edge recommended (WebGPU + File System Access). **Basic** mode works with no
+download; models are fetched from the CDN/HF the first time and cached afterwards.
 
-Pruébalo: *«hazme un reloj»*, *«autoriza una carpeta»*, *«recuérdame dentro de 1
-minuto que estire»*, *«guarda el secreto gmail: hunter2»*, *«abre https://example.com»*.
+Try: *"make me a clock"*, *"authorize a folder"*, *"remind me in 1 minute to stretch"*,
+*"save the secret gmail: hunter2"*, *"open https://example.com"*.
 
-## Arquitectura
+## Architecture
 
 ```
 web/
-  index.html            shell del SO: chat (izq) + visualizador (der)
-  js/kernel.js          arranque, conmutación de modelo, planificador
-  js/agent.js           bucle agéntico: modelo → tool call JSON → resultado → modelo
-  js/permissions.js     permisos por ámbito (modal + localStorage)
-  js/tools/             fs, apps, vault, tasks, web  ← lo único que toca el mundo
-  js/providers/         rules (sin modelo) · onnx (transformers.js) · litert (LiteRT-LM)
-  js/model-config.js    QUÉ modelo carga el proveedor ONNX (aquí se enchufa el propio)
-server/serve.py         estático + proxy CORS (desarrollo)
+  index.html            OS shell: chat (left) + viewer (right)
+  js/kernel.js          boot, model switching, scheduler
+  js/agent.js           agentic loop: model → tool-call JSON → result → model
+  js/permissions.js     per-scope permissions (modal + localStorage)
+  js/tools/             fs · apps · vault · tasks · web  ← the only things touching the world
+  js/providers/         rules (no model) · onnx (transformers.js) · litert (LiteRT-LM)
+server/serve.py         static server + CORS proxy (dev)
 ```
 
-Sin build, sin framework: ES modules vanilla. El agente habla con las herramientas
-mediante bloques ` ```tool {"tool":…,"args":…} ``` ` — el mismo protocolo para los
-tres proveedores.
+No framework, no build step. The agent talks to the tools with
+` ```tool {"tool":…,"args":…} ``` ` blocks — the same protocol across all providers.
 
-## Modelo propio
+## Known limits / roadmap
 
-La infraestructura de navegador ya está verificada (viene de la demo J-space de
-agentic-install, `lab/bitacora/posts/08-jspace-live.html`). Para servir un fine-tune
-propio hay dos rutas:
+- Tasks only fire while the tab is open (future: Service Worker + Periodic Background Sync).
+- Reading the user's email needs OAuth (Gmail API) or an IMAP proxy — the browser can't
+  speak IMAP. First iteration: `web.fetch` + proxy.
+- Basic mode is deterministic (regex); true free-form language kicks in once a model loads.
 
-1. **ONNX (transformers.js)** — exportar con `optimum` a ONNX + cuantizar a q4,
-   copiar a `web/models/<id>/` y poner `selfHosted: true` en `js/model-config.js`.
-   Requiere un modelo ≤1B para que sea usable (hoy no hay ninguno propio: el más
-   pequeño entrenado es Gemma-4 E2B, ~2B activos).
-2. **LiteRT-LM (Google)** — fusionar un LoRA sobre `google/gemma-4-E2B-it`
-   (la base ya usada en agentic-install), convertir a `.litertlm` con
-   `ai-edge-torch`, subir a `web/models/` y cambiar `MODEL_URL` en
-   `js/providers/litert.js`. Es la ruta recomendada: E2B ya corre verificado
-   en navegador vía `@litert-lm/core`.
+## License
 
-Gotchas verificados (¡no re-descubrir!):
-- transformers.js + WebGPU: **dtype `q4`**, nunca `q4f16` (genera basura aunque la
-  GPU tenga `shader-f16`).
-- LiteRT-LM es **solo WebGPU** y el `.litertlm` debe traer artefactos WebGPU.
-
-## Deploy — elffuss.utopiaia.com
-
-Contenido 100% estático (web/) + proxy. Mismo esquema que vilma.utopiaia.com:
-rsync al servidor + nginx + certbot. Ver `deploy.sh`.
-
-## Límites conocidos / roadmap
-
-- Las tareas solo disparan con la pestaña abierta (futuro: Service Worker +
-  Periodic Background Sync).
-- El correo del usuario necesita OAuth (Gmail API) o un proxy IMAP — el navegador
-  no habla IMAP. Primera iteración: `web.fetch` + proxy.
-- El modo Básico es determinista (regex); el lenguaje libre de verdad llega al
-  cargar un modelo.
-- Modelo propio: exportar un fine-tune E2B a `.litertlm` (ver arriba).
+[Apache-2.0](LICENSE).
