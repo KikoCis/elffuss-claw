@@ -3,11 +3,12 @@
 // su propio permiso nativo al volver a usarlos en otra sesión.
 import * as db from '../db.js';
 import { require as requirePerm } from '../permissions.js';
+import { t } from '../i18n.js';
 
 const MAX_READ = 200_000; // caracteres
 
 export async function pickFolder() {
-  await requirePerm('fs', 'Elegir una carpeta de tu ordenador para trabajar en ella');
+  await requirePerm('fs', t('pdPickFolder'));
   if (!window.showDirectoryPicker)
     throw new Error('Este navegador no soporta File System Access (usa Chrome o Edge)');
   const handle = await window.showDirectoryPicker();

@@ -1,6 +1,7 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
 import { runTool, toolHelp, snapshot } from './tools/index.js';
 import { skillsPromptBlock } from './skills.js';
+import { t } from './i18n.js';
 import * as telemetry from './telemetry.js';
 
 const MAX_STEPS = 6;
@@ -134,7 +135,7 @@ export function parseToolCall(text) {
 // Cierre amable cuando el bucle se corta: usa el último resultado útil.
 function closingLine(done, lastResult) {
   if (lastResult && !lastResult.startsWith('ERROR')) return lastResult;
-  return 'Hecho. ¿Algo más?';
+  return t('anythingElse');
 }
 
 export class Agent {
@@ -191,7 +192,7 @@ export class Agent {
 
       // Tras crear/abrir una app, la tarea suele estar hecha: cierra ya.
       if ((call.tool === 'app.create' || call.tool === 'app.open') && !resultStr.startsWith('ERROR')) {
-        onEvent({ type: 'text', text: '¡Listo! ' + resultStr + ' ¿Quieres que le cambie algo?' });
+        onEvent({ type: 'text', text: t('done', { result: resultStr }) });
         return;
       }
     }

@@ -5,7 +5,7 @@ import * as rules from './providers/rules.js';
 import * as db from './db.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
-import { applyI18n } from './i18n.js';
+import { applyI18n, t } from './i18n.js';
 import { ensureModelCache } from './model-cache.js';
 import { tasks, watch } from './tools/index.js';
 import * as ceo from './ceo.js';
@@ -211,9 +211,9 @@ async function changeModel(id) {
     activeMod = mod;
     localStorage.setItem('elffuss.model', id);
     ui.setModel(id);
-    const where = isLocal(id) ? (realGPU ? 'WebGPU local' : 'CPU/wasm local') : 'externo';
+    const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
     ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
-    ui.toast(`Modelo IA listo · ${where}`);
+    ui.toast(t('modelReady', { where }));
     return true;
   } catch (e) {
     ui.modelProgress(null);

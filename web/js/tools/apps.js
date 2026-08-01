@@ -1,6 +1,7 @@
 // Las apps no se instalan: se generan como HTML y viven en el visualizador.
 import * as db from '../db.js';
 import { require as requirePerm } from '../permissions.js';
+import { t } from '../i18n.js';
 
 let renderer = () => {};
 export function setRenderer(fn) { renderer = fn; }
@@ -10,7 +11,7 @@ export function currentApp() { return current; }
 
 export async function create({ name, html } = {}) {
   if (!name || !html) throw new Error('Faltan name o html');
-  await requirePerm('apps', `Crear la app «${name}» y mostrarla en el visualizador`);
+  await requirePerm('apps', t('pdApp', { name }));
   if (name === 'app' || name === 'boceto') { // nombre genérico: no machacar la anterior
     let n = name, i = 1;
     while (await db.get('apps', n)) n = `${name}-${++i}`;
@@ -19,7 +20,7 @@ export async function create({ name, html } = {}) {
   await db.set('apps', name, { name, html, created: Date.now() });
   current = name;
   renderer(name, html);
-  return `App «${name}» creada y abierta en el visualizador.`;
+  return t('appCreated', { name });
 }
 
 export async function open({ name } = {}) {
@@ -27,19 +28,19 @@ export async function open({ name } = {}) {
   if (!app) throw new Error(`No existe la app «${name}»`);
   current = app.name;
   renderer(app.name, app.html);
-  return `App «${name}» abierta.`;
+  return t('appOpened', { name });
 }
 
 export async function listApps() {
   const apps = await db.all('apps');
   return apps.length
-    ? apps.map(a => `• ${a.name} (${new Date(a.created).toLocaleDateString('es-ES')})`).join('\n')
-    : 'Aún no has creado ninguna app.';
+    ? apps.map(a => `• ${a.name} (${new Date(a.created).toLocaleDateString()})`).join('\n')
+    : t('appNone');
 }
 
 export async function removeApp({ name } = {}) {
   await db.del('apps', name);
-  return `App «${name}» eliminada.`;
+  return t('appRemoved', { name });
 }
 
 export async function allApps() { return db.all('apps'); }

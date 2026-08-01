@@ -5,6 +5,7 @@ import * as settings from './settings.js';
 import * as skills from './skills.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
 import { renderMarkdown } from './md.js';
+import { t as tr, uiLang } from './i18n.js'; // alias: dentro de tick(t) el token ya se llama t
 import { UI } from './icons.js';
 import { cacheEstimate, clearModelCache } from './model-cache.js';
 import * as telemetry from './telemetry.js';
@@ -64,7 +65,7 @@ export function thinkingBubble() {
   img.alt = '';
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = 'Elffuss está pensando';
+  label.textContent = tr('thinking');
   const dots = document.createElement('span');
   dots.className = 'dots';
   dots.append(...[0, 1, 2].map(() => document.createElement('i')));
@@ -77,14 +78,14 @@ export function thinkingBubble() {
   return {
     tick(t) {
       buf += t;
-      label.textContent = `Elffuss está escribiendo · ${buf.length}`;
+      label.textContent = tr('writing', { n: buf.length });
       gen.textContent = (buf.length > 240 ? '…' : '') + buf.slice(-240);
       $('log').scrollTop = $('log').scrollHeight;
     },
     tool(name) {
       buf = '';
       gen.textContent = '';
-      label.textContent = `Elffuss está usando ${name}`;
+      label.textContent = tr('using', { name });
     },
     remove() { div.remove(); },
   };
@@ -101,7 +102,7 @@ export function toast(text, ms = 4500) {
 // ---------- modal de permisos ----------
 export function askPermission(scope, meta, detail) {
   return new Promise(resolve => {
-    $('perm-title').textContent = `${meta?.icon || '❓'} Permiso: ${meta?.label || scope}`;
+    $('perm-title').textContent = `${meta?.icon || '❓'} ${tr('permWord')}: ${meta?.label || scope}`;
     $('perm-desc').textContent = meta?.desc || '';
     $('perm-detail').textContent = detail || '';
     const dlg = $('perm-dialog');
@@ -128,7 +129,7 @@ export function renderApp(name, html) {
 // móvil: una sola columna, chat ↔ visualizador conmutables
 function flipTo(side) {
   document.body.classList.toggle('show-viz', side === 'viz');
-  $('btn-flip').textContent = side === 'viz' ? '💬 Chat' : '✳ Vista';
+  $('btn-flip').textContent = side === 'viz' ? tr('flipChat') : tr('flipView');
 }
 
 // ---------- pestañas ----------
@@ -148,11 +149,8 @@ export function selectTab(name) {
 // Skills en su propia pestaña (visible y descubrible)
 export function refreshSkillsPanel() {
   const panel = $('panel-skills');
-  panel.replaceChildren(el('h3', null, 'Skills de Claude Code'));
-  panel.appendChild(el('p', 'muted',
-    'Instala instrucciones especializadas (SKILL.md) y plugins desde repos públicos: ' +
-    'anthropics/skills (oficial), claude-plugins-official, o cualquier repo (comunidad tipo OpenClaude). ' +
-    'Se ve el repo y lo que se inyecta; todo se guarda en tu navegador.'));
+  panel.replaceChildren(el('h3', null, tr('skillsTitle')));
+  panel.appendChild(el('p', 'muted', tr('skillsDesc')));
   renderSkills(panel);
 }
 
@@ -178,16 +176,16 @@ const btn = (label, cls, onClick) => {
 export async function refreshApps() {
   const list = await apps.allApps();
   const panel = $('panel-apps');
-  panel.replaceChildren(el('h3', null, 'Apps creadas'));
+  panel.replaceChildren(el('h3', null, tr('appsTitle')));
   if (!list.length) {
-    panel.appendChild(el('p', 'muted', 'Ninguna aún. Pídele una a Elffuss.'));
+    panel.appendChild(el('p', 'muted', tr('appsEmpty')));
     return;
   }
   for (const app of list) {
     panel.appendChild(card(
       el('b', null, app.name),
-      el('span', 'muted', new Date(app.created).toLocaleString('es-ES')),
-      btn('Abrir', 'primary', () => renderApp(app.name, app.html)),
+      el('span', 'muted', new Date(app.created).toLocaleString(uiLang())),
+      btn(tr('open'), 'primary', () => renderApp(app.name, app.html)),
       btn('🗑', 'ghost', async () => { await apps.removeApp({ name: app.name }); refreshApps(); }),
     ));
   }
@@ -197,16 +195,16 @@ export async function refreshApps() {
 export async function refreshTasks() {
   const list = (await db.all('tasks')).sort((a, b) => a.when - b.when);
   const panel = $('panel-tareas');
-  panel.replaceChildren(el('h3', null, 'Tareas programadas'));
+  panel.replaceChildren(el('h3', null, tr('tasksTitle')));
   if (!list.length) {
-    panel.appendChild(el('p', 'muted', 'Ninguna. Prueba «recuérdame dentro de 5 minutos…».'));
+    panel.appendChild(el('p', 'muted', tr('tasksEmpty')));
     return;
   }
   for (const t of list) {
     panel.appendChild(card(
       el('span', null, t.done ? '✅' : '⏳'),
       el('b', null, t.prompt),
-      el('span', 'muted', new Date(t.when).toLocaleString('es-ES')),
+      el('span', 'muted', new Date(t.when).toLocaleString(uiLang())),
       btn('🗑', 'ghost', async () => { await tasks.removeTask({ id: t.id }); refreshTasks(); }),
     ));
   }
@@ -215,17 +213,15 @@ export async function refreshTasks() {
 // ---------- panel vault ----------
 export async function refreshVault() {
   const panel = $('panel-vault');
-  panel.replaceChildren(el('h3', null, '🔐 Vault'));
+  panel.replaceChildren(el('h3', null, tr('vaultTitle')));
   const setup = await vault.isSetup();
 
   if (!vault.isUnlocked()) {
-    panel.appendChild(el('p', 'muted', setup
-      ? 'Bloqueado. Introduce tu contraseña maestra.'
-      : 'Sin crear. Elige una contraseña maestra (no hay recuperación posible).'));
+    panel.appendChild(el('p', 'muted', setup ? tr('vaultLocked') : tr('vaultUnset')));
     const input = el('input');
     input.type = 'password';
-    input.placeholder = 'Contraseña maestra';
-    const go = btn(setup ? 'Desbloquear' : 'Crear vault', 'primary', async () => {
+    input.placeholder = tr('vaultMasterPh');
+    const go = btn(setup ? tr('vaultUnlock') : tr('vaultCreate'), 'primary', async () => {
       try { toast(await vault.unlock(input.value)); refreshVault(); }
       catch (e) { toast('⚠️ ' + e.message); }
     });
@@ -236,14 +232,14 @@ export async function refreshVault() {
     return;
   }
 
-  panel.appendChild(btn('🔒 Bloquear ahora', 'ghost', () => { vault.lock(); refreshVault(); }));
+  panel.appendChild(btn(tr('vaultLockNow'), 'ghost', () => { vault.lock(); refreshVault(); }));
 
   const name = el('input');
-  name.placeholder = 'nombre (p. ej. gmail)';
+  name.placeholder = tr('vaultNamePh');
   const secret = el('input');
   secret.type = 'password';
-  secret.placeholder = 'secreto';
-  const add = btn('Guardar', 'primary', async () => {
+  secret.placeholder = tr('vaultSecretPh');
+  const add = btn(tr('save'), 'primary', async () => {
     try {
       toast(await vault.setSecret({ name: name.value.trim(), secret: secret.value }));
       name.value = secret.value = '';
@@ -273,25 +269,25 @@ export async function refreshVault() {
 // ---------- panel permisos ----------
 export async function refreshPerms() {
   const panel = $('panel-permisos');
-  panel.replaceChildren(el('h3', null, 'Permisos concedidos'));
+  panel.replaceChildren(el('h3', null, tr('permsTitle')));
   const g = perms.grants();
   if (!g.length)
-    panel.appendChild(el('p', 'muted', 'Ninguno. Elffuss pedirá permiso la primera vez que necesite algo.'));
+    panel.appendChild(el('p', 'muted', tr('permsEmpty')));
   for (const scope of g) {
     const meta = perms.SCOPES[scope] || {};
     panel.appendChild(card(
       el('b', null, `${meta.icon || ''} ${meta.label || scope}`),
       el('span', 'muted', meta.desc || ''),
-      btn('Revocar', 'ghost', () => { perms.revoke(scope); refreshPerms(); }),
+      btn(tr('revoke'), 'ghost', () => { perms.revoke(scope); refreshPerms(); }),
     ));
   }
   const folders = await fs.folders();
   if (folders.length) {
-    panel.appendChild(el('h3', null, 'Carpetas autorizadas'));
+    panel.appendChild(el('h3', null, tr('foldersTitle')));
     for (const f of folders) {
       panel.appendChild(card(
         el('b', null, '📁 ' + f),
-        btn('Quitar', 'ghost', async () => { await db.del('fs', f); refreshPerms(); }),
+        btn(tr('remove'), 'ghost', async () => { await db.del('fs', f); refreshPerms(); }),
       ));
     }
   }
@@ -339,11 +335,8 @@ export function setModel(id) { $('model-select').value = id; }
 // ---------- panel ajustes (config avanzada de proveedores) ----------
 export function refreshSettings() {
   const panel = $('panel-ajustes');
-  panel.replaceChildren(el('h3', null, '⚙️ Modelos y configuración avanzada'));
-  panel.appendChild(el('p', 'muted',
-    'Elffuss corre en tu navegador por defecto. Aquí puedes conectar modelos externos ' +
-    '(opcional). Las claves se guardan solo en este navegador y las llamadas van directas ' +
-    'al proveedor — nada pasa por nuestros servidores.'));
+  panel.replaceChildren(el('h3', null, tr('settingsTitle')));
+  panel.appendChild(el('p', 'muted', tr('settingsDesc')));
 
   const cfgs = settings.configs();
   for (const [id, c] of Object.entries(cfgs)) {
@@ -358,18 +351,18 @@ export function refreshSettings() {
     wrap.appendChild(el('span', 'muted', c.help || ''));
 
     const model = el('input');
-    model.placeholder = 'modelo';
+    model.placeholder = tr('modelPh');
     model.value = c.model || '';
     const base = el('input');
-    base.placeholder = 'endpoint';
+    base.placeholder = tr('endpointPh');
     base.value = c.baseURL || '';
     const key = el('input');
     key.type = 'password';
-    key.placeholder = c.kind === 'anthropic' ? 'sk-ant-…' : (id === 'ollama' || id === 'server' ? 'clave (no necesaria)' : 'sk-…');
+    key.placeholder = c.kind === 'anthropic' ? 'sk-ant-…' : (id === 'ollama' || id === 'server' ? tr('keyNeeded') : 'sk-…');
     key.value = c.apiKey || '';
 
-    wrap.append(labeled('Modelo', model), labeled('Endpoint', base));
-    if (id !== 'ollama' && id !== 'server') wrap.append(labeled('API key', key));
+    wrap.append(labeled(tr('lblModel'), model), labeled(tr('lblEndpoint'), base));
+    if (id !== 'ollama' && id !== 'server') wrap.append(labeled(tr('lblApiKey'), key));
 
     const save = () => {
       settings.update(id, {
@@ -380,67 +373,67 @@ export function refreshSettings() {
       });
       onSettingsChangedCb();
     };
-    toggle.onchange = () => { save(); toast(toggle.checked ? `${c.label} activado — elígelo en el selector 🧠` : `${c.label} desactivado`); };
-    wrap.appendChild(btn('Guardar', 'primary', () => { save(); toast('Guardado'); }));
+    toggle.onchange = () => { save(); toast(toggle.checked ? tr('provOn', { label: c.label }) : tr('provOff', { label: c.label })); };
+    wrap.appendChild(btn(tr('save'), 'primary', () => { save(); toast(tr('saved')); }));
     panel.appendChild(wrap);
   }
 
   // --- Almacenamiento del modelo (caché persistente) ---
   const store = el('div', 'card col');
-  store.appendChild(el('b', null, 'Modelo descargado (cacheado en tu navegador)'));
-  const info = el('span', 'muted', 'Calculando espacio…');
+  store.appendChild(el('b', null, tr('storeTitle')));
+  const info = el('span', 'muted', tr('storeCalc'));
   store.appendChild(info);
-  const clearBtn = btn('Vaciar caché del modelo', 'ghost', async () => {
-    info.textContent = 'Vaciando…'; await clearModelCache(); await paintStore(); toast('Caché vaciada');
+  const clearBtn = btn(tr('storeClear'), 'ghost', async () => {
+    info.textContent = tr('storeClearing'); await clearModelCache(); await paintStore(); toast(tr('cacheCleared'));
   });
   store.appendChild(clearBtn);
   panel.appendChild(store);
   async function paintStore() {
     const { usage, quota, persisted } = await cacheEstimate();
     const gb = n => (n / 1073741824).toFixed(2) + ' GB';
-    info.textContent = (usage ? `${gb(usage)} en caché · ` : 'Nada cacheado todavía · ')
-      + (persisted ? '✓ persistente (no se borra solo)' : '⚠ sin persistencia')
-      + (quota ? ` · límite ~${gb(quota)}` : '');
+    info.textContent = (usage ? tr('storeCached', { gb: gb(usage) }) : tr('storeNone'))
+      + (persisted ? tr('storePersist') : tr('storeNoPersist'))
+      + (quota ? tr('storeLimit', { gb: gb(quota) }) : '');
   }
   paintStore();
 
   // --- 📨 Errores y feedback (opt-in — apagado no sale NADA de tu máquina) ---
   const telCard = el('div', 'card col');
   telCard.innerHTML =
-    `<b>📨 Errores y feedback</b>` +
+    `<b>${tr('telTitle')}</b>` +
     `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:6px">` +
     `<input type="checkbox" id="tel-enabled"> ` +
-    `<span>Enviar automáticamente los errores técnicos que ocurran, para poder arreglarlos</span>` +
+    `<span>${tr('telAuto')}</span>` +
     `</label>` +
-    `<span class="muted">Apagado por defecto — tu conversación y el contenido de tus apps/archivos NUNCA se incluyen, solo el mensaje de error técnico, la pila y datos del navegador.</span>` +
-    `<label class="muted" style="font-size:.8em;margin-top:4px">O manda algo tú directamente (un fallo que viste, algo que eches en falta…)</label>` +
-    `<textarea id="tel-feedback" rows="2" style="width:100%;resize:vertical" placeholder="Cuéntanos qué ha pasado o qué te gustaría que hiciera…"></textarea>`;
-  const telSendBtn = btn('Enviar', 'primary', async () => {
+    `<span class="muted">${tr('telPrivacy')}</span>` +
+    `<label class="muted" style="font-size:.8em;margin-top:4px">${tr('telManual')}</label>` +
+    `<textarea id="tel-feedback" rows="2" style="width:100%;resize:vertical" placeholder="${tr('telPh')}"></textarea>`;
+  const telSendBtn = btn(tr('send'), 'primary', async () => {
     const ta = telCard.querySelector('#tel-feedback');
     const text = ta.value.trim();
-    if (!text) { toast('escribe algo primero'); return; }
+    if (!text) { toast(tr('writeSomething')); return; }
     const wasEnabled = telemetry.isEnabled();
     if (!wasEnabled) telemetry.setEnabled(true); // envío manual es explícito, se permite aunque el automático esté apagado
     await telemetry.sendFeedback(text);
     if (!wasEnabled) telemetry.setEnabled(false); // no activa el automático de fondo si no lo pidió
     ta.value = '';
-    toast('¡enviado, gracias!');
+    toast(tr('sentThanks'));
   });
   telCard.appendChild(telSendBtn);
   panel.appendChild(telCard);
   telCard.querySelector('#tel-enabled').checked = telemetry.isEnabled();
   telCard.querySelector('#tel-enabled').onchange = e => telemetry.setEnabled(e.target.checked);
 
-  panel.appendChild(el('p', 'muted', 'Las skills y plugins están en su propia pestaña «Skills».'));
+  panel.appendChild(el('p', 'muted', tr('skillsTabHint')));
 }
 
 async function renderSkills(panel) {
   const inst = skills.installed();
-  panel.appendChild(el('div', 'muted', `Instaladas: ${inst.length}`));
+  panel.appendChild(el('div', 'muted', tr('installedN', { n: inst.length })));
   for (const s of inst) {
     const c = el('div', 'card');
     c.append(el('b', null, s.name), el('span', 'muted', s.repo || 'local'),
-      btn('Quitar', 'ghost', async () => { await skills.remove(s.name); refreshSettings(); }));
+      btn(tr('remove'), 'ghost', async () => { await skills.remove(s.name); refreshSettings(); }));
     panel.appendChild(c);
   }
   const srcs = await skills.sources();
@@ -454,8 +447,8 @@ async function renderSkills(panel) {
     panel.appendChild(c);
   }
   const row = el('div', 'row');
-  const inp = el('input'); inp.placeholder = 'owner/repo o URL (p. ej. OpenClaude/…)';
-  row.append(inp, btn('Añadir repo', 'primary', async () => {
+  const inp = el('input'); inp.placeholder = tr('repoPh');
+  row.append(inp, btn(tr('addRepo'), 'primary', async () => {
     try { await skills.addSource(inp.value); refreshSettings(); } catch (e) { toast('⚠️ ' + e.message); }
   }));
   panel.appendChild(row);
@@ -463,21 +456,21 @@ async function renderSkills(panel) {
 
 async function browseSkillRepo(panel, repo) {
   const box = el('div');
-  box.appendChild(el('div', 'muted', `Cargando ${repo}…`));
+  box.appendChild(el('div', 'muted', tr('loadingRepo', { repo })));
   panel.appendChild(box);
   try {
     const found = await skills.listFromRepo(repo);
-    box.replaceChildren(el('div', 'muted', `${repo} — ${found.length} skills`));
+    box.replaceChildren(el('div', 'muted', tr('repoSkills', { repo, n: found.length })));
     for (const sk of found.slice(0, 120)) {
       const c = el('div', 'card');
       const on = skills.isInstalled(sk.repo, sk.path);
-      const b = btn(on ? 'Instalada ✓' : 'Instalar', on ? 'ghost' : 'primary', async () => {
+      const b = btn(on ? tr('installedOk') : tr('install'), on ? 'ghost' : 'primary', async () => {
         b.textContent = '…';
         try {
           const entry = await skills.installFromRepo(sk);
-          b.textContent = 'Instalada ✓';
+          b.textContent = tr('installedOk');
           onSkillInstalledCb(entry);           // → mensaje «cómo usarla» en el chat
-        } catch (e) { b.textContent = 'Instalar'; toast('⚠️ ' + e.message); }
+        } catch (e) { b.textContent = tr('install'); toast('⚠️ ' + e.message); }
       });
       c.append(el('b', null, sk.name), el('span', 'muted', sk.dir), b);
       box.appendChild(c);
@@ -547,13 +540,13 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
 
   // menú de comandos (/) en el chat, estilo plugin de Claude Code
   const cmds = [
-    { label: '/reloj', hint: 'crear un reloj', run: () => onSend('hazme un reloj') },
-    { label: '/carpeta', hint: 'autorizar una carpeta', run: () => onSend('autoriza una carpeta') },
-    { label: '/skills', hint: 'gestionar skills y plugins', run: () => { selectTab('skills'); if (isMobile()) flipTo('viz'); } },
-    { label: '/modelo', hint: 'modelo y API keys', run: () => { selectTab('ajustes'); if (isMobile()) flipTo('viz'); } },
-    { label: '/tareas', hint: 'ver tareas programadas', run: () => { selectTab('tareas'); if (isMobile()) flipTo('viz'); } },
-    { label: '/vault', hint: 'secretos cifrados', run: () => { selectTab('vault'); if (isMobile()) flipTo('viz'); } },
-    { label: '/limpiar', hint: 'nueva conversación', run: () => $('btn-clear').click() },
+    { label: '/reloj', hint: tr('cmClock'), run: () => onSend(tr('pClock')) },
+    { label: '/carpeta', hint: tr('cmFolder'), run: () => onSend(tr('pFolder')) },
+    { label: '/skills', hint: tr('cmSkills'), run: () => { selectTab('skills'); if (isMobile()) flipTo('viz'); } },
+    { label: '/modelo', hint: tr('cmModel'), run: () => { selectTab('ajustes'); if (isMobile()) flipTo('viz'); } },
+    { label: '/tareas', hint: tr('cmTasks'), run: () => { selectTab('tareas'); if (isMobile()) flipTo('viz'); } },
+    { label: '/vault', hint: tr('cmVault'), run: () => { selectTab('vault'); if (isMobile()) flipTo('viz'); } },
+    { label: '/limpiar', hint: tr('cmClear'), run: () => $('btn-clear').click() },
   ];
   const cmdMenu = $('cmd-menu');
   const openCmd = () => {

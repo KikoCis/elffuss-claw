@@ -8,6 +8,7 @@
 // modificado lo reprocesa).
 import * as db from '../db.js';
 import { require as requirePerm } from '../permissions.js';
+import { t } from '../i18n.js';
 import { root, xlsxToCsv, globToRegex } from './fs.js';
 
 const KEY = 'automations';
@@ -18,7 +19,7 @@ const saveAll = list => db.set('kv', KEY, list);
 
 export async function add({ from, to, pattern = '*' } = {}) {
   if (!from || !to) throw new Error('Faltan from y to (nombres de carpetas autorizadas)');
-  await requirePerm('fs', `Vigilar «${from}» y dejar lo procesado en «${to}»`);
+  await requirePerm('fs', t('pdWatch', { from, to }));
   await root(from); await root(to); // valida que existen y hay acceso
   const list = await getAll();
   const id = 'w' + Math.random().toString(36).slice(2, 8);

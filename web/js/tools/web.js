@@ -2,6 +2,7 @@
 // proxy del servidor (/proxy?url=…) que sirve server/serve.py o el nginx
 // de producción.
 import { require as requirePerm } from '../permissions.js';
+import { t } from '../i18n.js';
 
 const MAX = 8000; // caracteres devueltos al agente
 
@@ -37,7 +38,7 @@ export async function fetchUrl({ url } = {}) {
 // envuelve cada resultado en un enlace con ?uddg=<url real>. Buscamos esos.
 export async function search({ query } = {}) {
   if (!query) throw new Error('Falta query');
-  await requirePerm('web', 'buscar: ' + query);
+  await requirePerm('web', t('pdWebSearch', { q: query }));
   let html = '';
   for (const ep of ['https://html.duckduckgo.com/html/?q=', 'https://lite.duckduckgo.com/lite/?q=']) {
     try { html = await proxyGet(ep + encodeURIComponent(query)); if (html.includes('uddg=') || html.includes('result')) break; }
@@ -64,7 +65,7 @@ export async function search({ query } = {}) {
 // Búsqueda de IMÁGENES (Openverse, CC) → URLs para montar una galería.
 export async function images({ query } = {}) {
   if (!query) throw new Error('Falta query');
-  await requirePerm('web', 'imágenes: ' + query);
+  await requirePerm('web', t('pdWebImages', { q: query }));
   const raw = await proxyGet('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(query) + '&page_size=12');
   let data;
   try { data = JSON.parse(raw); } catch { throw new Error('respuesta inesperada del buscador de imágenes'); }

@@ -17,6 +17,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as ceo from './ceo.js';
 import * as db from './db.js';
 import { renderMarkdown } from './md.js';
+import { t } from './i18n.js';
 
 const SOUNDCLOUD = 'https://soundcloud.com/dekel-official/dekel-baoba-festival-2023';
 const CEO_COLOR = '#ff4d8d';
@@ -450,7 +451,7 @@ export async function openMind() {
   overlay.id = 'mind-overlay';
   overlay.innerHTML =
     '<canvas id="mind-canvas"></canvas>' +
-    '<div id="mind-title">MENTE DE ELFFUSS</div>' +
+    `<div id="mind-title">${t('mindTitle')}</div>` +
     '<div id="mind-legend"></div>' +
     '<button id="mind-playstop" title="pausar/reanudar el cerebro"></button>' +
     '<button id="mind-config" title="reprogramar el cerebro">⚙ cerebro</button>' +

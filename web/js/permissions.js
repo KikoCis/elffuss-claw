@@ -1,15 +1,19 @@
 // Permisos por ámbito: nada corre sin consentimiento explícito del usuario.
+import { t } from './i18n.js';
+
 const KEY = 'elffuss.grants';
 const granted = new Set(JSON.parse(localStorage.getItem(KEY) || '[]'));
 let asker = async () => false; // la UI lo sustituye por el modal real
 
+// label/desc son getters localizados: se resuelven al leerse (idioma del
+// navegador), no al importar el módulo, así el chrome sale en el idioma correcto.
 export const SCOPES = {
-  fs:    { icon: '📁', label: 'Archivos', desc: 'Leer y escribir en las carpetas que autorices' },
-  apps:  { icon: '🎨', label: 'Apps', desc: 'Crear y mostrar apps HTML en el visualizador' },
-  vault: { icon: '🔐', label: 'Vault', desc: 'Guardar y leer secretos cifrados' },
-  tasks: { icon: '⏰', label: 'Tareas', desc: 'Programar tareas que se ejecutan solas' },
-  web:   { icon: '🌐', label: 'Internet', desc: 'Visitar páginas web en tu nombre' },
-  memory: { icon: '🧠', label: 'Memoria', desc: 'Recordar cosas de ti entre sesiones (solo en este navegador)' },
+  fs:    { icon: '📁', get label() { return t('scFsL'); },    get desc() { return t('scFsD'); } },
+  apps:  { icon: '🎨', get label() { return t('scAppsL'); },  get desc() { return t('scAppsD'); } },
+  vault: { icon: '🔐', get label() { return t('scVaultL'); }, get desc() { return t('scVaultD'); } },
+  tasks: { icon: '⏰', get label() { return t('scTasksL'); }, get desc() { return t('scTasksD'); } },
+  web:   { icon: '🌐', get label() { return t('scWebL'); },   get desc() { return t('scWebD'); } },
+  memory: { icon: '🧠', get label() { return t('scMemL'); },  get desc() { return t('scMemD'); } },
 };
 
 export function setAsker(fn) { asker = fn; }
@@ -19,7 +23,7 @@ export function has(scope) { return granted.has(scope); }
 export async function require(scope, detail = '') {
   if (granted.has(scope)) return true;
   const ok = await asker(scope, SCOPES[scope], detail);
-  if (!ok) throw new Error(`Permiso «${SCOPES[scope]?.label || scope}» denegado por el usuario`);
+  if (!ok) throw new Error(t('permDenied', { label: SCOPES[scope]?.label || scope }));
   granted.add(scope);
   localStorage.setItem(KEY, JSON.stringify([...granted]));
   return true;

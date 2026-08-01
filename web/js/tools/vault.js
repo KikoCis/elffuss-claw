@@ -3,6 +3,7 @@
 // recuperación posible: los blobs cifrados no salen del IndexedDB local.
 import * as db from '../db.js';
 import { require as requirePerm } from '../permissions.js';
+import { t } from '../i18n.js';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 const AUTOLOCK_MS = 5 * 60 * 1000;
@@ -62,7 +63,7 @@ function mustBeOpen() {
 
 export async function setSecret({ name, secret } = {}) {
   if (!name || !secret) throw new Error('Faltan name o secret');
-  await requirePerm('vault', `Guardar el secreto «${name}»`);
+  await requirePerm('vault', t('pdVaultSet', { name }));
   mustBeOpen();
   await db.set('vault', 's:' + name, await encrypt(secret));
   armLock();
@@ -70,7 +71,7 @@ export async function setSecret({ name, secret } = {}) {
 }
 
 export async function getSecret({ name } = {}) {
-  await requirePerm('vault', `Leer el secreto «${name}»`);
+  await requirePerm('vault', t('pdVaultGet', { name }));
   mustBeOpen();
   const blob = await db.get('vault', 's:' + name);
   if (!blob) throw new Error(`No existe el secreto «${name}»`);
