@@ -207,6 +207,8 @@ const DEFAULTS = {
   PIN_QUERY_TERMS: true,  // lo que la pregunta nombra no se desaloja jamás
   PIN_MAX: 40,
   // — presupuesto —
+  HEAD_FRAC: 0.05,        // reserva para los PRIMEROS mensajes, sin puntuar
+                          // (solo bajo presión — ver autotune)
   RECENT: 6,
   RECENT_FRAC: null,      // null = derivado de la presión de compresión
   MAX_MSG_CHARS: 12000,
@@ -268,9 +270,10 @@ function autotune(historyTok, budgetTok, O) {
   // Así que no es un peso ni un desempate universal: es un INTERRUPTOR, y el
   // barrido dice dónde va. Umbral medido entre 0,17 (neutral) y 0,34 (dañino).
   const recencyTiebreak = pressure < O.AUTO_RECENCY_PRESSURE;
+  const headOn = pressure < O.AUTO_RECENCY_PRESSURE;   // misma puerta, misma razón
   const recencyWeight = O.RECENCY_WEIGHT * (1 - pressure);   // solo informativo
 
-  return { pressure, recentFrac, recencyWeight, recencyTiebreak };
+  return { pressure, recentFrac, recencyWeight, recencyTiebreak, headOn };
 }
 
 /**
@@ -341,7 +344,8 @@ function prepare(history, budgetTok, O) {
                        : { pressure: null,
                            recentFrac: O.RECENT_FRAC != null ? O.RECENT_FRAC : 0.55,
                            recencyWeight: O.RECENCY_WEIGHT,
-                           recencyTiebreak: O.RECENCY_WEIGHT > 0 };
+                           recencyTiebreak: O.RECENCY_WEIGHT > 0,
+                           headOn: O.HEAD_FRAC > 0 };
   O = { ...O, _pressure: tuned.pressure, _historyTok: historyTok,
         RECENCY_WEIGHT: tuned.recencyWeight, _recTie: tuned.recencyTiebreak };
 
@@ -356,8 +360,45 @@ function prepare(history, budgetTok, O) {
     if (used + t > reserve && recent.length >= 1) break;
     recent.unshift(m); used += t;
   }
-  const old = history.slice(0, history.length - recent.length);
-  if (!old.length || used >= budgetTok) return { done: true, recent, old, used };
+  let old = history.slice(0, history.length - recent.length);
+  if (!old.length || used >= budgetTok) return { done: true, recent, old, used, head: [] };
+
+  // ── RESERVA DE CABECERA ────────────────────────────────────────────────────
+  // Los PRIMEROS mensajes se conservan literales y SIN puntuar, igual que los
+  // últimos. No es simetría estética: el arranque lleva la tarea, el encargo,
+  // las rutas y las restricciones — cosas que el resto de la sesión da por
+  // sabidas y que por eso mismo BM25 no tiene por qué puntuar alto (si nadie
+  // las repite, no hay solape con la pregunta de ahora).
+  //
+  // Y hay respaldo externo: es el resultado central de StreamingLLM — los
+  // primeros tokens actúan de SUMIDERO de atención y absorben el 45-55 % de la
+  // masa; tirarlos degrada al modelo mucho más de lo que su "relevancia"
+  // sugiere. Un recuperador puro no puede ver eso, porque no es una propiedad
+  // del texto sino de cómo el modelo lo usa.
+  //
+  // Por eso va sin condición y acotado: ~10 % del presupuesto. Barato de sobra
+  // si sirve, y con un techo duro para que no compita con la búsqueda.
+  // Y va con la MISMA puerta que la recencia, porque mide lo mismo. Sonda que
+  // pregunta por el encargo original a mitad de sesión, 5 semillas:
+  //
+  //     presupuesto 3.000 (el que usa la app):  sin reserva 0/5  ·  con 5 % 5/5
+  //     presupuesto 16.000 (holgura):           sin reserva 5/5  ·  con 5 % 5/5
+  //
+  // Con agobio el encargo se pierde SIEMPRE, y es lo único que el agente no
+  // puede reconstruir mirando el código. Con holgura sobrevive solo, así que
+  // ahí la reserva es coste puro: medida en el banco de hechos de media sesión
+  // costaba −15,1 puntos a 16.000 sin ganar nada. Por eso se apaga.
+  const headReserve = tuned.headOn ? Math.floor(budgetTok * O.HEAD_FRAC) : 0;
+  const head = []; let headUsed = 0;
+  for (let i = 0; i < old.length; i++) {
+    const m = clampMsg(old[i], O.MAX_MSG_CHARS);
+    const t = msgTok(m);
+    if (headUsed + t > headReserve) break;
+    head.push(m); headUsed += t;
+  }
+  old = old.slice(head.length);
+  used += headUsed;
+  if (!old.length || used >= budgetTok) return { done: true, recent, old, used, head };
 
   // La PREGUNTA VIVA: el último turno de usuario que no sea un resultado de
   // herramienta. Esto es lo que se puntúa. No la tarea inicial.
@@ -385,18 +426,26 @@ function prepare(history, budgetTok, O) {
     items[i].rec = items[i].mi / nMsg;
     items[i].qHit = items[i].bm > 0;
   }
-  return { done: false, recent, old, used, items, query, qTerms, bm25, nMsg, O };
+  return { done: false, recent, old, used, items, query, qTerms, bm25, nMsg, O, head };
 }
 
 /** Aplica dedup, selección con presupuesto global, MMR y emisión. */
 function selectAndEmit(ctx, budgetTok, O) {
   const { recent, old, items } = ctx;
+  const head = ctx.head || [];
   let used = ctx.used;
 
   // dedup exacto / casi exacto en TODO el historial
+  // El dedup ve TAMBIÉN la cabecera: lo que ya viaja literal ahí no se vuelve a
+  // pagar más abajo. Reservar sitio y luego repetir el mismo contenido sería
+  // gastar dos veces el mismo presupuesto.
   let deduped = 0;
   if (O.DEDUP) {
     const bestByKey = new Map();
+    for (const m of head) for (const line of (m.content || '').split('\n')) {
+      const k = dedupKey(line);
+      if (k) bestByKey.set(k, { score: Infinity, dup: false });
+    }
     for (const it of items) {
       if (it.first) continue;
       const k = dedupKey(it.line);
@@ -478,7 +527,7 @@ function selectAndEmit(ctx, budgetTok, O) {
   // devuelven las líneas peor puntuadas hasta que la salida cabe de verdad.
   const msgTok = (m) => estimateTokens(m.content) + 4;
   const emit = () => {
-    let t = recent.reduce((s, m) => s + msgTok(m), 0);
+    let t = recent.reduce((s, m) => s + msgTok(m), 0) + head.reduce((s, m) => s + msgTok(m), 0);
     let open = 0;
     old.forEach((m, mi) => {
       const lines = m.content.split('\n');
@@ -526,7 +575,7 @@ function selectAndEmit(ctx, budgetTok, O) {
   });
   if (droppedMsgs) packed.push({ role: 'user', content: `[…${droppedMsgs} mensajes antiguos omitidos…]` });
 
-  return { messages: [...packed, ...recent], stats: { used, deduped, pinned, droppedMsgs, realized } };
+  return { messages: [...head, ...packed, ...recent], stats: { used, deduped, pinned, droppedMsgs, realized, head: head.length } };
 }
 
 /**
@@ -538,7 +587,7 @@ function packHistoryACER(history, budgetTok, options) {
   const O = { ...DEFAULTS, ...(options || {}) };
   if (!history.length) return { messages: history, stats: {} };
   const ctx = prepare(history, budgetTok, O);
-  if (ctx.done) return { messages: ctx.recent, stats: { used: ctx.used, dropped: ctx.old.length } };
+  if (ctx.done) return { messages: [...(ctx.head || []), ...ctx.recent], stats: { used: ctx.used, dropped: ctx.old.length, head: (ctx.head || []).length } };
 
   // Normalización a rango para poder mezclar con la recencia sin que BM25,
   // que no está acotado, se lleve todo por delante.
@@ -572,7 +621,7 @@ async function packHistoryACERHybrid(history, budgetTok, options) {
   if (!embed || !O.SEMANTIC) return packHistoryACER(history, budgetTok, options);
 
   const ctx = prepare(history, budgetTok, O);
-  if (ctx.done) return { messages: ctx.recent, stats: { used: ctx.used, dropped: ctx.old.length } };
+  if (ctx.done) return { messages: [...(ctx.head || []), ...ctx.recent], stats: { used: ctx.used, dropped: ctx.old.length, head: (ctx.head || []).length } };
 
   // Lado semántico por BLOQUES: codificar línea a línea es prohibitivo y la
   // señal sobrevive al troceado (medido ~73 % al pasar a frontera arbitraria).
