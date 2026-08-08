@@ -203,8 +203,22 @@ function cosine(a, b) {
   return (na && nb) ? d / Math.sqrt(na * nb) : 0;
 }
 function dedupKey(s) {
-  return s.replace(/^\s*\d+→/, '').replace(/^\s*\d+:\s*/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  // ⚠️ El número de línea NO se borra cuando es lo único que distingue dos
+  // líneas idénticas. Antes se quitaba siempre, y eso colapsaba la salida de
+  // `grep -n`: "10:  return 42;" y "87:  return 42;" caían en la misma clave y
+  // se quedaba UNA. Pero «¿dónde está definido X?» es la pregunta más común de
+  // un agente de código, y la respuesta ES el número: darle un sitio de tres es
+  // darle una respuesta incompleta que parece completa.
+  //
+  // Regla: se normaliza el espaciado (eso sí es ruido) pero la posición se
+  // conserva como parte de la identidad de la línea. Solo colapsan las líneas
+  // que son iguales TAMBIÉN en dónde estaban — repeticiones de verdad, como
+  // "}" o el encabezado "[resultado …]" saliendo veinte veces.
+  const body = s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const at = s.match(/^\s*(\d+)\s*[:→]/);
+  return at ? at[1] + '|' + body : body;
 }
+
 
 /**
  * Fusión por rangos recíprocos (RRF).
