@@ -88,6 +88,39 @@
  *   · Degradación limpia: sin función de embeddings, esto es BM25 solo — que ya
  *     es F1 23,59 frente al 6,07 de la v1. Lo semántico suma, no es requisito.
  *
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * REFERENCIAS
+ *
+ *   BM25 (Okapi BM25) — Robertson, Walker, Jones, Hancock-Beaulieu & Gatford,
+ *     «Okapi at TREC-3», TREC-3, 1994. Formulacion moderna y justificacion de
+ *     k1 / b: Robertson & Zaragoza, «The Probabilistic Relevance Framework:
+ *     BM25 and Beyond», Foundations and Trends in IR 3(4), 2009.
+ *     https://doi.org/10.1561/1500000019
+ *
+ *   IDF — Sparck Jones, «A statistical interpretation of term specificity and
+ *     its application in retrieval», Journal of Documentation 28(1), 1972.
+ *     El origen de la idea que sostiene todo esto: lo raro informa.
+ *
+ *   RRF (fusion por rangos reciprocos) — Cormack, Clarke & Buettcher,
+ *     «Reciprocal Rank Fusion outperforms Condorcet and individual Rank
+ *     Learning Methods», SIGIR 2009. https://doi.org/10.1145/1571941.1572114
+ *
+ *   MMR (relevancia marginal maxima) — Carbonell & Goldstein, «The use of MMR,
+ *     diversity-based reranking for reordering documents and producing
+ *     summaries», SIGIR 1998. https://doi.org/10.1145/290941.291025
+ *
+ *   Sumideros de atencion (por que la CABECERA se protege sin puntuar) —
+ *     Xiao, Tian, Chen, Han & Lewis, «Efficient Streaming Language Models with
+ *     Attention Sinks», ICLR 2024. https://arxiv.org/abs/2309.17453
+ *
+ *   Contraste con lo que se publica hoy en compresion de KV, donde el
+ *   solapamiento lexico aparece solo como bandera BINARIA sobre un ranking que
+ *   sigue siendo de atencion: CodeComp, «Structural KV Cache Compression for
+ *   Agentic Coding», 2026, §4.4. https://arxiv.org/abs/2604.10235
+ *     -> nuestro margen medido frente a esa regla binaria: F1 23,59 vs 8,03;
+ *        y quitar la IDF cuesta -3,25 F1, o sea que la gradacion hace trabajo.
+ *
  * No usa APIs de Node → cargable en el navegador como módulo ES.
  */
 
@@ -114,7 +147,9 @@ function terms(s) {
 }
 
 /**
- * Índice BM25 sobre un conjunto de documentos (aquí: las líneas del historial).
+ * Índice BM25 (Okapi BM25 — Robertson et al., TREC-3 1994; formulación moderna
+ * en Robertson & Zaragoza 2009) sobre un conjunto de documentos: aquí, las
+ * líneas del historial.
  * La IDF sale del PROPIO corpus → los tokens ubicuos (`the`, `para`, `const`,
  * la puntuación de formato) caen a peso ~0 sin que nadie los liste.
  */
@@ -207,6 +242,7 @@ const DEFAULTS = {
   PIN_QUERY_TERMS: true,  // lo que la pregunta nombra no se desaloja jamás
   PIN_MAX: 40,
   // — presupuesto —
+  TAIL_MIN_FRAC: 0.10,    // SUELO garantizado para los ultimos turnos
   HEAD_FRAC: 0.05,        // reserva para los PRIMEROS mensajes, sin puntuar
                           // (solo bajo presión — ver autotune)
   RECENT: 6,
@@ -352,13 +388,32 @@ function prepare(history, budgetTok, O) {
   // Los turnos recientes se conservan literales, pero SOLO mientras quepan en su
   // reserva. Un RECENT fijo puede comerse el presupuesto entero él solo (una
   // página de 100 líneas son ~1,5k tokens) y devolver varias veces lo pedido.
+  // ── RESERVA DE COLA — es un SUELO, no solo un techo ────────────────────────
+  // La version anterior paraba en el primer mensaje que no cabia. Eso convierte
+  // la reserva en un tope y no en una garantia: medido, con presupuesto 3.000 la
+  // cola se quedaba con el 3-5 % en vez del ~38 % reservado, porque UN resultado
+  // de herramienta grande en la penultima posicion bloqueaba todo lo anterior.
+  // Los ultimos turnos son lo que el modelo necesita si o si para saber donde
+  // esta, y eso no puede depender de que el turno de antes fuera voluminoso.
+  //
+  // Ahora, mientras no se alcance el suelo, el mensaje que no cabe se TRUNCA por
+  // el medio (cabeza y cola, que es lo que importa de un resultado) en vez de
+  // descartarse entero. Por encima del suelo se vuelve al comportamiento de
+  // siempre: se para y el resto compite por relevancia.
   const reserve = Math.floor(budgetTok * tuned.recentFrac);
+  const floorTok = Math.floor(budgetTok * O.TAIL_MIN_FRAC);
   const recent = []; let used = 0;
   for (let i = history.length - 1, k = 0; i >= 0 && k < O.RECENT; i--, k++) {
     const m = clampMsg(history[i], O.MAX_MSG_CHARS);
     const t = msgTok(m);
-    if (used + t > reserve && recent.length >= 1) break;
-    recent.unshift(m); used += t;
+    if (used + t <= reserve) { recent.unshift(m); used += t; continue; }
+    if (used >= floorTok || recent.length >= 1 && used + t > reserve && used >= floorTok) break;
+    // aun por debajo del suelo: cabe recortado, no se tira
+    const room = Math.max(40, Math.min(reserve, floorTok) - used - 4);
+    if (room < 40) break;
+    recent.unshift({ ...m, content: truncateToTokens(m.content, room) });
+    used += room + 4;
+    if (used >= floorTok) break;
   }
   let old = history.slice(0, history.length - recent.length);
   if (!old.length || used >= budgetTok) return { done: true, recent, old, used, head: [] };
