@@ -260,8 +260,14 @@ function dedupKey(s) {
   // conserva como parte de la identidad de la línea. Solo colapsan las líneas
   // que son iguales TAMBIÉN en dónde estaban — repeticiones de verdad, como
   // "}" o el encabezado "[resultado …]" saliendo veinte veces.
-  const body = s.replace(/\s+/g, ' ').trim().toLowerCase();
+  //
+  // Y el ESTILO del canalón sí es ruido: la misma línea del mismo fichero vista
+  // una vez por la herramienta de lectura (`42→foo`) y otra por una búsqueda
+  // (`42: foo`) es la MISMA línea, y debe colapsar. Por eso el número se extrae
+  // aparte y el cuerpo se compara ya sin canalón: se conserva DÓNDE estaba y se
+  // descarta CÓMO se imprimió.
   const at = s.match(/^\s*(\d+)\s*[:→]/);
+  const body = (at ? s.slice(at[0].length) : s).replace(/\s+/g, ' ').trim().toLowerCase();
   return at ? at[1] + '|' + body : body;
 }
 
