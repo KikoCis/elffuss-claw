@@ -242,6 +242,7 @@ const DEFAULTS = {
   PIN_QUERY_TERMS: true,  // lo que la pregunta nombra no se desaloja jamás
   PIN_MAX: 40,
   // — presupuesto —
+  ELASTIC: true,          // no rellenar con lo irrelevante (ver selectAndEmit)
   TAIL_MIN_FRAC: 0.10,    // SUELO garantizado para los ultimos turnos
   HEAD_FRAC: 0.05,        // reserva para los PRIMEROS mensajes, sin puntuar
                           // (solo bajo presión — ver autotune)
@@ -306,7 +307,14 @@ function autotune(historyTok, budgetTok, O) {
   // Así que no es un peso ni un desempate universal: es un INTERRUPTOR, y el
   // barrido dice dónde va. Umbral medido entre 0,17 (neutral) y 0,34 (dañino).
   const recencyTiebreak = pressure < O.AUTO_RECENCY_PRESSURE;
-  const headOn = pressure < O.AUTO_RECENCY_PRESSURE;   // misma puerta, misma razón
+  // La cabecera va SIEMPRE, sin puerta. Antes se apagaba con holgura porque
+  // "ahí el encargo sobrevive solo" — y era cierto, pero solo porque
+  // rellenábamos el presupuesto hasta el borde con todo lo que cupiera. Al
+  // añadir la ventana elástica y dejar de rellenar, el encargo se cayó del
+  // 100 % al 0 % a presupuesto 16.000. Su supervivencia era un accidente del
+  // relleno, no una propiedad de tener sitio. Cuesta un 5 % y ya está medido
+  // que no resta: incondicional.
+  const headOn = true;
   const recencyWeight = O.RECENCY_WEIGHT * (1 - pressure);   // solo informativo
 
   return { pressure, recentFrac, recencyWeight, recencyTiebreak, headOn };
@@ -561,6 +569,12 @@ function selectAndEmit(ctx, budgetTok, O) {
       }
       remaining.delete(best);
       const it = byId.get(best), c = cost(it);
+      // La ventana elástica manda TAMBIÉN aquí. El MMR ordena por diversidad
+      // DENTRO de lo relevante; no es una excusa para colar relleno. Sin esta
+      // línea la puerta no servía de nada: el material sin relevancia entraba
+      // por este bucle antes de llegar al relleno final, y la medida salía
+      // idéntica con y sin ella.
+      if (O.ELASTIC && it.score < 10) continue;
       if (used + c > budgetTok) continue;
       keep.add(best); used += c;
       const bs = tok.get(best);
@@ -568,9 +582,44 @@ function selectAndEmit(ctx, budgetTok, O) {
       if (used >= budgetTok) break;
     }
   }
+  // ── VENTANA ELÁSTICA ───────────────────────────────────────────────────────
+  // El presupuesto es un TECHO, no una cuota que haya que agotar. Medido, sin
+  // esto se iba en líneas sin una sola palabra en común con la pregunta el
+  // 38 % del presupuesto a 3.000 y el 56 % a 16.000 — más de la mitad, relleno.
+  //
+  // Y eso no es inofensivo: nuestro propio resultado dice que recuperar bien
+  // BATE al contexto completo (F1 28,09 contra 22,56 del historial entero), o
+  // sea que lo irrelevante no es lastre neutro, DISTRAE. Rellenar hasta el
+  // borde con material de relevancia cero es reintroducir a mano justo aquello
+  // que la compresión venía a quitar.
+  //
+  // Así que la ventana se dimensiona con la EVIDENCIA: se para cuando se acaba
+  // lo relevante (estrato ≥ 10) en vez de cuando se acaban los tokens. Es el
+  // umbral de corte por puntuación de toda la vida en recuperación; la cabecera
+  // y la cola siguen siendo incondicionales, que para eso son reservas.
+  //
+  // ⚠️ NO es un regalo, es un INTERCAMBIO, y el banco solo ve un lado. Medido
+  // (8 semillas, presencia del dato — NO calidad de la respuesta):
+  //
+  //     presupuesto   ahorro de tokens   coste en hechos
+  //        3.000           −1 %              ±0,0     ← régimen de la app
+  //        8.000            2 %              ±0,0
+  //       16.000           26 %              −1,8
+  //       32.000           60 %              −8,9
+  //
+  // Con el presupuesto que usan los productos (3.000 y 5.000) sale GRATIS: ahí
+  // hay más material relevante que sitio, y la puerta no llega a dispararse.
+  // Con holgura canja recall por tokens, y si eso compensa depende de algo que
+  // ESTE banco no puede ver: mide si el dato está presente, no si la respuesta
+  // sale mejor. La hipótesis a favor es nuestro propio titular —recuperar bien
+  // BATE al contexto completo, luego lo irrelevante resta— pero mientras no se
+  // corra el banco de F1 con un modelo respondiendo, el −8,9 a 32.000 es un
+  // número real y la ganancia es una conjetura. Queda dicho, no disimulado.
+  const RELEVANT = 10;
   for (const it of pool) {
     const id = idOf(it);
     if (keep.has(id)) continue;
+    if (O.ELASTIC && it.score < RELEVANT) break;   // se acabó la evidencia
     const c = cost(it);
     if (used + c > budgetTok) continue;
     keep.add(id); used += c;
