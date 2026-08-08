@@ -8,7 +8,7 @@
 // puntuados por BM25-lite contra la consulta actual. Los evictados se
 // sustituyen por una marca de omisión para que el modelo sepa que falta algo.
 
-import { packHistoryACER } from './acer-core.js';
+import { packHistoryACER, packHistoryACERHybrid } from './acer-core.js';
 
 // ── ACE_R unificado ─────────────────────────────────────────────────────────
 // El empaquetado por MENSAJES de aquí abajo se medió contra sesiones reales de
@@ -32,6 +32,71 @@ import { packHistoryACER } from './acer-core.js';
 function acerUnificado() {
   try { return localStorage.getItem('elffuss.acer') !== 'v1'; } catch { return true; }
 }
+
+// ── lado SEMÁNTICO (embeddings) ─────────────────────────────────────────────
+// acer-core.js trae las dos vías: la léxica (BM25, síncrona) y la híbrida (BM25
+// + embeddings fusionados por rangos, asíncrona). Medido en LoCoMo con el mismo
+// presupuesto: BM25 23,59 · embeddings 23,95 · fusión de rangos 28,09 · contexto
+// completo sin comprimir 22,56. La fusión vale +4,50 F1 sobre lo que corría.
+//
+// No es que lo semántico sea mejor —empatan en global— sino que cubre el punto
+// ciego del léxico: cuando la pregunta NO comparte vocabulario con la respuesta,
+// BM25 cae a 18,60 y los embeddings aguantan 24,28; cuando sí lo comparte manda
+// BM25 (29,33 vs 23,58). La fusión se queda con los dos (24,05 / 32,73).
+//
+// POR DEFECTO APAGADO, y no por prudencia: por lo que salió al MEDIRLO.
+//
+//   · La primera carga cuesta una descarga de 235 MB (fp16, el camino rápido) o
+//     118 MB (q8, el de respaldo). Para quien usa un proveedor externo
+//     (providers/api.js) eso es una descarga que hoy NO EXISTE: pasa de 0 a
+//     235 MB sólo por empaquetar mejor el contexto. Y para quien usa el modelo
+//     local son ~+28 % sobre lo que ya descarga.
+//   · Sólo compensa con adaptador WebGPU. Sin él se cae a wasm, que mide ~9×
+//     más lento y se nota en CADA turno, no sólo en el primero.
+//   · A cambio, con WebGPU el turno en régimen es una fracción de segundo y la
+//     segunda sesión no descarga nada (transformers.js cachea el modelo).
+//
+// O sea: la ganancia de recuperación es real y grande (+4,50 F1), pero el precio
+// no es despreciable y depende del equipo de quien lo usa. Así que se cablea
+// entero, se deja probado, y se enciende a petición. Con la bandera apagada NI
+// SIQUIERA se importa embed.js: el coste de tenerlo cableado es exactamente cero.
+//
+//   localStorage.setItem('elffuss.semantic', 'on')     → BM25 + embeddings
+//   localStorage.setItem('elffuss.semantic', 'off')    → sólo BM25
+//   localStorage.removeItem('elffuss.semantic')        → sólo BM25 (por defecto)
+function semanticoOn() {
+  try { return localStorage.getItem('elffuss.semantic') === 'on'; } catch { return false; }
+}
+
+// SEM_BUDGET alto A PROPÓSITO, y esto es lo contrario de lo que parece.
+//
+// acer-core deriva el tamaño de bloque como SB = ceil(nLíneas / SEM_BUDGET) y
+// rearma los bloques desde el principio del historial EN CADA TURNO. Así que
+// SEM_BUDGET no acota el coste: acota la RESOLUCIÓN, y de paso decide si la
+// caché por contenido sirve para algo. Con un SEM_BUDGET bajo, cada vez que el
+// historial crece lo justo para que SB suba de entero, TODOS los bloques cambian
+// de texto y la caché falla entera; y como el bloque además engorda con la
+// sesión, el turno se encarece con el tiempo. Con SEM_BUDGET por encima del
+// número de líneas, SB vale 1: un bloque = una línea, el texto de una línea ya
+// codificada NO cambia nunca, y un turno sólo paga las líneas NUEVAS.
+//
+// Medido en el navegador sobre una sesión de agente de 8 turnos (cada turno =
+// una tool-call + 90 líneas de resultado, 752 líneas al final), con la caché
+// viva entre turnos y el mismo modelo (coste relativo por turno, 1,0 = el mejor
+// turno observado del barrido):
+//
+//     SEM_BUDGET    codificaciones por turno       coste por turno
+//        64         ~64, casi todo recodificado    5,2× → 12,2×  ← y SUBIENDO
+//       400         49–236, a saltos               0,4× –  8,0×  ← picos
+//      4000         92, sólo lo nuevo              2,9× →   0,8×  ← plano
+//
+// Con 4000 cada línea se codifica UNA vez en toda la sesión (740 codificaciones
+// para 752 líneas: las repetidas salen gratis por la caché) y el turno se ABARATA
+// según avanza la sesión en vez de encarecerse. Es exactamente el «indexar al
+// escribir» que describe la cabecera de acer-core. El valor está alineado con el
+// tope de la caché de embed.js para que no se desaloje justo lo que el turno
+// siguiente va a volver a pedir.
+const SEM_BUDGET = 4000;
 
 const RECENT = 6;
 const MAX_MSG_CHARS = 12000; // ningún mensaje (p.ej. un README enorme) revienta el contexto
@@ -114,4 +179,31 @@ export function packHistory(history, budgetTokens = 2200) {
   });
   if (dropped) packed.push({ role: 'user', content: `[…${dropped} mensajes antiguos omitidos…]` });
   return [...packed, ...recent];
+}
+
+/**
+ * Igual que packHistory pero por la vía HÍBRIDA (léxica + semántica) cuando la
+ * bandera está encendida. Es la que deben usar los proveedores.
+ *
+ * Degrada al empaquetado de siempre —el mismo, byte a byte— si la bandera está
+ * apagada, si el modelo de embeddings no está o no carga, o si codificar falla.
+ * Ese camino de vuelta es deliberado: que no haya modelo no puede significar que
+ * la app deje de funcionar, sólo que empaqueta como hoy.
+ *
+ * `packHistory` sigue exportada y síncrona por compatibilidad.
+ */
+export async function packHistoryAsync(history, budgetTokens = 2200) {
+  if (!history.length) return history;
+  if (!acerUnificado() || !semanticoOn()) return packHistory(history, budgetTokens);
+  try {
+    // Import DINÁMICO: con la bandera apagada, embed.js —y con él
+    // transformers.js y el modelo— no se piden nunca.
+    const { embed, embedCache } = await import('./embed.js');
+    const r = await packHistoryACERHybrid(history, budgetTokens, {
+      embed, cache: embedCache(), SEM_BUDGET,
+    });
+    return r.messages;
+  } catch {
+    return packHistory(history, budgetTokens);
+  }
 }

@@ -3,7 +3,7 @@
 //  - kind 'anthropic' → /v1/messages (Claude)
 // Las llamadas salen DIRECTAS del navegador del usuario al proveedor; la clave
 // no pasa por ningún servidor nuestro. Streaming SSE en ambos dialectos.
-import { packHistory } from '../context.js';
+import { packHistoryAsync } from '../context.js';
 
 let cfg = null;
 export let name = 'API';
@@ -26,9 +26,13 @@ export async function chat(history, system, onToken = () => {}) {
 async function openaiChat(history, system, onToken) {
   const headers = { 'Content-Type': 'application/json' };
   if (cfg.apiKey) headers.Authorization = 'Bearer ' + cfg.apiKey;
+  // packHistoryAsync: el empaquetado puede tener que codificar embeddings, así
+  // que se resuelve ANTES de armar el cuerpo. Con el lado semántico apagado
+  // devuelve exactamente lo mismo que la versión síncrona de siempre.
+  const packed = await packHistoryAsync(history, 3000);
   const body = {
     model: cfg.model,
-    messages: [{ role: 'system', content: system }, ...packHistory(history, 3000)],
+    messages: [{ role: 'system', content: system }, ...packed],
     stream: true,
     max_tokens: cfg.maxTokens || 1024,
   };
@@ -53,6 +57,7 @@ async function openaiChat(history, system, onToken) {
 
 // ---- Anthropic Messages ----
 async function anthropicChat(history, system, onToken) {
+  const packed = await packHistoryAsync(history, 3000);
   const res = await fetch(cfg.baseURL.replace(/\/$/, '') + '/v1/messages', {
     method: 'POST',
     headers: {
@@ -66,7 +71,7 @@ async function anthropicChat(history, system, onToken) {
       max_tokens: cfg.maxTokens || 1024,
       system,
       stream: true,
-      messages: forAnthropic(packHistory(history, 3000)),
+      messages: forAnthropic(packed),
     }),
   });
   if (!res.ok || !res.body) throw new Error('HTTP ' + res.status + ' ' + (await res.text().catch(() => '')).slice(0, 120));

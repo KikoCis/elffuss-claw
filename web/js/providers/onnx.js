@@ -3,7 +3,7 @@
 // (lab/bitacora/posts/08-jspace-live.html): dtype 'q4' obligatorio — q4f16
 // genera basura vía WebGPU incluso con shader-f16.
 import { MODEL } from '../model-config.js';
-import { packHistory } from '../context.js';
+import { packHistoryAsync } from '../context.js';
 
 export const name = MODEL.label;
 let generator = null, TextStreamer = null;
@@ -44,7 +44,7 @@ export async function chat(history, system, onToken = () => {}) {
   if (!generator) throw new Error('Modelo no cargado');
   // ACE-lite: eviction por relevancia con presupuesto corto — los modelos
   // pequeños se pierden (y se ralentizan) con historiales largos.
-  const messages = [{ role: 'system', content: system }, ...packHistory(history, 5000)];
+  const messages = [{ role: 'system', content: system }, ...(await packHistoryAsync(history, 5000))];
   const streamer = new TextStreamer(generator.tokenizer, {
     skip_prompt: true,
     skip_special_tokens: true,
