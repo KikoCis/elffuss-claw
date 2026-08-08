@@ -90,3 +90,9 @@ No framework, no build step. The agent talks to the tools with
 ## License
 
 [Apache-2.0](LICENSE).
+
+## Gestión de contexto
+
+El empaquetador de contexto (BM25 con IDF endógena contra la pregunta viva, sin heurísticas) está medido: recuerdo de hechos **15,1 % → 65,3 %** al mismo gasto de tokens, y **recuperar bien bate a no comprimir** (F1 28,09 contra 22,56 del contexto completo, con el 8 % de los tokens).
+
+Tablas completas, ablaciones y referencias en el **[core compartido](https://github.com/KikoCis/elffuss#cómo-se-mide-el-gestor-de-contexto)** · la historia con lo que salió mal en la **[bitácora](https://bitacora.utopiaia.com/posts/16-beaten-by-doing-nothing.html)**.
