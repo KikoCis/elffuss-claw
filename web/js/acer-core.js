@@ -202,9 +202,15 @@ function buildBM25(docs, opts) {
  * mtime», de modo que volver a guardar invalida lo anterior. Aquí la marca
  * temporal es el turno, y el nombre es el objetivo de la llamada.
  *
- * Se DEGRADA, no se borra: si alguien pregunta explícitamente qué decía antes,
- * sigue estando. Es la diferencia entre «esto ya no es cierto» y «esto no
- * existió nunca», y solo la primera es verdad.
+ * Se DEGRADA, no se borra — pero con una salvedad medida que conviene no
+ * maquillar: preguntando EXPRESAMENTE por el valor anterior, la versión vieja
+ * vuelve 0 de 8 veces. Está en el conjunto y no se recupera nunca, porque una
+ * vez degradada compite entre cientos de líneas de puntuación cero y quién
+ * vuelve de ahí lo decide el pase de diversidad, no la pregunta. ALCANZABLE NO
+ * ES RECUPERABLE. La diferencia entre «esto ya no es cierto» y «esto no existió
+ * nunca» es real en la estructura de datos y todavía NO lo es en el
+ * comportamiento. Recuperar el historial a petición pide otra vía: que la
+ * pregunta señale temporalidad y se busque explícitamente en lo caducado.
  *
  * Devuelve un Set con los índices de mensaje cuyo resultado quedó superado.
  */
