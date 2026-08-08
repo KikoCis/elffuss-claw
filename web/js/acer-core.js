@@ -26,18 +26,36 @@
  *                                              puntuar. No usa lo que le das.
  *     este ......................... 65,3 % ± 8,5
  *
- *     acer (v1, heurísticas) ....... 0,020
- *     últimos N mensajes ........... 0,058
- *     BM25 solo .................... 0,598
- *     embeddings solos ............. 0,596
- *     híbrido (suma ponderada) ..... 0,685
- *     híbrido con fusión de rangos . 0,706   ← lo que implementa este fichero
+ *     (LoCoMo, 200 preguntas, F1 del propio repo · recall de evidencia)
+ *
+ *                                        F1      evidencia
+ *     contexto COMPLETO (techo) ....  22,56       100 %
+ *     últimos N mensajes ...........   6,62       5,8 %
+ *     acer v1 (heurísticas) ........   6,07       2,0 %   ← por debajo del suelo
+ *     BM25 sin IDF .................  20,34      47,8 %
+ *     BM25 .........................  23,59      60,3 %
+ *     embeddings ...................  23,95      60,0 %
+ *     híbrido (suma ponderada) .....  26,36      69,1 %
+ *     fusión de RANGOS .............  28,09      71,1 %   ← este fichero
+ *
+ * ★ RECUPERAR BIEN BATE A TENERLO TODO: 28,09 contra 22,56 del contexto
+ *   completo, usando el 8 % de los tokens — el 135 % del techo. Lo irrelevante
+ *   no es neutro: distrae. Comprimir bien no es un mal menor, es una MEJORA.
+ *
+ * ★ Y encender la heurística cuesta −3,02 F1 (26,36 con peso 0 → 23,34 con el
+ *   peso que llevaba). No es que no aportara: restaba.
  *
  * Dos lecturas importantes de esa tabla:
  *
- *   1. BM25 y los embeddings EMPATAN. Lo semántico no es "mejor" que lo léxico;
- *      recupera cosas DISTINTAS. Por eso fusionarlos gana a cualquiera de los dos.
- *      El léxico acierta el identificador exacto; lo semántico acierta la paráfrasis.
+ *   1. BM25 y los embeddings EMPATAN en global, pero NO hacen el mismo trabajo.
+ *      Partiendo las preguntas por solape de vocabulario con la respuesta:
+ *
+ *        sin solape léxico (n=107):  embeddings 24,28  >  BM25 18,60
+ *        con solape       (n=93):    BM25       29,33  >  embeddings 23,58
+ *        fusión de rangos:                      24,05  /            32,73
+ *
+ *      La fusión se queda con LOS DOS. Lo semántico no sustituye al léxico:
+ *      le cubre el punto ciego. Ese es el motivo de que el híbrido exista.
  *
  *   2. La fusión por RANGOS gana a la suma ponderada, y además evita tener que
  *      calibrar escalas entre una puntuación BM25 (no acotada) y un coseno
@@ -68,7 +86,7 @@
  *     crece con el cuadrado de los turnos.
  *
  *   · Degradación limpia: sin función de embeddings, esto es BM25 solo — que ya
- *     es 0,598 frente al 0,020 de la v1. Lo semántico suma, no es requisito.
+ *     es F1 23,59 frente al 6,07 de la v1. Lo semántico suma, no es requisito.
  *
  * No usa APIs de Node → cargable en el navegador como módulo ES.
  */
