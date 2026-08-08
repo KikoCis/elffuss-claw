@@ -8,6 +8,31 @@
 // puntuados por BM25-lite contra la consulta actual. Los evictados se
 // sustituyen por una marca de omisión para que el modelo sepa que falta algo.
 
+import { packHistoryACER } from './acer-core.js';
+
+// ── ACE_R unificado ─────────────────────────────────────────────────────────
+// El empaquetado por MENSAJES de aquí abajo se medió contra sesiones reales de
+// Elffuss Code (leer/buscar/editar un proyecto durante ~50 turnos) y falla por
+// dos motivos: (1) los últimos RECENT mensajes por sí solos ya se salen del
+// presupuesto en el 55% de los turnos (un [resultado code.read] son ~1.5k tokens,
+// no 68 como en el test sintético), así que NINGÚN mensaje antiguo sobrevive y
+// se devuelven ~5.1k tokens cuando se piden 3k; (2) al conservar/tirar mensajes
+// ENTEROS, el dato concreto que el agente vuelve a pedir se pierde aunque BM25
+// puntúe bien ese mensaje. Medido sobre 32 sesiones reales (4 proyectos × 8
+// semillas, 53 turnos): recuerdo de un dato antiguo que el agente vuelve a pedir
+// 9.2% ± 11.3 (esto) vs 67.7% ± 7.9 (acer-core) con el MISMO gasto de tokens;
+// truncar por la cola da 7.9% ± 11.9. acer-core.js selecciona por LÍNEAS con un
+// presupuesto global. Banco: agentic-install/lab/gemma-e2b-cli/agent_test/acer_real.
+// AVISO honesto: la ventaja viene del solape léxico con la PREGUNTA; si la
+// pregunta no nombra lo que busca (solo el fichero), baja a 12.7% vs 6.8%.
+//
+// Para volver al comportamiento anterior (o comparar), en la consola:
+//   localStorage.setItem('elffuss.acer', 'v1')   → empaquetado por mensajes
+//   localStorage.removeItem('elffuss.acer')      → ACE_R unificado (por defecto)
+function acerUnificado() {
+  try { return localStorage.getItem('elffuss.acer') !== 'v1'; } catch { return true; }
+}
+
 const RECENT = 6;
 const MAX_MSG_CHARS = 12000; // ningún mensaje (p.ej. un README enorme) revienta el contexto
 
@@ -57,6 +82,7 @@ const shrink = m => m.content.startsWith('[resultado') && m.content.length > 600
 
 export function packHistory(history, budgetTokens = 2200) {
   if (!history.length) return history;
+  if (acerUnificado()) return packHistoryACER(history, budgetTokens).messages;
   // los recientes también se recortan por mensaje: un solo tool-result gigante
   // (README de un repo grande) reventaba el contexto → «Too many tokens».
   const recent = history.slice(-RECENT).map(clampMsg);
