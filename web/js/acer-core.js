@@ -188,6 +188,46 @@ function buildBM25(docs, opts) {
   return { idf, scoreDoc, df, N, avgdl };
 }
 
+/**
+ * CADUCIDAD — el mismo problema que ya resolvimos en el vigilante de carpetas,
+ * un piso más arriba.
+ *
+ * Un agente lee `shell.js` en el turno 3 y lo EDITA en el 20. BM25 recupera las
+ * dos versiones y la vieja puntúa igual de alto, porque comparte todo el
+ * vocabulario con la nueva — de hecho puede ganarle. El modelo ve contenido
+ * obsoleto sin ninguna señal de que lo es, y eso no es ineficiencia: es
+ * INCORRECCIÓN. Ninguna cantidad de relevancia arregla que el dato sea falso.
+ *
+ * En el observador de carpetas ya identificábamos el contenido por «nombre +
+ * mtime», de modo que volver a guardar invalida lo anterior. Aquí la marca
+ * temporal es el turno, y el nombre es el objetivo de la llamada.
+ *
+ * Se DEGRADA, no se borra: si alguien pregunta explícitamente qué decía antes,
+ * sigue estando. Es la diferencia entre «esto ya no es cierto» y «esto no
+ * existió nunca», y solo la primera es verdad.
+ *
+ * Devuelve un Set con los índices de mensaje cuyo resultado quedó superado.
+ */
+function markSuperseded(msgs, toolPrefixes) {
+  const lastFor = new Map();      // objetivo -> índice del resultado más nuevo
+  const targetOf = new Map();     // índice del resultado -> objetivo
+  for (let i = 0; i < msgs.length; i++) {
+    const c = msgs[i].content || '';
+    if (!toolPrefixes.some(p => c.startsWith(p))) continue;
+    // el objetivo viene en la llamada del asistente inmediatamente anterior:
+    // el resultado no lo lleva, solo dice qué herramienta fue.
+    const call = i > 0 ? (msgs[i - 1].content || '') : '';
+    const m = call.match(/"tool"\s*:\s*"([^"]+)"[\s\S]{0,200}?"(?:path|file|command)"\s*:\s*"([^"]+)"/);
+    if (!m) continue;
+    const key = m[1].split('.')[0] + ':' + m[2];   // p.ej. code:vcc/builder.js
+    targetOf.set(i, key);
+    lastFor.set(key, i);
+  }
+  const stale = new Set();
+  for (const [i, key] of targetOf) if (lastFor.get(key) !== i) stale.add(i);
+  return stale;
+}
+
 // ── similitud (dedup + MMR + coseno semántico) ──────────────────────────────
 function simTokens(s) { return new Set((s.toLowerCase().match(/[a-z0-9_./-]{2,}/g) || [])); }
 function jaccard(a, b) {
@@ -256,6 +296,7 @@ const DEFAULTS = {
   PIN_QUERY_TERMS: true,  // lo que la pregunta nombra no se desaloja jamás
   PIN_MAX: 40,
   // — presupuesto —
+  SUPERSEDE: true,       // degradar resultados caducados (ver markSuperseded)
   ELASTIC: true,          // no rellenar con lo irrelevante (ver selectAndEmit)
   TAIL_MIN_FRAC: 0.10,    // SUELO garantizado para los ultimos turnos
   HEAD_FRAC: 0.05,        // reserva para los PRIMEROS mensajes, sin puntuar
@@ -485,11 +526,12 @@ function prepare(history, budgetTok, O) {
     if (m.role === 'user' && !O.TOOL_PREFIXES.some(p => m.content.startsWith(p))) { query = m.content; break; }
   }
 
+  const stale = O.SUPERSEDE ? markSuperseded(old, O.TOOL_PREFIXES) : new Set();
   const items = [];
   old.forEach((m, mi) => {
     const lines = m.content.split('\n');
     lines.forEach((line, li) => {
-      items.push({ mi, li, line, first: li === 0 });
+      items.push({ mi, li, line, first: li === 0, stale: stale.has(mi) });
     });
   });
 
@@ -501,7 +543,10 @@ function prepare(history, budgetTok, O) {
   for (let i = 0; i < items.length; i++) {
     items[i].bm = bm25.scoreDoc(i, qTerms);
     items[i].rec = items[i].mi / nMsg;
-    items[i].qHit = items[i].bm > 0;
+    // El pin NO puede ignorar la caducidad: la versión vieja lleva el mismo
+    // identificador que la nueva, así que se fijaba sola y el degradado no
+    // servía de nada. Que la pregunta nombre algo no lo vuelve cierto.
+    items[i].qHit = items[i].bm > 0 && !items[i].stale;
   }
   return { done: false, recent, old, used, items, query, qTerms, bm25, nMsg, O, head };
 }
@@ -715,7 +760,9 @@ function packHistoryACER(history, budgetTok, options) {
     // Dos estratos separados por 10 — más de lo que la penalización MMR (≤0.8)
     // puede recorrer, así que la diversidad reordena DENTRO de un estrato pero
     // nunca cuela una línea irrelevante por delante de una relevante.
-    it.score = it.bm > 0 ? 10 + it.bm / maxBm : (Oa._recTie ? it.rec : 0);
+    // Degradado, no borrado: baja del estrato relevante al de relleno, así que
+    // solo entra si no hay nada mejor — y con la ventana elástica, casi nunca.
+    it.score = (it.bm > 0 && !it.stale) ? 10 + it.bm / maxBm : (Oa._recTie ? it.rec : 0);
     if (it.first) it.score = Math.max(it.score, 0.5);  // cabecera de procedencia
   }
   const r = selectAndEmit(ctx, budgetTok, Oa);
@@ -782,7 +829,7 @@ async function packHistoryACERHybrid(history, budgetTok, options) {
 
   const Oa = ctx.O || O;                       // perillas ya autoajustadas
   for (const it of ctx.items) {
-    const rel = (it.bm > 0) || ((it.sem || 0) > 0);
+    const rel = !it.stale && ((it.bm > 0) || ((it.sem || 0) > 0));
     it.score = rel ? 10 + (fused.get(idOf(it)) || 0) / maxF : (Oa._recTie ? it.rec : 0);
     if (it.first) it.score = Math.max(it.score, 0.5);
   }
