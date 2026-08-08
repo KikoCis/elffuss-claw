@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 const BASE = process.env.BASE || 'https://elffuss-claw.utopiaia.com';
-const PROFILE = '/tmp/trabajo';
+const PROFILE = (process.env.SCRATCH || '/tmp/elffuss-test') + '/profile-claw-gemma';
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-webgpu', '--use-angle=metal'],
   viewport: { width: 1440, height: 900 },

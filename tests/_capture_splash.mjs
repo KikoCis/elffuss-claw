@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const OUT = '/tmp/trabajo';
+const OUT = (process.env.SCRATCH || '/tmp/elffuss-test') + '/videos';
 const BASE = 'https://elffuss-claw.utopiaia.com';
 const ctx = await chromium.launch().then(b => b.newContext({
   viewport: { width: 1440, height: 900 },

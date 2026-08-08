@@ -2,7 +2,7 @@
 // perfiles propios de Claw, adaptador sobre fs.js (multi-carpeta), tool-calling
 // REAL (fs.read de verdad) y play/stop persistente vía el botón 🧠.
 import { chromium } from 'playwright';
-const OUT = '/tmp/trabajo';
+const OUT = (process.env.SCRATCH || '/tmp/elffuss-test');
 const BASE = process.env.BASE || 'http://localhost:8798';
 let fails = 0; const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
 

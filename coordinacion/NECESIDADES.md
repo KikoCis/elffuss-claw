@@ -14,7 +14,7 @@ Contexto técnico para servir modelos a Elffuss:
 - El runtime del navegador ya está resuelto y verificado (viene de vuestra demo
   `lab/bitacora/posts/08-jspace-live.html`): transformers.js v3 (ONNX, WebGPU
   dtype `q4`) y LiteRT-LM `@litert-lm/core` (`.litertlm`, solo WebGPU).
-- Los pesos autoalojados van en `/Users/dev/work2026/elffuss/web/models/`
+- Los pesos autoalojados van en `<repo>/elffuss/web/models/`
   (NO van por git; `./deploy.sh` los sube por rsync a producción).
 - El protocolo agéntico que debe hablar el modelo está en
   `web/js/agent.js` (`systemPrompt()`): responder texto normal O un bloque
