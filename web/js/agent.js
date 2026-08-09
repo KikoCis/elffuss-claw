@@ -67,12 +67,64 @@ CONTEXTO AHORA (estado real del sistema, úsalo al responder):
 ${context}` : ''}`;
 }
 
+// Repara el JSON de modelos pequeños: coma final + saltos de línea/tab/CR
+// LITERALES dentro de cadenas (rompen JSON.parse). Las comillas internas sin
+// escapar las resuelve looseToolCall.
+function repairJson(raw) {
+  const s = raw.replace(/,(\s*[}\]])/g, '$1');
+  let out = '', inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (esc) { out += ch; esc = false; continue; }
+    if (ch === '\\') { out += ch; esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; out += ch; continue; }
+    if (inStr && ch === '\n') { out += '\\n'; continue; }
+    if (inStr && ch === '\r') { out += '\\r'; continue; }
+    if (inStr && ch === '\t') { out += '\\t'; continue; }
+    out += ch;
+  }
+  return out;
+}
+
+// Extractor tolerante dirigido por claves: localiza cada clave conocida y lee su
+// valor hasta la comilla de cierre REAL (« seguida de , " o }} »), tolerando
+// comillas y saltos sin escapar. Si una cadena NO cierra, es un truncado a media
+// escritura → no recuperar (no inventar datos).
+function looseToolCall(raw) {
+  const tm = raw.match(/"tool"\s*:\s*"([\w.]+)"/);
+  if (!tm) return null;
+  const am = raw.match(/"args"\s*:\s*\{/);
+  const body = am ? raw.slice(am.index + am[0].length) : raw;
+  const args = {};
+  for (const key of ['path', 'content', 'name', 'html', 'prompt', 'text', 'search', 'replace', 'query', 'key', 'value']) {
+    const km = body.match(new RegExp('"' + key + '"\\s*:\\s*"'));
+    if (!km) continue;
+    let val = '', closed = false;
+    for (let i = km.index + km[0].length; i < body.length; i++) {
+      const ch = body[i];
+      if (ch === '\\') { val += ch + (body[i + 1] || ''); i++; continue; }
+      if (ch === '"' && /^\s*(,\s*"|\}\s*[}\]]|\}\s*$|$)/.test(body.slice(i + 1))) { closed = true; break; }
+      val += ch;
+    }
+    if (!closed) return null;
+    try { val = JSON.parse('"' + val.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"'); } catch { /* crudo */ }
+    args[key] = val;
+  }
+  for (const key of ['inMinutes', 'offset', 'limit', 'depth']) {
+    const nm = body.match(new RegExp('"' + key + '"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)'));
+    if (nm) args[key] = Number(nm[1]);
+  }
+  return { tool: tm[1], args };
+}
+
 function tryJson(raw) {
-  try {
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj.tool === 'string') return { tool: obj.tool, args: obj.args || {} };
-  } catch { /* no era JSON */ }
-  return null;
+  for (const cand of [raw, repairJson(raw)]) {
+    try {
+      const obj = JSON.parse(cand);
+      if (obj && typeof obj.tool === 'string') return { tool: obj.tool, args: obj.args || {} };
+    } catch { /* siguiente capa */ }
+  }
+  return looseToolCall(raw);
 }
 
 // Formato NATIVO de LFM2.5 (y afines): <|tool_call_start|>[ name(k="v", n=3) ]<|tool_call_end|>

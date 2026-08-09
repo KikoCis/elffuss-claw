@@ -650,9 +650,8 @@ const DEFAULTS = {
   // — presupuesto —
   SUPERSEDE: true,       // degradar resultados caducados (ver markSuperseded)
   ELASTIC: true,          // no rellenar con lo irrelevante (ver selectAndEmit)
-  TAIL_MIN_FRAC: 0.10,    // SUELO garantizado para los ultimos turnos
-  HEAD_FRAC: 0.05,        // reserva para los PRIMEROS mensajes, sin puntuar
-                          // (solo bajo presión — ver autotune)
+  TAIL_MIN_FRAC: 0.05,    // SUELO garantizado para los ultimos turnos
+  HEAD_FRAC: 0,             // desactivada: ver nota en autotune
   RECENT: 6,
   RECENT_FRAC: null,      // null = derivado de la presión de compresión
   MAX_MSG_CHARS: 12000,
@@ -730,7 +729,16 @@ function autotune(historyTok, budgetTok, O) {
   // 100 % al 0 % a presupuesto 16.000. Su supervivencia era un accidente del
   // relleno, no una propiedad de tener sitio. Cuesta un 5 % y ya está medido
   // que no resta: incondicional.
-  const headOn = true;
+  // CABECERA DESACTIVADA (decisión del usuario, 2026-08-09).
+  // Medida, ayudaba en sesiones de agente: el encargo original pasaba de 0/5 a
+  // 5/5 con presupuesto apretado, porque el arranque lleva la tarea y nadie la
+  // repite, así que BM25 no puede rescatarla. Pero en DIÁLOGO no hay encargo
+  // que proteger y la reserva cobra sin dar nada: en LoCoMo el motor con ella
+  // recupera 56,2 % de la evidencia donde BM25 pelado recupera 62,5 %, con los
+  // mismos tokens. Una reserva incondicional para algo que puede no existir es
+  // la misma enfermedad que las constantes: presupone en vez de medir.
+  // Se deja el mecanismo, con HEAD_FRAC a 0. Ponerlo a 0.05 lo reactiva.
+  const headOn = O.HEAD_FRAC > 0;
   const recencyWeight = O.RECENCY_WEIGHT * (1 - pressure);   // solo informativo
 
   return { pressure, recentFrac, recencyWeight, recencyTiebreak, headOn };
