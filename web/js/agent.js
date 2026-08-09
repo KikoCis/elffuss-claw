@@ -147,7 +147,11 @@ export class Agent {
   setProvider(p) { this.provider = p; }
 
   async handle(userText, onEvent) {
-    this.history.push({ role: 'user', content: userText });
+    // La marca temporal se pone AL AÑADIR, que es el único momento en que se
+    // sabe: el gestor de contexto resuelve «ayer» con la fecha del turno en que
+    // se dijo, no con la de ahora (ver annotateDates en acer-core.js). Sin esto
+    // la anotación se calla, que es lo correcto, pero no sirve para nada.
+    this.history.push({ role: 'user', content: userText, ts: Date.now() });
     const done = [];            // firmas de tool calls ya ejecutadas este turno
     let lastResult = '';
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -164,7 +168,7 @@ export class Agent {
 
       const call = parseToolCall(out);
       if (!call) {
-        this.history.push({ role: 'assistant', content: out });
+        this.history.push({ role: 'assistant', content: out, ts: Date.now() });
         onEvent({ type: 'text', text: out });
         return;
       }
@@ -187,8 +191,8 @@ export class Agent {
       lastResult = resultStr;
       onEvent({ type: 'tool_result', tool: call.tool, result: resultStr });
 
-      this.history.push({ role: 'assistant', content: out });
-      this.history.push({ role: 'user', content: `[resultado ${call.tool}]\n${resultStr}` });
+      this.history.push({ role: 'assistant', content: out, ts: Date.now() });
+      this.history.push({ role: 'user', content: `[resultado ${call.tool}]\n${resultStr}`, ts: Date.now() });
 
       // Tras crear/abrir una app, la tarea suele estar hecha: cierra ya.
       if ((call.tool === 'app.create' || call.tool === 'app.open') && !resultStr.startsWith('ERROR')) {

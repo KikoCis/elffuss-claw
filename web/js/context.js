@@ -68,6 +68,25 @@ function semanticoOn() {
   try { return localStorage.getItem('elffuss.semantic') === 'on'; } catch { return false; }
 }
 
+// ── TARJETA DE RECUENTO (agregación) ────────────────────────────────────────
+// «¿cuántos ficheros has tocado?» no está en ninguna línea del historial: está
+// repartida en cuarenta. Ningún top-k la encuentra POR CONSTRUCCIÓN — no es que
+// puntúe mal, es que no existe la línea que buscar. acer-core lo cuenta al
+// indexar y lo emite como un bloque protegido (ver buildLedger / renderCard).
+//
+// APAGADO por defecto, y por lo que salió al MEDIRLO: la tarjeta ocupa ~150
+// tokens del presupuesto y en el banco de hechos cuesta −1,1 puntos a
+// presupuesto 3.000 (el de esta app) y ±0,0 a 16.000. A cambio, con ella el
+// recuento pasa de estar el 0 % de las veces a estar el 100 %, y la enumeración
+// de lo editado del 58,9 % al 90,6 %. O sea: si la sesión es de las que acaban
+// con «hazme la lista de lo que tocaste», compensa; si no, se paga por nada.
+//
+//   localStorage.setItem('elffuss.resumen', 'on')    → con tarjeta
+//   localStorage.removeItem('elffuss.resumen')       → sin tarjeta (por defecto)
+function resumenOn() {
+  try { return localStorage.getItem('elffuss.resumen') === 'on'; } catch { return false; }
+}
+
 // SEM_BUDGET alto A PROPÓSITO, y esto es lo contrario de lo que parece.
 //
 // acer-core deriva el tamaño de bloque como SB = ceil(nLíneas / SEM_BUDGET) y
@@ -147,7 +166,7 @@ const shrink = m => m.content.startsWith('[resultado') && m.content.length > 600
 
 export function packHistory(history, budgetTokens = 2200) {
   if (!history.length) return history;
-  if (acerUnificado()) return packHistoryACER(history, budgetTokens).messages;
+  if (acerUnificado()) return packHistoryACER(history, budgetTokens, { SUMMARY: resumenOn() }).messages;
   // los recientes también se recortan por mensaje: un solo tool-result gigante
   // (README de un repo grande) reventaba el contexto → «Too many tokens».
   const recent = history.slice(-RECENT).map(clampMsg);
@@ -200,7 +219,7 @@ export async function packHistoryAsync(history, budgetTokens = 2200) {
     // transformers.js y el modelo— no se piden nunca.
     const { embed, embedCache } = await import('./embed.js');
     const r = await packHistoryACERHybrid(history, budgetTokens, {
-      embed, cache: embedCache(), SEM_BUDGET,
+      embed, cache: embedCache(), SEM_BUDGET, SUMMARY: resumenOn(),
     });
     return r.messages;
   } catch {
