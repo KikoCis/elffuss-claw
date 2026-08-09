@@ -12,6 +12,7 @@ const MAX_SKILL = 12_000;      // caracteres del cuerpo que se inyectan al model
 
 export const CATALOG_REPO = 'anthropics/skills';
 export const DEFAULT_SOURCES = [
+  { repo: 'KikoCis/elffuss-claw-skills', label: 'Elffuss · Skills que funcionan en Claw (3D·Excel·web·juegos)', official: true },
   { repo: 'bbgnsurftech/claude-skills-collection', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
   { repo: 'anthropics/skills', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
   { repo: 'anthropics/claude-plugins-official', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
