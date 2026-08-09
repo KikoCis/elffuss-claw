@@ -665,7 +665,22 @@ const DEFAULTS = {
                           // el TAMAÑO de bloque sale de aquí, no al revés)
   RECENCY_WEIGHT: 0.15,   // prior suave, NO una dimensión de contenido
   // — redundancia —
-  MMR: true,
+  // MMR OFF by default — measured dead, twice over.
+  //
+  // It earned its place with +2.4 points. That was before the elastic window
+  // and before the word splitter was fixed. Re-measured on 2026-08-09 across
+  // 3 projects and 8 seeds: 94.9% with it and 94.9% without at a 3,000 budget,
+  // 100.0% and 100.0% at 16,000. It still changes the output in a third of
+  // requests and never once changes the outcome. On the dialogue benchmark it
+  // fires and decides nothing either.
+  //
+  // The reason is upstream: the elastic window only admits relevant material
+  // now, and the fixed splitter finds more of it, so a diversity penalty has
+  // nothing left to arbitrate. A mechanism that justified itself with a number,
+  // stopped justifying itself when something above it changed, and nobody
+  // re-checked. Kept behind the flag rather than deleted, because the day it
+  // earns its keep again the evidence should be a measurement, not a memory.
+  MMR: false,
   MMR_LAMBDA: null,       // null = medido del historial (ver autotune)
   MMR_CAND: null,         // null = derivado del presupuesto
   DEDUP: true,
