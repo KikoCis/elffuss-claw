@@ -15,6 +15,7 @@ export const DEFAULT_SOURCES = [
   { repo: 'bbgnsurftech/claude-skills-collection', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
   { repo: 'anthropics/skills', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
   { repo: 'anthropics/claude-plugins-official', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
+  { repo: 'earthtojake/text-to-cad', label: 'Text-to-CAD · CAD/STEP/DXF (oficial)', official: true },
 ];
 
 let cache = []; // instaladas, en memoria (para que el systemPrompt sea síncrono)
