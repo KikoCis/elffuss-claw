@@ -15,7 +15,8 @@ export const DEFAULT_SOURCES = [
   { repo: 'bbgnsurftech/claude-skills-collection', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
   { repo: 'anthropics/skills', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
   { repo: 'anthropics/claude-plugins-official', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
-  { repo: 'earthtojake/text-to-cad', label: 'Text-to-CAD · CAD/STEP/DXF (oficial)', official: true },
+  { repo: 'earthtojake/text-to-cad', label: 'Text-to-CAD · CAD/STEP/DXF (Python, solo referencia)', official: true },
+  { repo: 'scottstts/Threejs-Awesome-Graphics-Agent-Skills', label: '3D en el navegador · Three.js (funciona en Claw)', official: true },
 ];
 
 let cache = []; // instaladas, en memoria (para que el systemPrompt sea síncrono)
