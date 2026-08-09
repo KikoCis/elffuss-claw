@@ -143,11 +143,15 @@ const lastAssistant = page => page.locator('.msg.assistant').last().textContent(
   await p.context().close();
 }
 
-// ============ 11 · el E4B roto NO es cargable (anti-crash) ============
+// ============ 11 · modelos ofrecidos correctos ============
+// El E4B OFICIAL de Google (litert:gemma-e4b) SÍ carga y responde — verificado
+// end-to-end (baja ~2.8GB, motor GPU OK, responde). El que estaba ROTO y NO debe
+// ofrecerse es el healed «Elffuss E4B» (export prefill_decode, ELFFUSS_LITERT_READY
+// = false) hasta el reexport artisan.
 {
   const p = await fresh();
   const opts = await p.$$eval('#model-select option', os => os.map(o => o.textContent));
-  ok('11 · el Gemma E4B roto no se ofrece (evita el crash de WebGPU)', !opts.some(o => /E4B/.test(o)), JSON.stringify(opts));
+  ok('11 · el Elffuss E4B healed (aún roto) NO se ofrece', !opts.some(o => /Elffuss E4B|healed[^)]*E4B/i.test(o)), JSON.stringify(opts));
   await p.context().close();
 }
 

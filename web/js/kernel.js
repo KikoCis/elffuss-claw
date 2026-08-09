@@ -64,7 +64,7 @@ const realGPUCheck = (async () => {
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
-  if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~4 GB) ★ — por defecto' });
+  if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~2.8 GB) ★ — por defecto' });
   if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
   local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) — ligero' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
