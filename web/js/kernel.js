@@ -7,7 +7,9 @@ import * as settings from './settings.js';
 import * as skills from './skills.js';
 import { applyI18n, t } from './i18n.js';
 import { ensureModelCache } from './model-cache.js';
-import { tasks, watch } from './tools/index.js';
+import { tasks, watch, fs, apps } from './tools/index.js';
+import { hardWork, gatherFolder, deepCreate } from './rlm.js';
+import * as workspace from './workspace.js';
 import * as ceo from './ceo.js';
 import * as mind from './mind.js';
 import { ceoWorkspace, CEO_DEFAULT_PROFILES } from './ceo-adapter.js';
@@ -81,6 +83,7 @@ const defaultBrain = () => !realGPU ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' 
 
 const agent = new Agent(rules);
 let busy = false;
+let hardMode = false;   // Hard Work (RLM): la próxima petición se procesa por partes
 let activeModel = 'rules';   // qué proveedor está cargado (para el vigilante de RAM)
 let activeMod = null;
 
@@ -124,12 +127,13 @@ async function pump() {
 }
 
 async function process(text) {
+  if (hardMode) return processHardWork(text);
   busy = true;
   const thinking = ui.thinkingBubble();
   try {
     await agent.handle(text, ev => {
       if (ev.type === 'token') thinking.tick(ev.text);
-      if (ev.type === 'text') ui.addMsg('assistant', ev.text);
+      if (ev.type === 'text') { ui.addMsg('assistant', ev.text); if (window.__copilotOpener) { try { window.__copilotEmit(ev.text); } catch { /* */ } } }
       if (ev.type === 'tool') { thinking.tool(ev.call.tool); ui.addTool(ev.call); }
       if (ev.type === 'tool_result') ui.addToolResult(ev.tool, ev.result);
       if (ev.type === 'error') ui.addMsg('assistant err', ev.text);
@@ -141,6 +145,63 @@ async function process(text) {
     // refrescar, la conversación sigue ahí y ningún mensaje se pierde.
     await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
     await db.set('kv', 'lastDone', text).catch(() => {});
+    workspace.touch('history');
+  }
+}
+
+// Hard Work (RLM): trabaja la carpeta autorizada ENTERA por partes. El modelo
+// no ve todo de golpe — se trocea, se pregunta a cada parte y se funde. Tarda,
+// pero abarca material que no cabe en la ventana del modelo.
+async function processHardWork(question) {
+  busy = true;
+  const thinking = ui.thinkingBubble();
+  const fail = msg => { thinking.remove(); ui.addMsg('assistant', msg); busy = false; };
+  try {
+    if (activeModel === 'rules') return fail('Hard Work necesita un cerebro cargado: elige un modelo local o remoto en el selector de arriba y vuelve a intentarlo.');
+    const names = await fs.folders().catch(() => []);
+    if (!names.length) {
+      // Sin carpeta que leer → modo CREACIÓN: el modelo hace un borrador, se
+      // autocritica y se reescribe. Misma petición, dos pasadas → mejor app.
+      const res = await deepCreate({
+        brief: question, provider: agent.provider, rounds: 1,
+        onProgress: p => thinking.tool(
+          p.phase === 'draft' ? 'Hard Work · borrador…'
+            : p.phase === 'critique' ? `Hard Work · autocrítica ${p.round}`
+            : p.phase === 'rewrite' ? `Hard Work · reescribiendo ${p.round}`
+            : 'Hard Work · listo'),
+      });
+      thinking.remove();
+      const name = (question.trim().slice(0, 24) || 'app');
+      try { await apps.create({ name, html: res.html }); } catch { /* si falla, al menos responde */ }
+      ui.addMsg('assistant', `Listo. Lo trabajé en dos pasadas — borrador → autocrítica → reescritura — y lo dejé en el visualizador.\n\n_⛏ Hard Work (creación): ${res.trace.length - 1} ronda de mejora._`);
+      agent.history.push({ role: 'user', content: question, ts: Date.now() });
+      agent.history.push({ role: 'assistant', content: '(app creada con Hard Work)', ts: Date.now() });
+      return; // el finally resetea busy y guarda el histórico
+    }
+    thinking.tool('Hard Work · abriendo carpeta…');
+    const root = await fs.root();
+    const context = await gatherFolder(root, { maxBytes: 1.5e6 });
+    if (!context.trim()) return fail('Esa carpeta no tiene archivos de texto que pueda leer. Autoriza otra con documentos/código y reintenta.');
+    const res = await hardWork({
+      question, context, provider: agent.provider,
+      onProgress: p => {
+        if (p.phase === 'plan') thinking.tool(`Hard Work · ${p.chunks} partes (${Math.round(p.chars / 1000)}k)${p.truncated ? ' — recorté al máximo' : ''}`);
+        else if (p.phase === 'map') thinking.tool(`Hard Work · leyendo ${p.i}/${p.n}`);
+        else if (p.phase === 'reduce-group') thinking.tool(`Hard Work · fundiendo grupo ${p.g}/${p.n}`);
+        else if (p.phase === 'reduce') thinking.tool('Hard Work · sintetizando…');
+      },
+    });
+    thinking.remove();
+    ui.addMsg('assistant', res.answer + `\n\n_⛏ Hard Work (RLM): leí ${names[0]} en ${res.chunks} partes, ${res.kept} con señal.${res.truncated ? ' Material recortado al máximo — acota la carpeta para abarcarlo entero.' : ''}_`);
+    agent.history.push({ role: 'user', content: question, ts: Date.now() });
+    agent.history.push({ role: 'assistant', content: res.answer, ts: Date.now() });
+  } catch (e) {
+    thinking.remove();
+    ui.addMsg('assistant err', 'Hard Work falló: ' + (e?.message || String(e)));
+  } finally {
+    busy = false;
+    await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
+    await db.set('kv', 'lastDone', question).catch(() => {});
   }
 }
 
@@ -214,6 +275,7 @@ async function changeModel(id) {
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
     ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
     ui.toast(t('modelReady', { where }));
+    if (window.__copilotOpener) copilotPostState('Listo. Habla con el cliente y te voy soplando.');
     return true;
   } catch (e) {
     ui.modelProgress(null);
@@ -260,6 +322,13 @@ if (!localStorage.getItem('elffuss.welcomed')) {
 
 skills.initSkills();
 ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
+// Botón «liberar el modelo» del panel de consumo: suelta la RAM sin recargar.
+ui.setOnFreeModel(async () => {
+  const mod = activeMod;
+  agent.setProvider(rules); activeModel = 'rules'; activeMod = null;
+  ui.setModel('rules'); ui.modelStatus('off');
+  try { await mod?.unload?.(); } catch { /* mejor esfuerzo */ }
+});
 refreshModelOptions();
 restoreHistory().then(restoreQueue);
 
@@ -327,8 +396,11 @@ document.getElementById('btn-mind').addEventListener('click', () => {
   try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* */ }
   mind.openMind();
 });
-// restaura tu última elección (play o stop) tal cual la dejaste
-if (ceo.wasEnabledLastSession()) ceo.enable();
+// restaura tu última elección (play o stop) tal cual la dejaste. EXCEPTO en
+// modo copiloto: ahí el modelo es para soplarte argumentos en vivo, no para
+// ponerse a inventar mejoras (y de paso robarle el visor al tablero).
+const IS_COPILOT = /[?&]copilot=1/.test(location.search);
+if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
 
 // Autocarga SOLO LOCAL. Por defecto Gemma-4 E4B (escritorio) o E2B (móvil/GPU
 // débil), vía LiteRT-LM; si no cabe, cae a LFM2.5. Respeta lo último elegido.
@@ -340,6 +412,14 @@ if (ceo.wasEnabledLastSession()) ceo.enable();
     await realGPUCheck; // que defaultBrain()/modelOptions() vean el adaptador real, no solo la API
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
+    // En modo copiloto el translator YA está usando la máquina (Whisper +
+    // diarización), así que si NUNCA has elegido cerebro se arranca con el
+    // ligero para no competir. Pero tu elección manda: si escogiste Gemma,
+    // se respeta — pisarla era un error.
+    if (/[?&]copilot=1/.test(location.search) && !saved) {
+      ui.toast('Copiloto: arranco con el cerebro ligero para no competir con el traductor. Elige Gemma arriba si prefieres precisión.');
+      if (await changeModel('onnx')) return;
+    }
     const available = new Set(modelOptions().map(o => o.id));
     // si un Gemma pesado ya falló esta sesión, no reintentar (evita re-crash)
     const skipGemma = sessionStorage.getItem('elffuss.skipGemma') === '1';
@@ -401,4 +481,321 @@ watch.startWatcher(msg => {
   ui.addMsg('assistant', msg);
 });
 
-window.elffuss = { agent, send }; // consola de depuración
+// ── Espacio de trabajo: qué se puede guardar en tu disco / ver / borrar ──
+// El manifiesto es lo ÚNICO que Claw le cuenta al core sobre sus almacenes.
+workspace.init({
+  app: 'claw', ns: 'elffuss', db,
+  stores: [
+    { id: 'apps', label: 'Apps generadas', icon: '🎨', kind: 'idb-store', store: 'apps',
+      files: { ext: '.html', name: a => a.name, body: a => a.html } },
+    { id: 'skills', label: 'Skills', icon: '🧩', kind: 'idb-key', store: 'kv', key: 'skills',
+      files: { ext: '.md', name: s => s.name, body: s => `---\nname: ${s.name}\ndescription: ${s.description || ''}\n---\n\n${s.content || ''}` } },
+    { id: 'history', label: 'Conversación', icon: '💬', kind: 'idb-key', store: 'kv', key: 'history' },
+    { id: 'memory', label: 'Memoria', icon: '🧠', kind: 'idb-store', store: 'memory' },
+    { id: 'tasks', label: 'Tareas programadas', icon: '⏰', kind: 'idb-store', store: 'tasks' },
+    { id: 'vault', label: 'Bóveda (cifrada)', icon: '🔐', kind: 'idb-store', store: 'vault', sensitive: true },
+    { id: 'prefs', label: 'Preferencias', icon: '⚙️', kind: 'ls',
+      keys: ['elffuss.model', 'elffuss.acer', 'elffuss.resumen', 'elffuss.semantic'] },
+  ],
+});
+workspace.restore().catch(() => {});
+if (workspace.autosaveEnabled()) workspace.autosave({ enabled: true });
+
+window.elffuss = { agent, send, workspace }; // consola de depuración
+
+// ── Hard Work (RLM): trabaja la carpeta autorizada entera por partes ──
+const hwBtn = document.getElementById('btn-hardwork');
+hwBtn?.addEventListener('click', () => {
+  hardMode = !hardMode;
+  hwBtn.classList.toggle('on', hardMode);
+  const prompt = document.getElementById('prompt');
+  if (hardMode) {
+    prompt.placeholder = '⛏ Hard Work: crea algo, o pregunta sobre TODA tu carpeta…';
+    ui.toast('Hard Work activado. Con carpeta autorizada: la leo entera por partes y respondo. Sin carpeta: creo lo que pidas en dos pasadas (borrador → autocrítica → mejora). Tarda más, sale mejor.');
+  } else {
+    prompt.placeholder = 'Pídeme lo que necesites…  (/ para comandos)';
+    ui.toast('Hard Work desactivado: vuelvo al modo normal.');
+  }
+});
+
+// ── Skills de audio en vivo + superficies (SSP v0.1) ────────────────────────
+// Una skill de audio escucha la conversación que llega del Translator y pinta
+// su propia SUPERFICIE: una vista viva, aparte de las notificaciones, que el
+// host monta, actualiza y gestiona. La superficie se proyecta también a la app
+// que la abrió (pantalla partida real).
+//
+// Cada skill declara: qué ranuras rellena (objetivos o campos), qué instruye al
+// modelo y cómo se parsea su respuesta.
+const AUDIO_SKILLS = {
+  ventas: {
+    id: 'ventas', icon: '🎯', name: 'Copiloto de ventas',
+    desc: 'Te sopla el argumento exacto y marca los objetivos de la llamada.',
+    kind: 'goals', tag: 'OBJETIVOS',
+    slots: [
+      { key: 'nombre', label: 'El cliente da su nombre' },
+      { key: 'interes', label: 'El cliente muestra interés' },
+      { key: 'telefono', label: 'El cliente da su teléfono' },
+      { key: 'compra', label: 'El cliente quiere comprar' },
+    ],
+    rule: 'OBJETIVOS: nombre=si|no; interes=si|no; telefono=si|no; compra=si|no',
+    role: 'Eres mi copiloto de ventas EN VIVO. Persigue los objetivos en orden y dime el argumento exacto, la objeción a rebatir o el siguiente paso.',
+  },
+  ficha: {
+    id: 'ficha', icon: '📇', name: 'Ficha de cliente',
+    desc: 'Rellena sola la ficha con lo que el cliente va diciendo. Se exporta a Excel.',
+    kind: 'fields', tag: 'DATOS', exportable: true,
+    slots: [
+      { key: 'nombre', label: 'Nombre' }, { key: 'empresa', label: 'Empresa' },
+      { key: 'cargo', label: 'Cargo' }, { key: 'telefono', label: 'Teléfono' },
+      { key: 'email', label: 'Email' }, { key: 'necesidad', label: 'Necesidad' },
+      { key: 'presupuesto', label: 'Presupuesto' }, { key: 'plazo', label: 'Plazo' },
+      { key: 'siguiente', label: 'Siguiente paso' },
+    ],
+    rule: 'DATOS: solo los campos que se hayan dicho, separados por punto y coma. Ejemplo: DATOS: nombre=Ana Ruiz; empresa=Acme; telefono=600123456. Omite los que no se hayan dicho; no escribas puntos suspensivos.',
+    role: 'Eres mi asistente de ficha de cliente. Extraes los datos que el cliente dice y me avisas de qué falta por preguntar.',
+  },
+  facilitador: {
+    id: 'facilitador', icon: '🧑‍🏫', name: 'Facilitador de reunión',
+    desc: 'Temas, decisiones y tareas de la reunión, en vivo. Se exporta.',
+    kind: 'fields', tag: 'DATOS', exportable: true,
+    slots: [
+      { key: 'tema', label: 'Tema actual' }, { key: 'decisiones', label: 'Decisiones' },
+      { key: 'tareas', label: 'Tareas (quién/qué)' }, { key: 'riesgos', label: 'Riesgos' },
+      { key: 'siguiente', label: 'Siguientes pasos' },
+    ],
+    rule: 'DATOS: solo lo que se haya dicho. Ejemplo: DATOS: tema=presupuesto 2027; decisiones=aprobado el piloto; tareas=Ana envía la propuesta. Acumula, no borres lo anterior; no escribas puntos suspensivos.',
+    role: 'Eres el facilitador de la reunión. Sigues el hilo, anotas decisiones y tareas, y avisas si se desvía o si algo queda sin dueño.',
+  },
+  resumen: {
+    id: 'resumen', icon: '📝', name: 'Resumen e ideas',
+    desc: 'Resumen progresivo y las ideas que van saliendo.',
+    kind: 'fields', tag: 'DATOS', exportable: true,
+    slots: [
+      { key: 'resumen', label: 'Resumen hasta ahora' }, { key: 'ideas', label: 'Ideas' },
+      { key: 'dudas', label: 'Dudas abiertas' },
+    ],
+    rule: 'DATOS: resumen=<reescríbelo entero y breve cada vez>; ideas=<las que hayan salido>; dudas=<las abiertas>. No escribas puntos suspensivos.',
+    role: 'Resumes la conversación según avanza y capturas las ideas y dudas que surgen.',
+  },
+};
+
+function audioSkillMd(sk) {
+  return `Esta skill SOLO actúa cuando llegan intervenciones marcadas con "[Hablante N]" (Hablante 1 = el usuario; Hablante 2 = el interlocutor). En una conversación normal de Claw, ignórala salvo que el usuario te pida editarla.
+
+${sk.role}
+
+POR CADA intervención responde EXACTAMENTE en dos líneas, nada más:
+CONSEJO: <una línea accionable para el usuario, en su idioma>
+${sk.rule}
+Si no hay nada útil que aportar ahora, usa "CONSEJO: —". Nunca borres un dato ya capturado.
+
+AUTO-EDICIÓN: puedes cambiarte a ti misma. Si el usuario te pide por el chat de Claw algo como "añade un campo email", "quita el presupuesto" o "sé más breve", edita ESTA misma skill con skill.edit y sigue la nueva versión desde ya.`;
+}
+
+// Superficie genérica: pinta las ranuras de la skill (objetivos o campos),
+// el consejo en vivo y, si procede, el botón de exportar a Excel.
+function surfaceHtml(sk) {
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<style>
+:root{--bg:#0b0c14;--card:#12141f;--line:#232838;--brass:#c8a06a;--brass2:#e6c294;--indigo:#8272ff;--fg:#eae8f2;--dim:#8b91a3;--ok:#54dcc6}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:radial-gradient(130% 90% at 50% -10%,#181630,#0b0c14);color:var(--fg);padding:20px;min-height:100vh;display:flex;flex-direction:column}
+h1{font-family:"Iowan Old Style",Georgia,serif;font-size:1.12rem;margin:0 0 3px;background:linear-gradient(96deg,var(--brass2),var(--indigo));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:var(--dim);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;margin-bottom:14px;font-family:ui-monospace,monospace}
+.sub b{color:var(--brass2);float:right;font-weight:500}
+.bar{height:7px;border-radius:99px;background:var(--line);overflow:hidden;margin-bottom:16px}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brass),var(--indigo));transition:width .7s cubic-bezier(.2,.7,.2,1)}
+.slot{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);margin-bottom:8px;transition:border-color .4s,background .4s,transform .3s}
+.slot .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center;font-size:.65rem;color:transparent;transition:all .4s;margin-top:1px}
+.slot .k{font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-family:ui-monospace,monospace}
+.slot .v{font-size:.9rem;color:var(--fg);line-height:1.35;word-break:break-word}
+.slot .lbl{font-size:.88rem;color:var(--dim);transition:color .4s}
+.slot.done{border-color:var(--brass);background:linear-gradient(120deg,rgba(200,160,106,.10),rgba(130,114,255,.05))}
+.slot.done .dot{background:var(--ok);border-color:var(--ok);color:#06210b}
+.slot.done .lbl{color:var(--fg)}
+.slot.just{animation:pop .6s cubic-bezier(.2,.8,.2,1)}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.03)}100%{transform:scale(1)}}
+.advice{margin-top:auto;padding:13px 15px;border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:10px;background:rgba(200,160,106,.05);font-size:.9rem;line-height:1.4;color:var(--brass2)}
+.advice .k{display:block;font-family:ui-monospace,monospace;font-size:.56rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.advice.flash{animation:advin .4s ease}
+@keyframes advin{0%{opacity:.4;transform:translateY(-3px)}100%{opacity:1;transform:none}}
+button{margin-top:10px;width:100%;background:transparent;color:var(--brass);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit;font-size:.78rem;cursor:pointer}
+button:hover{border-color:var(--brass)}
+</style></head><body>
+<h1>${sk.icon} ${sk.name}</h1>
+<div class="sub">${sk.kind === 'goals' ? 'Objetivos' : 'Datos capturados'} <b id="count"></b></div>
+<div class="bar"><i id="fill"></i></div>
+<div id="slots"></div>
+<div class="advice" id="advice"><span class="k">En vivo</span><span id="atext">Esperando a que empiece la conversación…</span></div>
+${sk.exportable ? '<button id="exp">⬇ Exportar a Excel (CSV)</button>' : ''}
+<script>
+const KIND=${JSON.stringify(sk.kind)}, SLOTS=${JSON.stringify(sk.slots)}, NAME=${JSON.stringify(sk.name)};
+let data={};
+function render(justKey){
+  const box=document.getElementById('slots'); box.innerHTML=''; let filled=0;
+  for(const s of SLOTS){
+    const v=data[s.key]; const has=KIND==='goals' ? v===true : !!(v&&String(v).trim());
+    if(has) filled++;
+    const el=document.createElement('div');
+    el.className='slot'+(has?' done':'')+(s.key===justKey?' just':'');
+    if(KIND==='goals'){ el.innerHTML='<div class="dot">✓</div><div class="lbl"></div>'; el.querySelector('.lbl').textContent=s.label; }
+    else { el.innerHTML='<div class="dot">✓</div><div><div class="k"></div><div class="v"></div></div>';
+      el.querySelector('.k').textContent=s.label; el.querySelector('.v').textContent=has?v:'—'; }
+    box.appendChild(el);
+  }
+  document.getElementById('count').textContent=filled+' / '+SLOTS.length;
+  document.getElementById('fill').style.width=(SLOTS.length?filled/SLOTS.length*100:0)+'%';
+}
+render(null);
+addEventListener('message',e=>{
+  const d=e.data||{}; if(d.type!=='surface-state') return;
+  let just=null;
+  if(d.data) for(const [k,v] of Object.entries(d.data)){ if(data[k]!==v&&v) just=k; data[k]=v; }
+  render(just);
+  if(typeof d.advice==='string'&&d.advice){ const a=document.getElementById('advice');
+    document.getElementById('atext').textContent=d.advice;
+    a.classList.remove('flash'); void a.offsetWidth; a.classList.add('flash'); }
+});
+const exp=document.getElementById('exp');
+if(exp) exp.onclick=()=>{
+  const rows=[['Campo','Valor']].concat(SLOTS.map(s=>[s.label,(data[s.key]==null?'':String(data[s.key]))]));
+  const csv='\\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\\r\\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download=NAME.toLowerCase().replace(/[^a-z0-9]+/g,'-')+'.csv'; a.click();
+};
+try{parent.postMessage({type:'surface-ready'},'*');}catch(e){}
+<\/script></body></html>`;
+}
+
+let copilotSkill = AUDIO_SKILLS.ventas;
+let copilotData = {};
+
+function copilotInitState() { copilotData = {}; }
+function renderCopilotBoard() {
+  try { ui.renderApp(copilotSkill.icon + ' ' + copilotSkill.name, surfaceHtml(copilotSkill)); } catch { /* */ }
+}
+function copilotPostState(advice) {
+  // El visor de Claw es uno solo: si otra cosa (una app del agente, el cerebro
+  // autónomo…) lo ocupa, la superficie desaparecía. Se re-monta sola.
+  const f0 = document.getElementById('appframe');
+  if (!f0 || f0.hidden || !(f0.srcdoc || '').includes(copilotSkill.name)) renderCopilotBoard();
+  const frame = document.getElementById('appframe');
+  const msg = { type: 'surface-state', id: copilotSkill.id, data: copilotData, advice: advice || '' };
+  try { frame?.contentWindow?.postMessage(msg, '*'); } catch { /* */ }
+  // Proyección a la app que abrió el copiloto: pantalla partida de verdad.
+  if (window.__copilotOpener && window.opener) {
+    try { window.opener.postMessage({ kind: 'surface-state', ...msg }, window.__copilotOpener); } catch { /* */ }
+  }
+}
+
+// Parsea la respuesta del modelo: CONSEJO + la línea de datos de la skill.
+function copilotParse(text) {
+  const s = String(text || '');
+  const cm = s.match(/CONSEJO:\s*(.+)/i);
+  const tagRe = new RegExp(copilotSkill.tag + ':\\s*(.+)', 'i');
+  // Exigir la marca CONSEJO:. Sin ella, la respuesta es el modelo poniéndose a
+  // conversar (o haciendo de interlocutor) — y eso NO es un consejo: se tira.
+  const advice = cm ? cm[1].trim() : '';
+  const updates = {};
+  const om = s.match(tagRe);
+  // El modelo escribe «teléfono» con tilde y mis claves van sin ella: sin
+  // normalizar, el dato se perdía. También rechaza los valores-plantilla
+  // («…», «-») que a veces copia del propio ejemplo.
+  const norm = k => k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const VACIO = /^(…|\.\.\.|—|–|-|_+|n\/a|null|none|desconocido|sin datos)$/i;
+  if (om) for (const pair of om[1].split(';')) {
+    const m = pair.match(/\s*([\wáéíóúñÁÉÍÓÚÑ]+)\s*=\s*(.+)/);
+    if (!m) continue;
+    const key = norm(m[1]), raw = m[2].trim().replace(/^["'\u201c]|["'\u201d]$/g, '').trim();
+    if (copilotSkill.kind === 'goals') { if (/^(si|sí|s|yes|y|true|1)$/i.test(raw)) updates[key] = true; }
+    else if (raw && !VACIO.test(raw)) updates[key] = raw;
+  }
+  return { advice, updates };
+}
+function copilotEmit(text) {
+  const { advice, updates } = copilotParse(text);
+  for (const [k, v] of Object.entries(updates)) copilotData[k] = v;
+  const clean = (advice || '').trim().replace(/^["'\u201c\u201d\s]+|["'\u201c\u201d\s]+$/g, '').trim();
+  const show = (clean && !/^[—\-–_]+$/.test(clean)) ? clean : '';
+  copilotPostState(show);
+  if (show && window.__copilotOpener && window.opener) {
+    try { window.opener.postMessage({ kind: 'copilot-advice', text: show }, window.__copilotOpener); } catch { /* */ }
+  }
+}
+window.__copilotEmit = copilotEmit;
+
+// Turno de copiloto por la VÍA RÁPIDA: no pasa por el bucle agéntico (que
+// mete todas las herramientas, las skills y el estado del sistema en el
+// prompt). Un modelo pequeño se pierde en ese muro y se pone a conversar en
+// vez de aconsejar — además de tardar mucho más. Aquí: prompt mínimo,
+// historial corto y el formato recordado en cada turno.
+let copilotHist = [];
+let copilotBusy = false;
+async function copilotTurn(line) {
+  if (copilotBusy) return;                 // un turno a la vez: el modelo es uno
+  copilotBusy = true;
+  const sk = copilotSkill;
+  const sys = `Eres el copiloto de ${sk.name}. Escuchas una conversación ajena y AYUDAS a quien la mantiene. NUNCA respondas como si fueras un interlocutor ni continúes el diálogo.
+Responde SIEMPRE exactamente en dos líneas, sin comillas y sin nada más:
+CONSEJO: <una línea accionable para el usuario>
+${sk.rule}
+Si no hay nada útil que decir: CONSEJO: —`;
+  copilotHist.push({ role: 'user', content: line });
+  if (copilotHist.length > 8) copilotHist = copilotHist.slice(-8);
+  const recordatorio = `\n\n(Responde SOLO con las dos líneas: CONSEJO: … y ${sk.tag}: …)`;
+  const msgs = copilotHist.slice(0, -1).concat([{ role: 'user', content: line + recordatorio }]);
+  try {
+    const out = await agent.provider.chat(msgs, sys, () => {});
+    copilotHist.push({ role: 'assistant', content: String(out).slice(0, 400) });
+    ui.addMsg('assistant', String(out).slice(0, 300));
+    copilotEmit(out);
+  } catch (e) {
+    ui.addMsg('assistant err', 'copiloto: ' + (e?.message || e));
+  } finally { copilotBusy = false; }
+}
+
+
+// ── Pipe cross-origin: skills de audio en vivo desde el Translator ──
+(function copilotPipe() {
+  try { if (!/[?&]copilot=1/.test(location.search)) return; } catch { return; }
+  const ALLOWED = 'https://translator.elffuss.utopiaia.com';
+  // qué skill de audio se ha pedido (?skill=ficha, etc.)
+  const want = (location.search.match(/[?&]skill=([\w-]+)/) || [])[1];
+  if (want && AUDIO_SKILLS[want]) copilotSkill = AUDIO_SKILLS[want];
+  let started = false;
+  window.addEventListener('message', e => { if (e.data && e.data.type === 'surface-ready') copilotPostState(''); });
+  window.addEventListener('message', async e => {
+    if (e.origin !== ALLOWED) return;
+    window.__copilotOpener = ALLOWED;
+    const m = e.data || {};
+    if (m.kind === 'copilot-init' && !started) {
+      started = true;
+      if (m.skill && AUDIO_SKILLS[m.skill]) copilotSkill = AUDIO_SKILLS[m.skill];
+      const sk = copilotSkill;
+      const sellerLang = m.sellerLangName || 'el idioma del usuario';
+      try {
+        if (!skills.installed().some(s => s.name === sk.name)) {
+          await skills.createSkill({ name: sk.name, description: sk.desc, instructions: audioSkillMd(sk) });
+        }
+      } catch { /* */ }
+      copilotInitState();
+      renderCopilotBoard();
+      // Proyectar la superficie a la app que nos abrió → pantalla partida real.
+      try { window.opener?.postMessage({ kind: 'surface', v: 1, id: sk.id, title: sk.icon + ' ' + sk.name, html: surfaceHtml(sk) }, ALLOWED); } catch { /* */ }
+      clearInterval(window.__copilotBoardWatch);
+      window.__copilotBoardWatch = setInterval(() => {
+        const f = document.getElementById('appframe');
+        if (document.hidden) return;
+        if (!f || f.hidden || !(f.srcdoc || '').includes(sk.name)) { renderCopilotBoard(); copilotPostState(''); }
+      }, 5000);
+      setTimeout(() => { if (activeModel === 'rules') copilotPostState('Cargando el cerebro… empiezo en cuanto esté listo.'); }, 800);
+      copilotHist = [];
+    } else if (m.kind === 'transcript' && m.text) {
+      const line = '[' + (m.speaker || 'interlocutor') + '] ' + String(m.text).slice(0, 400);
+      ui.addMsg('user', line);
+      copilotTurn(line);
+    }
+  });
+  try { if (window.opener) window.opener.postMessage({ kind: 'copilot-ready' }, ALLOWED); } catch { /* */ }
+})();

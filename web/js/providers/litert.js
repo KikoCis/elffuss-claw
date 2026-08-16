@@ -39,7 +39,12 @@ export async function load(onProgress = () => {}) {
   let adapter = null;
   try { adapter = await navigator.gpu.requestAdapter(); } catch { /* sin adaptador */ }
   if (!adapter) throw new Error('No hay un adaptador WebGPU real disponible (la API existe pero no hay GPU accesible) — prueba con Elffuss LM, que corre en CPU/wasm.');
-  const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm');
+  // VERSIÓN FIJADA a propósito. Sin fijarla, la URL apunta siempre a la última
+  // publicada: el 2026-08-11 salió 0.16.0, jsdelivr NO consigue construirle el
+  // bundle `+esm` (404) y el cerebro Gemma dejó de cargar en producción sin que
+  // nosotros tocáramos una línea. Al subir de versión hay que COMPROBAR que
+  // `https://cdn.jsdelivr.net/npm/@litert-lm/core@<v>/+esm` responde 200.
+  const litertlm = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm');
   // El .litertlm lo descargamos NOSOTROS (cache-first en Cache Storage) y se lo
   // pasamos a Engine.create como Blob (la API acepta string|Blob|ReadableStream).
   // Motivo: el fetch interno de LiteRT baja el peso con XHR+Range desde un WORKER

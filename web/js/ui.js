@@ -8,6 +8,7 @@ import { renderMarkdown } from './md.js';
 import { t as tr, uiLang } from './i18n.js'; // alias: dentro de tick(t) el token ya se llama t
 import { UI } from './icons.js';
 import { cacheEstimate, clearModelCache } from './model-cache.js';
+import * as workspace from './workspace.js';
 import * as telemetry from './telemetry.js';
 
 let onSettingsChangedCb = () => {};
@@ -332,11 +333,127 @@ export function rebuildModelSelect(options, current) {
 
 export function setModel(id) { $('model-select').value = id; }
 
+
+// Consumo en vivo: qué está gastando Elffuss ahora mismo y cómo soltarlo.
+// Se refresca solo mientras el panel está abierto.
+function usageCard() {
+  const card = el('div', 'card col');
+  card.appendChild(el('b', null, '📊 ' + tr('useTitle')));
+  const ram = el('div', 'row between'), disk = el('div', 'row between'), brain = el('div', 'row between');
+  const mk = (row, label) => { row.appendChild(el('span', 'muted', label)); const v = el('span', null, '…'); row.appendChild(v); card.appendChild(row); return v; };
+  const vRam = mk(ram, tr('useRam')), vDisk = mk(disk, tr('useDisk')), vBrain = mk(brain, tr('useBrain'));
+  const gb = n => n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : Math.round(n / 1048576) + ' MB';
+  const freeBtn = btn(tr('useFree'), 'ghost', () => { onFreeModelCb(); toast(tr('useFreed')); setTimeout(paint, 400); });
+  card.appendChild(freeBtn);
+  let timer = null;
+  async function paint() {
+    const m = performance.memory;
+    vRam.textContent = m?.jsHeapSizeLimit
+      ? `${gb(m.usedJSHeapSize)} / ${gb(m.jsHeapSizeLimit)} (${Math.round(m.usedJSHeapSize / m.jsHeapSizeLimit * 100)}%)`
+      : tr('useNoRam');
+    const { usage, quota, persisted } = await cacheEstimate();
+    vDisk.textContent = `${gb(usage)}${quota ? ' / ' + gb(quota) : ''} ${persisted ? '· ✓' : '· ⚠'}`;
+    const sel = $('model-select');
+    vBrain.textContent = sel ? (sel.options[sel.selectedIndex]?.textContent || '—').slice(0, 34) : '—';
+    freeBtn.style.display = (sel && sel.value !== 'rules') ? '' : 'none';
+    // refrescar solo mientras se está viendo
+    clearTimeout(timer);
+    if (document.querySelector('#tabs button.active')?.dataset.tab === 'ajustes') timer = setTimeout(paint, 4000);
+  }
+  paint();
+  return card;
+}
+let onFreeModelCb = () => {};
+export function setOnFreeModel(fn) { onFreeModelCb = fn; }
+
+// ---------- espacio de trabajo (carpeta en disco, inventario, limpieza) ----------
+const kb = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n > 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
+
+function workspaceCard() {
+  const card = el('div', 'card col');
+  card.appendChild(el('b', null, '💾 ' + tr('wsTitle')));
+  card.appendChild(el('span', 'muted', tr('wsDesc')));
+
+  const state = el('div', 'muted');
+  const row = el('div', 'row');
+  const inv = el('div', 'col');
+  card.append(state, row, inv);
+
+  const paint = async () => {
+    const st = workspace.status();
+    row.replaceChildren();
+    state.textContent = !st.supported.pick ? tr('wsNoSupport')
+      : !st.folder ? tr('wsNoFolder')
+      : st.ready ? tr('wsFolder', { name: st.folder }) + (st.lastSaveAt ? ' · ' + tr('wsSavedAt', { time: new Date(st.lastSaveAt).toLocaleTimeString() }) : '')
+      : tr('wsNeedsPerm', { name: st.folder });
+
+    if (st.supported.pick) {
+      if (!st.folder) row.appendChild(btn(tr('wsPick'), 'primary', async () => {
+        try { await workspace.pick(); toast(tr('wsPicked')); await paint(); } catch (e) { toast('⚠️ ' + e.message); }
+      }));
+      else if (!st.ready) row.appendChild(btn(tr('wsRegrant'), 'primary', async () => {
+        try { await workspace.regrant(); toast(tr('wsPicked')); await paint(); } catch (e) { toast('⚠️ ' + e.message); }
+      }));
+      else {
+        row.appendChild(btn(tr('wsSaveNow'), 'primary', async () => {
+          try { const r = await workspace.save({ reason: 'manual' }); toast(r.ok ? tr('wsSaved', { n: r.wrote.length }) : '⚠️ ' + (r.errors[0]?.error || '')); await paint(); }
+          catch (e) { toast('⚠️ ' + (e.message === 'needs-regrant' ? tr('wsNeedsPerm', { name: st.folder }) : e.message)); await paint(); }
+        }));
+        const auto = el('label', 'row');
+        const chk = el('input'); chk.type = 'checkbox'; chk.checked = workspace.autosaveEnabled();
+        chk.onchange = () => { workspace.autosave({ enabled: chk.checked }); toast(chk.checked ? tr('wsAutoOn') : tr('wsAutoOff')); };
+        auto.append(chk, el('span', 'muted', tr('wsAuto')));
+        row.appendChild(auto);
+        row.appendChild(btn(tr('wsForget'), 'ghost', async () => { await workspace.forget(); await paint(); }));
+      }
+    }
+    // copia descargable: funciona en TODOS los navegadores (Safari/Firefox incluidos)
+    row.appendChild(btn(tr('wsDownload'), 'ghost', async () => {
+      const blob = await workspace.bundle();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `elffuss-claw-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }));
+
+    // inventario: «ver qué hay» en cada almacén
+    inv.replaceChildren(el('b', null, tr('wsWhat')));
+    for (const it of await workspace.inventory()) {
+      const line = el('div', 'row between');
+      line.appendChild(el('span', null, `${it.icon} ${it.label}`));
+      line.appendChild(el('span', 'muted', it.error ? '⚠️' : `${it.count} · ${kb(it.bytes)}${it.sensitive ? ' 🔒' : ''}`));
+      inv.appendChild(line);
+    }
+    const danger = el('div', 'row');
+    danger.appendChild(btn(tr('wsWipe'), 'ghost', async () => {
+      if (!window.confirm(tr('wsWipeConfirm'))) return;
+      await workspace.wipe({ confirm: 'BORRAR' });
+      toast(tr('wsWiped'));
+      await paint();
+    }));
+    inv.appendChild(danger);
+  };
+  paint().catch(() => { state.textContent = '—'; });
+  return card;
+}
+
 // ---------- panel ajustes (config avanzada de proveedores) ----------
 export function refreshSettings() {
   const panel = $('panel-ajustes');
-  panel.replaceChildren(el('h3', null, tr('settingsTitle')));
-  panel.appendChild(el('p', 'muted', tr('settingsDesc')));
+  panel.replaceChildren();
+  // Lo que se consulta a menudo va PRIMERO: qué está gastando y cómo limpiarlo.
+  // Los proveedores externos son configuración avanzada y bajan al final.
+  panel.appendChild(usageCard());
+  panel.appendChild(workspaceCard());
+  // Los modelos EXTERNOS (no locales) van al final, en su propia sección
+  // plegada: son la excepción, no la norma — Elffuss corre en tu máquina.
+  const ext = document.createElement('details');
+  ext.className = 'card col ext-block';
+  const extSum = document.createElement('summary');
+  extSum.textContent = tr('extTitle');
+  ext.appendChild(extSum);
+  ext.appendChild(el('p', 'muted', tr('extDesc')));
 
   const cfgs = settings.configs();
   for (const [id, c] of Object.entries(cfgs)) {
@@ -375,7 +492,7 @@ export function refreshSettings() {
     };
     toggle.onchange = () => { save(); toast(toggle.checked ? tr('provOn', { label: c.label }) : tr('provOff', { label: c.label })); };
     wrap.appendChild(btn(tr('save'), 'primary', () => { save(); toast(tr('saved')); }));
-    panel.appendChild(wrap);
+    ext.appendChild(wrap);
   }
 
   // --- Almacenamiento del modelo (caché persistente) ---
@@ -421,6 +538,7 @@ export function refreshSettings() {
   });
   telCard.appendChild(telSendBtn);
   panel.appendChild(telCard);
+  panel.appendChild(ext);        // externos: lo último de todo
   telCard.querySelector('#tel-enabled').checked = telemetry.isEnabled();
   telCard.querySelector('#tel-enabled').onchange = e => telemetry.setEnabled(e.target.checked);
 

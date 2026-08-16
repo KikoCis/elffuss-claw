@@ -35,9 +35,9 @@ void main(){
   float tw = 0.55 + 0.45 * sin(t * (1.5 + seed.x * 3.0) + seed.y * 40.0);
   vGlow = tw * (1.0 - burst * 0.55);
   float gold = step(0.93, hash(seed.x * 31.3 + seed.y * 7.7));
-  vec3 pink = vec3(1.0, 0.30, 0.55);
-  vec3 violet = vec3(0.49, 0.36, 1.0);
-  vec3 goldc = vec3(1.0, 0.84, 0.42);
+  vec3 pink = vec3(0.33, 0.86, 0.77);
+  vec3 violet = vec3(0.51, 0.45, 1.0);
+  vec3 goldc = vec3(0.82, 0.63, 0.42);
   vColor = mix(mix(pink, violet, smoothstep(0.1, 1.3, r)), goldc, gold);
   gl_PointSize = (1.3 + 2.8 * tw * max(1.2 - r * 0.5, 0.2)) * dpr;
 }`;
