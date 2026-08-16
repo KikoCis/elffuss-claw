@@ -115,7 +115,14 @@ export async function chat(history, system, onToken = () => {}) {
   // Comparar solo la parte estática del prompt: el CONTEXTO AHORA va al final
   // y cambia cada turno — recrear la conversación tiraría el KV-cache.
   const sysKey = system.slice(0, 200);
-  if (!conversation || sysKey !== sys) {
+  // Una conversación NUEVA llega con el historial reiniciado (más corto que lo
+  // ya enviado). Sin esta comprobación, el KV-cache conservaba el chat anterior
+  // entero: el modelo seguía «viendo» los ficheros y respuestas del chat de
+  // antes y contestaba sobre ellos. Se notaba como alucinación («ese fichero no
+  // existe») cuando en realidad era memoria de la conversación previa — y es
+  // además una fuga: un chat nuevo no debe ver el contenido del anterior.
+  const reiniciada = history.length <= sentCount;
+  if (!conversation || sysKey !== sys || reiniciada) {
     sys = sysKey;
     conversation = await engine.createConversation({
       preface: { messages: [{ role: 'system', content: system }] },
