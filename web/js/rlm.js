@@ -324,12 +324,123 @@ export function applyPatches(html, respuesta) {
   return { html: out, aplicados, fallidos };
 }
 
-export async function deepCreate({ brief, provider, rounds = 1, onProgress = () => {}, useJury = false, editMode = 'rewrite' }) {
+
+// ── Evaluador OBJETIVO: ejecuta el artefacto y mide, no opina ───────────────
+// fast-agent (evalstate/fast-agent) usa un LLM como evaluador y refina hasta
+// una nota mínima. La idea es buena, pero preguntarle al modelo qué nota se
+// pone es preguntarle a la parte que ya demostró alucinar. Aquí el artefacto
+// se EJECUTA en un iframe aislado y se comprueba qué hace de verdad:
+//
+//   pinta      dibuja algo
+//   vivo       lo que dibuja cambia solo (hay bucle)
+//   responde   cambia al recibir teclas y ratón
+//   arranca    no aparece ya terminado
+//   completo   el documento cierra
+//
+// Medir esto costó descubrir que contar píxeles premiaba una pantalla de
+// «GAME OVER» a toda página por encima de un juego jugable.
+export async function rateArtifact(html, { ms = 2600 } = {}) {
+  if (typeof document === 'undefined') return { nota: 0, detalle: {}, medible: false };
+  // El iframe va SIN allow-same-origin a propósito: dentro corre código que ha
+  // escrito el modelo y no debe poder tocar la página que lo aloja. Eso hace su
+  // documento ilegible desde fuera, así que se le inyecta una sonda que se mide
+  // a sí misma y devuelve NÚMEROS por postMessage. Nada entra; solo salen datos.
+  const sonda = `<script>(function(){
+    var W=window, P=function(m){try{parent.postMessage(m,'*')}catch(e){}};
+    function leer(){ var c=document.querySelector('canvas'); if(!c) return null;
+      var x=c.getContext('2d'); if(!x) return null;
+      try{ var d=x.getImageData(0,0,c.width,c.height).data, nb=0, h=0;
+        for(var i=0;i<d.length;i+=16){ if(d[i]||d[i+1]||d[i+2]) nb++;
+          h=(h*31+d[i]+d[i+1]*3+d[i+2]*7)>>>0; }
+        return {nb:nb,h:h,txt:(document.body.innerText||'').slice(0,400).toLowerCase()};
+      }catch(e){ return null; } }
+    W.addEventListener('message',function(e){
+      if(!e.data) return;
+      if(e.data.__sonda){ P({__sonda:1,r:leer()}); return; }
+      // Las pulsaciones hay que despacharlas DENTRO: desde fuera no cruzan el
+      // sandbox, y sin esto «responde» medía simplemente que seguía animando.
+      if(e.data.__tecla){ var k=e.data.__tecla;
+        try{ var ev={key:k,code:k===' '?'Space':k,keyCode:k===' '?32:0,bubbles:true};
+          document.dispatchEvent(new KeyboardEvent('keydown',ev));
+          W.dispatchEvent(new KeyboardEvent('keydown',ev));
+          var c=document.querySelector('canvas');
+          if(c){ var r=c.getBoundingClientRect();
+            var mv=new MouseEvent('mousemove',{clientX:r.left+r.width*0.7,clientY:r.top+r.height/2,bubbles:true});
+            document.dispatchEvent(mv); c.dispatchEvent(mv);
+            c.dispatchEvent(new MouseEvent('click',{bubbles:true})); }
+        }catch(e2){}
+      }
+    });
+    P({__sonda:'lista'});
+  })();<\/script>`;
+  const marco = document.createElement('iframe');
+  marco.setAttribute('sandbox', 'allow-scripts');
+  // DENTRO del viewport a propósito: fuera de pantalla Chrome estrangula
+  // requestAnimationFrame y el juego no anima, así que se medía como muerto un
+  // juego que funciona. Invisible por opacidad, no por posición.
+  marco.style.cssText = 'position:fixed;left:0;top:0;width:900px;height:600px;border:0;' +
+    'opacity:.01;pointer-events:none;z-index:-1';
+  const doc = String(html || '');
+  marco.srcdoc = /<\/body>/i.test(doc) ? doc.replace(/<\/body>/i, sonda + '</body>') : doc + sonda;
+
+  const respuestas = [];
+  const oir = e => { if (e.data && e.data.__sonda === 1) respuestas.push(e.data.r); };
+  window.addEventListener('message', oir);
+  document.body.appendChild(marco);
+
+  const esperar = t => new Promise(r => setTimeout(r, t));
+  const pedir = async () => {
+    const n = respuestas.length;
+    try { marco.contentWindow.postMessage({ __sonda: 1 }, '*'); } catch { /* */ }
+    for (let i = 0; i < 20 && respuestas.length === n; i++) await esperar(50);
+    return respuestas[respuestas.length - 1] || null;
+  };
+
+  await esperar(1300);
+  const a = await pedir();
+  await esperar(ms);
+  const b = await pedir();
+  try {
+    for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowUp', ' ', 'w', 's'])
+      marco.contentWindow.postMessage({ __tecla: k }, '*');
+  } catch { /* */ }
+  await esperar(1200);
+  const c = await pedir();
+
+  window.removeEventListener('message', oir);
+  marco.remove();
+
+  if (!a) return { nota: 0, detalle: { medible: false }, medible: false };
+  const detalle = {
+    pinta: a.nb > 0,
+    vivo: !!(b && a.h !== b.h),
+    responde: !!(c && b && b.h !== c.h),
+    arranca: !/game\s*over|has perdido|fin del juego/.test(a.txt || ''),
+    completo: /<\/html>/i.test(doc),
+  };
+  const nota = detalle.pinta ? Object.values(detalle).filter(Boolean).length : 0;
+  return { nota, detalle, medible: true };
+}
+
+export async function deepCreate({ brief, provider, rounds = 1, onProgress = () => {}, useJury = false,
+                                   editMode = 'rewrite', notaMinima = null, evaluar = null }) {
   if (!provider || typeof provider.chat !== 'function') throw new Error('Hard Work necesita un cerebro cargado (elige un modelo arriba).');
   if (!String(brief || '').trim()) throw new Error('Hard Work: dime qué quieres que cree.');
   onProgress({ phase: 'draft' });
   let html = extractHtml(await genComplete(provider, CREATE_SYS, String(brief)));
   const trace = [{ round: 0, html }];
+  // Con criterio de nota: se guarda la MEJOR versión, no la última. Medimos que
+  // una ronda de más puede empeorar (un juego jugable acabó en pantalla de fin),
+  // así que devolver «lo último» es devolver a veces lo peor.
+  const juez = notaMinima != null ? (evaluar || rateArtifact) : null;
+  let mejor = html, mejorNota = -1;
+  if (juez) {
+    const v = await juez(html);
+    mejorNota = v.nota;
+    trace[0].nota = v.nota; trace[0].detalle = v.detalle;
+    onProgress({ phase: 'rated', round: 0, nota: v.nota, detalle: v.detalle });
+    if (v.nota >= notaMinima) { onProgress({ phase: 'done', rounds: 0, motivo: 'ya cumplía' }); return { html, trace, nota: v.nota }; }
+  }
   for (let r = 1; r <= rounds; r++) {
     onProgress({ phase: 'critique', round: r });
     let critique;
@@ -353,9 +464,18 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
       const improved = extractHtml(await genComplete(provider, REWRITE_SYS, `HTML ACTUAL:\n${html}\n\nCRÍTICA A CORREGIR:\n${critique}`));
       if (improved && /<\w+[\s>]/.test(improved)) { html = improved; trace.push({ round: r, critique, html }); }
     }
+    if (juez) {
+      const v = await juez(html);
+      trace[trace.length - 1].nota = v.nota; trace[trace.length - 1].detalle = v.detalle;
+      onProgress({ phase: 'rated', round: r, nota: v.nota, detalle: v.detalle });
+      if (v.nota > mejorNota) { mejorNota = v.nota; mejor = html; }
+      if (v.nota >= notaMinima) { onProgress({ phase: 'done', rounds: r, motivo: 'alcanzó la nota' }); return { html: mejor, trace, nota: mejorNota }; }
+      // Si empeora, no se sigue castigando: se devuelve la mejor y se para.
+      if (v.nota < mejorNota) { onProgress({ phase: 'done', rounds: r, motivo: 'empeoró — devuelvo la mejor' }); return { html: mejor, trace, nota: mejorNota }; }
+    }
   }
   onProgress({ phase: 'done', rounds: trace.length - 1 });
-  return { html, trace };
+  return juez ? { html: mejor, trace, nota: mejorNota } : { html, trace };
 }
 
 // ── Recolección de material desde una carpeta autorizada (File System Access) ──
