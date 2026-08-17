@@ -26,6 +26,27 @@ export function configure(key) {
 
 let engine = null, conversation = null, sentCount = 0, sys = '';
 
+// Muestreo. Por defecto VORAZ, que es como venía: mismo prompt, misma salida.
+// Eso hace que generar N veces cueste N y devuelva una sola respuesta distinta,
+// así que cualquier técnica de «genera varias y quédate con la mejor» era gasto
+// puro. Con temperatura y semilla se puede pedir variedad de verdad.
+const TOP_P = 2;
+let muestreo = null;                       // null = voraz
+export function setSampling(opts) {        // {temperature, seed, p} o null
+  const antes = JSON.stringify(muestreo);
+  // «k» es OBLIGATORIO aunque el tipo sea TOP_P: sin él el wasm aborta en seco
+  // con «Aborted()» y se lleva por delante el motor. Comprobado probando formas.
+  muestreo = opts && opts.temperature > 0
+    ? { type: TOP_P, k: opts.k ?? 40, p: opts.p ?? 0.95, temperature: opts.temperature, seed: opts.seed ?? 0 }
+    : null;
+  // cambiar el muestreo exige rehacer la conversación: la sesión ya está creada
+  // con los parámetros de antes y no los relee.
+  if (JSON.stringify(muestreo) !== antes) { conversation = null; sentCount = 0; }
+  return muestreo;
+}
+export function getSampling() { return muestreo; }
+export function __engine() { return engine; }   // solo para el banco de pruebas
+
 // Contexto: probamos de mayor a menor hasta el máximo que acepten el bundle y
 // la memoria GPU — así el contexto queda al tope permitido de serie.
 const CTX_LADDER = [32768, 16384, 8192, 4096];
@@ -83,17 +104,43 @@ export async function cachedModelBlob(url, onProgress = () => {}) {
     if (!net.ok || !net.body) return url;
     const total = +net.headers.get('content-length') || 0;
     const t0 = performance.now();
-    const [prog, toCache] = net.body.tee();
-    (async () => {
-      const r = prog.getReader(); let loaded = 0;
-      for (;;) { const { done, value } = await r.read(); if (done) break; loaded += value.length; onProgress(fmtBytes(loaded, total, t0)); }
-    })().catch(() => {});
+    // Progreso SIN tee(): con un modelo de gigabytes, tee() crea dos ramas que
+    // se consumen a ritmos distintos y el navegador tiene que bufferizar la
+    // diferencia en memoria → el cache.put acababa reventando y el modelo NO se
+    // cacheaba NUNCA (medido con E4B: 2832 MB bajados y cero guardados). Peor
+    // aún: al fallar se devolvía la URL suelta y `Engine.create({model: <URL>})`
+    // monta un motor que CARGA pero no genera («Aborted()»). Con un
+    // TransformStream hay un solo consumidor: contamos al vuelo y el mismo flujo
+    // va a la caché.
+    let loaded = 0;
+    const counted = net.body.pipeThrough(new TransformStream({
+      transform(chunk, ctrl) {
+        loaded += chunk.byteLength ?? chunk.length;
+        onProgress(fmtBytes(loaded, total, t0));
+        ctrl.enqueue(chunk);
+      },
+    }));
     const headers = { 'Content-Type': 'application/octet-stream' };
     if (total) headers['Content-Length'] = String(total);
-    await cache.put(url, new Response(toCache, { headers }));
+    // Cachear GIGABYTES puede fallar de verdad: ventana privada (Cache Storage
+    // en memoria), disco lleno, cuota del origen. Si falla hay que DECIRLO: el
+    // progreso ya ha prometido «se cachea para la próxima vez» y, callándolo,
+    // el usuario se re-baja el modelo entero cada sesión sin saber por qué.
+    try {
+      await cache.put(url, new Response(counted, { headers }));
+    } catch (e) {
+      onProgress(`No se pudo guardar el modelo en caché (${e.name || 'error'}): habrá que descargarlo otra vez la próxima. ` +
+        `Suele ser ventana privada o falta de espacio.`);
+      console.warn('[elffuss] modelo NO cacheado:', e);
+      return url;
+    }
     const cached = await cache.match(url);
-    return cached ? await cached.blob() : url;
-  } catch { return url; }
+    if (!cached) { onProgress('No se pudo guardar el modelo en caché: habrá que descargarlo otra vez la próxima.'); return url; }
+    return await cached.blob();
+  } catch (e) {
+    console.warn('[elffuss] caché de modelo no disponible:', e);
+    return url;
+  }
 }
 function fmtBytes(loaded, total, t0) {
   const mb = n => (n / 1048576).toFixed(0);
@@ -131,6 +178,7 @@ export async function chat(history, system, onToken = () => {}) {
       // system prompt al crear la conversación → primera respuesta más rápida.
       filterChannelContentFromKvCache: true,
       prefillPrefaceOnInit: true,
+      ...(muestreo ? { sessionConfig: { samplerParams: muestreo } } : {}),
     });
     sentCount = 0;
   }

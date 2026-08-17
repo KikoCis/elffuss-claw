@@ -395,6 +395,26 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
     // que pintaba y que cambiaba, pero era ciega a las excepciones. Se recogen
     // aquí dentro porque desde fuera el sandbox no deja verlas.
     var errores=[];
+    // «responde» se medía como «el dibujo cambió tras pulsar», pero un juego que
+    // anima continuamente cambia igual sin tocar nada: un juego SORDO pasaba.
+    // Ahora se mira si llega a registrar algún escuchador de entrada, que es la
+    // propiedad de verdad. Se puede porque la sonda entra ANTES que su código.
+    var escucha = {};
+    var ENTRADA = /^(keydown|keyup|keypress|mousemove|mousedown|mouseup|click|pointerdown|pointermove|touchstart|touchmove)$/;
+    function espia(obj, nombre){
+      if(!obj || !obj.addEventListener) return;
+      var orig = obj.addEventListener;
+      obj.addEventListener = function(tipo){ if(ENTRADA.test(String(tipo))) escucha[tipo]=1; return orig.apply(this, arguments); };
+    }
+    espia(W,'window'); espia(document,'document');
+    if(W.HTMLElement && W.HTMLElement.prototype) espia(W.HTMLElement.prototype,'elementos');
+    // los manejadores puestos como propiedad (onkeydown = ...) no pasan por ahí
+    ['onkeydown','onkeyup','onclick','onmousemove','onmousedown'].forEach(function(k){
+      [W, document].forEach(function(o){
+        try{ var v; Object.defineProperty(o,k,{configurable:true,
+          get:function(){return v;}, set:function(f){ if(f) escucha[k]=1; v=f; }}); }catch(e){}
+      });
+    });
     W.addEventListener('error',function(e){ errores.push(String((e&&e.message)||e).slice(0,120)); });
     W.addEventListener('unhandledrejection',function(e){ errores.push('promesa: '+String((e&&e.reason&&e.reason.message)||e.reason).slice(0,110)); });
     function leer(){ var c=document.querySelector('canvas'); if(!c) return null;
@@ -402,8 +422,8 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
       try{ var d=x.getImageData(0,0,c.width,c.height).data, nb=0, h=0;
         for(var i=0;i<d.length;i+=16){ if(d[i]||d[i+1]||d[i+2]) nb++;
           h=(h*31+d[i]+d[i+1]*3+d[i+2]*7)>>>0; }
-        return {nb:nb,h:h,txt:(document.body.innerText||'').slice(0,400).toLowerCase(),err:errores[0]||null,nerr:errores.length};
-      }catch(e){ return {nb:0,h:0,txt:'',err:errores[0]||('canvas: '+e.message),nerr:errores.length+1}; } }
+        return {nb:nb,h:h,txt:(document.body.innerText||'').slice(0,400).toLowerCase(),err:errores[0]||null,nerr:errores.length,escucha:Object.keys(escucha)};
+      }catch(e){ return {nb:0,h:0,txt:'',err:errores[0]||('canvas: '+e.message),nerr:errores.length+1,escucha:Object.keys(escucha)}; } }
     W.addEventListener('message',function(e){
       if(!e.data) return;
       if(e.data.__sonda){ P({__sonda:1,r:leer()}); return; }
@@ -431,7 +451,14 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   marco.style.cssText = 'position:fixed;left:0;top:0;width:900px;height:600px;border:0;' +
     'opacity:.01;pointer-events:none;z-index:-1';
   const doc = String(html || '');
-  marco.srcdoc = /<\/body>/i.test(doc) ? doc.replace(/<\/body>/i, sonda + '</body>') : doc + sonda;
+  // La sonda va lo ANTES posible: puesta antes de </body> se registraba después
+  // de que el artefacto ya hubiera corrido, así que era ciega al fallo más
+  // común —el de arranque o parseo— y esos juegos salían «sin errores».
+  // Detrás de <head> y no antes del doctype: delante, el documento cae en modo
+  // quirks y cambia el tamaño del canvas, o sea que cambiaría lo que medimos.
+  marco.srcdoc = /<head[^>]*>/i.test(doc) ? doc.replace(/<head[^>]*>/i, m => m + sonda)
+    : /<html[^>]*>/i.test(doc) ? doc.replace(/<html[^>]*>/i, m => m + sonda)
+    : sonda + doc;
 
   const respuestas = [];
   const oir = e => { if (e.data && e.data.__sonda === 1) respuestas.push(e.data.r); };
@@ -442,8 +469,13 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   const pedir = async () => {
     const n = respuestas.length;
     try { marco.contentWindow.postMessage({ __sonda: 1 }, '*'); } catch { /* */ }
-    for (let i = 0; i < 20 && respuestas.length === n; i++) await esperar(50);
-    return respuestas[respuestas.length - 1] || null;
+    for (let i = 0; i < 40 && respuestas.length === n; i++) await esperar(50);
+    // Al expirar el plazo, respuestas.length sigue valiendo n y esto devolvía
+    // LA LECTURA ANTERIOR. Entonces b===a daba «no está vivo» y c===b daba «no
+    // responde» sobre un juego que funciona. Y como el evaluador se usa MIENTRAS
+    // el modelo genera, el iframe llega tarde justo cuando más se le mide: un
+    // juego jugable se puntuaba 0 por no haber contestado a tiempo.
+    return respuestas.length > n ? respuestas[respuestas.length - 1] : null;
   };
 
   await esperar(1300);
@@ -460,14 +492,18 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   window.removeEventListener('message', oir);
   marco.remove();
 
-  if (!a) return { nota: 0, detalle: { medible: false }, medible: false };
+  if (!a || !b || !c) return { nota: -1, detalle: { medible: false }, medible: false,
+    error: 'el artefacto no contestó a tiempo (no es un fallo suyo: no se pudo medir)' };
   // Las mismas cinco señales que mide el arnés externo, para que la nota de
   // dentro y la de fuera signifiquen lo mismo y se puedan contrastar.
   const fallo = [a, b, c].map(x => x && x.err).find(Boolean) || null;
   const detalle = {
     pinta: a.nb > 0,
     vivo: !!(b && a.h !== b.h),
-    responde: !!(c && b && b.h !== c.h),
+    // escuchar Y reaccionar. Solo lo segundo daba por bueno un juego sordo que
+    // simplemente seguía animando; solo lo primero daría por bueno uno que
+    // registra el escuchador y no hace nada con él.
+    responde: !!((c && c.escucha && c.escucha.length) && (c && b && b.h !== c.h)),
     arranca: !/game\s*over|has perdido|fin del juego/.test(a.txt || ''),
     sinErrores: !fallo,
   };
@@ -493,12 +529,36 @@ function defectosMedidos(detalle, error) {
 }
 
 export async function deepCreate({ brief, provider, rounds = 1, onProgress = () => {}, useJury = false,
-                                   editMode = 'rewrite', notaMinima = null, evaluar = null }) {
+                                   editMode = 'rewrite', notaMinima = null, evaluar = null, bestOf = 1 }) {
   if (!provider || typeof provider.chat !== 'function') throw new Error('Hard Work necesita un cerebro cargado (elige un modelo arriba).');
   if (!String(brief || '').trim()) throw new Error('Hard Work: dime qué quieres que cree.');
   onProgress({ phase: 'draft' });
   let html = extractHtml(await genComplete(provider, CREATE_SYS, String(brief)));
   const trace = [{ round: 0, html }];
+
+  // Varias tiradas y nos quedamos con la que MEJOR puntúa al ejecutarla.
+  // A este tamaño de modelo, pedirle que se critique y se parchee empeora
+  // (medido: una ronda dejó un juego jugable sin pintar). Volver a tirar y
+  // juzgar por fuera no depende de que el modelo se juzgue bien a sí mismo.
+  // Requiere muestreo con temperatura: con decodificado voraz las N tiradas
+  // salen idénticas y esto sería pagar N veces por lo mismo.
+  const puedeMuestrear = typeof provider.setSampling === 'function';
+  if (bestOf > 1 && (evaluar || rateArtifact) && puedeMuestrear) {
+    const juzga = evaluar || rateArtifact;
+    let mejorHtml = html, mejorV = await juzga(html);
+    onProgress({ phase: 'candidato', i: 0, nota: mejorV.nota });
+    for (let i = 1; i < bestOf; i++) {
+      provider.setSampling({ temperature: 0.85, seed: 1000 + i * 137 });
+      const otro = extractHtml(await genComplete(provider, CREATE_SYS, String(brief)));
+      const v = otro ? await juzga(otro) : { nota: -1 };
+      onProgress({ phase: 'candidato', i, nota: v.nota });
+      trace.push({ candidato: i, html: otro, nota: v.nota });
+      if (v.nota > mejorV.nota) { mejorHtml = otro; mejorV = v; }
+    }
+    provider.setSampling(null);            // dejarlo como estaba: voraz
+    html = mejorHtml; trace[0].html = html; trace[0].nota = mejorV.nota;
+    onProgress({ phase: 'mejorCandidato', nota: mejorV.nota });
+  }
   // Con criterio de nota: se guarda la MEJOR versión, no la última. Medimos que
   // una ronda de más puede empeorar (un juego jugable acabó en pantalla de fin),
   // así que devolver «lo último» es devolver a veces lo peor.
