@@ -517,7 +517,12 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
     // registra el escuchador y no hace nada con él.
     responde: !!((c && c.escucha && c.escucha.length) && (c && b && b.h !== c.h)),
     arranca: !seAcabo(a.txt),
-    sobrevive: !seAcabo(b && b.txt),
+    // Se comprueba en la ÚLTIMA lectura, no en la segunda. Al pedirle al modelo
+    // que no arranque hasta la primera pulsación, mirar antes de tocar nada
+    // daba «sobrevive» por bueno trivialmente: el juego aún no había empezado.
+    // Snake pasó de morir en segundo y medio a esperar y MORIR IGUAL de rápido
+    // en cuanto arrancaba, y así puntuaba 6/6.
+    sobrevive: !seAcabo(d && d.txt) && !seAcabo(b && b.txt),
     sinErrores: !fallo,
   };
   // «pinta» es puerta: sin dibujar nada, un HTML en blanco se llevaba puntos
