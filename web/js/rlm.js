@@ -497,6 +497,11 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   // Las mismas cinco señales que mide el arnés externo, para que la nota de
   // dentro y la de fuera signifiquen lo mismo y se puedan contrastar.
   const fallo = [a, b, c].map(x => x && x.err).find(Boolean) || null;
+  // El snake generado arrancaba ya moviéndose y chocaba contra la pared en un
+  // segundo y medio: cuando lo abres ya ha terminado. Gráficamente impecable y
+  // pasaba las cinco señales anteriores. «arranca» mira el primer instante;
+  // esto mira si SIGUE vivo unos segundos después sin que nadie juegue.
+  const seAcabo = t => /game\s*over|has perdido|fin del juego|puntuaci[óo]n final/.test(t || '');
   const detalle = {
     pinta: a.nb > 0,
     vivo: !!(b && a.h !== b.h),
@@ -504,13 +509,14 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
     // simplemente seguía animando; solo lo primero daría por bueno uno que
     // registra el escuchador y no hace nada con él.
     responde: !!((c && c.escucha && c.escucha.length) && (c && b && b.h !== c.h)),
-    arranca: !/game\s*over|has perdido|fin del juego/.test(a.txt || ''),
+    arranca: !seAcabo(a.txt),
+    sobrevive: !seAcabo(b && b.txt),
     sinErrores: !fallo,
   };
   // «pinta» es puerta: sin dibujar nada, un HTML en blanco se llevaba puntos
   // gratis por «no muestra game over» y «sin errores», ciertos por vacuidad.
   const nota = detalle.pinta ? Object.values(detalle).filter(Boolean).length : 0;
-  return { nota, detalle, medible: true, error: fallo, cerrado: /<\/html>/i.test(doc) };
+  return { nota, maximo: Object.keys(detalle).length, detalle, medible: true, error: fallo, cerrado: /<\/html>/i.test(doc) };
 }
 
 // Pedirle a un modelo de 4B «encuentra los defectos de este HTML» es pedirle lo
@@ -524,6 +530,7 @@ function defectosMedidos(detalle, error) {
   if (!detalle.vivo) d.push('La pantalla no cambia sola: falta el bucle de animación. Tiene que haber un requestAnimationFrame que se llame a sí mismo y repinte cada fotograma.');
   if (!detalle.responde) d.push('No reacciona a la entrada: al pulsar las flechas, W/S o la barra, y al mover el ratón, no cambia nada. Los listeners de teclado deben estar en document o window (no en el canvas, que no tiene foco).');
   if (!detalle.arranca) d.push('Arranca ya en pantalla de fin de partida: el estado inicial debe ser «jugando», no «game over».');
+  if (!detalle.sobrevive) d.push('La partida se acaba SOLA a los pocos segundos sin que el jugador haga nada, así que es injugable. Arréglalo de las dos formas: (1) que no empiece a moverse hasta la primera pulsación del jugador, y (2) que empiece lejos de los bordes y con velocidad más lenta, para que dé tiempo a reaccionar.');
   if (!detalle.sinErrores) d.push('Lanza este error en ejecución y hay que corregirlo: ' + (error || 'error desconocido'));
   return d;
 }
@@ -608,8 +615,11 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
       onProgress({ phase: 'rated', round: r, nota: v.nota, detalle: v.detalle });
       if (v.nota > mejorNota) { mejorNota = v.nota; mejor = html; }
       if (v.nota >= notaMinima) { onProgress({ phase: 'done', rounds: r, motivo: 'alcanzó la nota' }); return { html: mejor, trace, nota: mejorNota }; }
-      // Si empeora, no se sigue castigando: se devuelve la mejor y se para.
-      if (v.nota < mejorNota) { onProgress({ phase: 'done', rounds: r, motivo: 'empeoró — devuelvo la mejor' }); return { html: mejor, trace, nota: mejorNota }; }
+      // Antes se paraba en cuanto una ronda puntuaba por debajo de la mejor. Con
+      // eso una lectura floja tiraba las rondas que quedaban, y como siempre se
+      // devuelve la MEJOR, seguir no puede empeorar el resultado: solo cuesta
+      // tiempo. Se gasta el presupuesto y se elige al final.
+      if (v.nota < mejorNota) onProgress({ phase: 'peor', round: r, nota: v.nota, mejor: mejorNota });
     }
   }
   onProgress({ phase: 'done', rounds: trace.length - 1 });

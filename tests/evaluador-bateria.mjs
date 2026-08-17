@@ -35,6 +35,20 @@ const CASOS = [
   { id: 'sin-canvas', desc: 'sin canvas no se puede medir: «no medible», NO cero',
     html: '<!doctype html><html><head></head><body><h1>hola</h1></body></html>', noMedible: true },
 
+  // El defecto REAL del snake que generó Gemma: arranca en la casilla 10 de una
+  // rejilla de 20, ya moviéndose, y choca contra la pared en segundo y medio.
+  // Gráficamente impecable y pasaba las cinco señales anteriores.
+  { id: 'se-suicida', desc: 'la partida se acaba sola en segundos sin tocar nada',
+    html: `<!doctype html><html><head></head><body><canvas id="c" width="300" height="200"></canvas><div id="fin"></div><script>
+      const x=document.getElementById('c').getContext('2d'); let p=0; let vivo=true;
+      document.addEventListener('keydown',()=>{});
+      const t=setInterval(()=>{ p++; x.fillStyle='#000'; x.fillRect(0,0,300,200); x.fillStyle='#0f0'; x.fillRect(p*12,80,10,10);
+        if(p>8){ vivo=false; clearInterval(t); document.getElementById('fin').textContent='GAME OVER'; } },150);
+    <\/script></body></html>`, falla: 'sobrevive' },
+
+  { id: 'aguanta', desc: 'un juego que NO se acaba solo no puede marcarse como tal',
+    html: pagina(vivo), noFalla: 'sobrevive' },
+
   { id: 'ya-terminado', desc: 'arranca en pantalla de fin de partida',
     html: `<!doctype html><html><head></head><body><canvas id="c" width="300" height="200"></canvas><p>GAME OVER</p><script>${vivo}<\/script></body></html>`,
     falla: 'arranca' },
@@ -57,7 +71,7 @@ const evaluar = (casos, carga) => p.evaluate(async ({ casos, carga }) => {
     }
     const r = await rlm.rateArtifact(c.html);
     if (matar) matar();
-    out.push({ id: c.id, nota: r.nota, detalle: r.detalle, medible: r.medible, error: r.error });
+    out.push({ id: c.id, nota: r.nota, maximo: r.maximo, detalle: r.detalle, medible: r.medible, error: r.error });
   }
   return out;
 }, { casos, carga });
@@ -70,9 +84,10 @@ for (const carga of [false, true]) {
     const r = res.find(x => x.id === c.id);
     let bien = true, nota = '';
     if (c.noMedible) { bien = r.medible === false && r.nota < 0; nota = bien ? '' : `medible=${r.medible} nota=${r.nota}`; }
-    else if (c.nota != null) { bien = r.nota === c.nota; nota = bien ? '' : `nota ${r.nota}, esperaba ${c.nota} · falla ${Object.entries(r.detalle||{}).filter(([,v])=>!v).map(([k])=>k).join(',')}`; }
+    else if (c.nota != null) { bien = r.nota === (c.nota === 5 ? r.maximo : c.nota); nota = bien ? '' : `nota ${r.nota}, esperaba ${c.nota} · falla ${Object.entries(r.detalle||{}).filter(([,v])=>!v).map(([k])=>k).join(',')}`; }
     else if (c.sinErrores === false) { bien = r.detalle?.sinErrores === false; nota = bien ? '' : 'no vio el error'; }
     else if (c.falla) { bien = r.detalle?.[c.falla] === false; nota = bien ? '' : `no detectó que falla «${c.falla}»`; }
+    else if (c.noFalla) { bien = r.detalle?.[c.noFalla] === true; nota = bien ? '' : `marcó «${c.noFalla}» como fallo y no lo es`; }
     if (!bien) fallos++;
     console.log(` ${bien ? '✓' : '✗'} ${c.id.padEnd(15)} ${c.desc}${nota ? '\n     └─ ' + nota : ''}`);
   }
