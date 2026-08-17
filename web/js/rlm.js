@@ -300,26 +300,70 @@ Nada más: ni explicaciones ni texto extra. Ante la duda, NO.`;
 // Aquí solo se le piden los CAMBIOS, y los aplica este código: si el fragmento
 // a buscar no está tal cual en el documento, ese cambio se descarta. El modelo
 // propone, el código decide — igual que con las citas del jurado.
-const PATCH_SYS = `Eres Elffuss arreglando tu propia app. Te doy el HTML actual y una lista de defectos. NO reescribas el documento. Devuelve SOLO los cambios mínimos, en bloques de exactamente tres líneas:
-BUSCAR: <fragmento LITERAL del código actual, copiado tal cual, en una línea>
-CAMBIAR: <con qué se sustituye, en una línea>
-MOTIVO: <qué defecto arregla>
-Repite el bloque por cada cambio. Máximo 6. El texto de BUSCAR debe existir palabra por palabra en el HTML y ser único; si no puedes copiarlo exacto, omite ese cambio. No toques nada que ya funcione.`;
+const PATCH_SYS = `Eres Elffuss arreglando tu propia app. Te doy el HTML actual y una lista de defectos COMPROBADOS ejecutandola.
+
+Arregla ESOS defectos y nada mas. No reescribas el documento. Devuelve solo los cambios, asi:
+
+BUSCAR
+<las lineas actuales, copiadas LITERALES del HTML de arriba>
+CAMBIAR
+<las lineas nuevas que las sustituyen>
+FIN
+
+Puedes usar VARIAS lineas en cada parte: si hace falta anadir codigo nuevo (por ejemplo unos addEventListener de teclado), copia en BUSCAR una linea de referencia que exista y ponla en CAMBIAR seguida del codigo nuevo.
+
+Reglas: lo de BUSCAR debe existir palabra por palabra en el HTML y aparecer una sola vez. BUSCAR y CAMBIAR nunca pueden ser iguales, eso no arregla nada. Maximo 4 parches, todos dirigidos a los defectos de la lista. No toques colores, textos ni nada que ya funcione.`;
 
 export function applyPatches(html, respuesta) {
-  const lineas = String(respuesta || '').split('\n').map(x => x.trim());
+  const texto = String(respuesta || '');
   let out = html;
   const aplicados = [], fallidos = [];
+
+  // Los parches se recogen en los DOS formatos. El de una línea era el único
+  // que había, y con él los defectos importantes son INARREGLABLES por
+  // construcción: añadir unos listeners de teclado necesita varias líneas, así
+  // que el modelo solo podía hacer retoques cosméticos (medido: cambiaba el
+  // verde de la serpiente mientras el defecto era que no responde a las teclas).
+  const parches = [];
+  // bloque multilínea:  BUSCAR \n …líneas… \n CAMBIAR \n …líneas… \n FIN
+  const bloque = /^[ \t]*BUSCAR[ \t]*$\r?\n([\s\S]*?)^[ \t]*CAMBIAR[ \t]*$\r?\n([\s\S]*?)^[ \t]*FIN[ \t]*$/gim;
+  for (const m of texto.matchAll(bloque))
+    parches.push({ buscar: m[1].replace(/\s+$/, ''), cambiar: m[2].replace(/\s+$/, '') });
+  // de una línea: BUSCAR: … / CAMBIAR: …
+  const lineas = texto.split('\n').map(x => x.trim());
   for (let i = 0; i < lineas.length; i++) {
-    const b = lineas[i].match(/^BUSCAR:\s*(.+)/i);
-    if (!b) continue;
-    const c = (lineas[i + 1] || '').match(/^CAMBIAR:\s*(.+)/i);
-    if (!c) continue;
-    const buscar = b[1].trim(), cambiar = c[1].trim();
+    const b = lineas[i].match(/^BUSCAR:\s*(.+)/i); if (!b) continue;
+    const c = (lineas[i + 1] || '').match(/^CAMBIAR:\s*(.+)/i); if (!c) continue;
+    parches.push({ buscar: b[1].trim(), cambiar: c[1].trim() });
+  }
+
+  const norm = t => t.replace(/[ \t]+/g, ' ').trim();
+  for (const { buscar, cambiar } of parches) {
     if (buscar.length < 6) continue;
+    // Un parche que no cambia nada se contaba como aplicado y gastaba uno de
+    // los seis huecos. Medido: el modelo los emite (BUSCAR y CAMBIAR idénticos).
+    if (buscar === cambiar) { fallidos.push({ buscar: buscar.slice(0, 60), motivo: 'no cambia nada' }); continue; }
+
     const veces = out.split(buscar).length - 1;
-    if (veces === 1) { out = out.replace(buscar, cambiar); aplicados.push(buscar.slice(0, 60)); }
-    else fallidos.push({ buscar: buscar.slice(0, 60), veces });   // 0 = inventado, >1 = ambiguo
+    if (veces === 1) { out = out.replace(buscar, cambiar); aplicados.push(buscar.slice(0, 60)); continue; }
+    if (veces > 1) { fallidos.push({ buscar: buscar.slice(0, 60), veces, motivo: 'aparece varias veces' }); continue; }
+
+    // No está literal: puede ser solo la sangría o los espacios, que es el
+    // error de cita más común. Se busca por líneas normalizadas, y solo se
+    // sustituye si el bloque es ÚNICO — nunca una coincidencia dudosa.
+    const bl = buscar.split('\n').map(norm);
+    const hl = out.split('\n'), hn = hl.map(norm);
+    const donde = [];
+    for (let i = 0; i + bl.length <= hn.length; i++) {
+      let igual = true;
+      for (let j = 0; j < bl.length; j++) if (hn[i + j] !== bl[j]) { igual = false; break; }
+      if (igual) { donde.push(i); if (donde.length > 1) break; }
+    }
+    if (donde.length === 1) {
+      hl.splice(donde[0], bl.length, ...cambiar.split('\n'));
+      out = hl.join('\n');
+      aplicados.push(buscar.slice(0, 60));
+    } else fallidos.push({ buscar: buscar.slice(0, 60), veces: donde.length, motivo: donde.length ? 'ambiguo ignorando espacios' : 'no existe en el HTML' });
   }
   return { html: out, aplicados, fallidos };
 }
@@ -347,13 +391,19 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   // a sí misma y devuelve NÚMEROS por postMessage. Nada entra; solo salen datos.
   const sonda = `<script>(function(){
     var W=window, P=function(m){try{parent.postMessage(m,'*')}catch(e){}};
+    // Un juego que revienta al mover el ratón se puntuaba 5/5: la sonda medía
+    // que pintaba y que cambiaba, pero era ciega a las excepciones. Se recogen
+    // aquí dentro porque desde fuera el sandbox no deja verlas.
+    var errores=[];
+    W.addEventListener('error',function(e){ errores.push(String((e&&e.message)||e).slice(0,120)); });
+    W.addEventListener('unhandledrejection',function(e){ errores.push('promesa: '+String((e&&e.reason&&e.reason.message)||e.reason).slice(0,110)); });
     function leer(){ var c=document.querySelector('canvas'); if(!c) return null;
       var x=c.getContext('2d'); if(!x) return null;
       try{ var d=x.getImageData(0,0,c.width,c.height).data, nb=0, h=0;
         for(var i=0;i<d.length;i+=16){ if(d[i]||d[i+1]||d[i+2]) nb++;
           h=(h*31+d[i]+d[i+1]*3+d[i+2]*7)>>>0; }
-        return {nb:nb,h:h,txt:(document.body.innerText||'').slice(0,400).toLowerCase()};
-      }catch(e){ return null; } }
+        return {nb:nb,h:h,txt:(document.body.innerText||'').slice(0,400).toLowerCase(),err:errores[0]||null,nerr:errores.length};
+      }catch(e){ return {nb:0,h:0,txt:'',err:errores[0]||('canvas: '+e.message),nerr:errores.length+1}; } }
     W.addEventListener('message',function(e){
       if(!e.data) return;
       if(e.data.__sonda){ P({__sonda:1,r:leer()}); return; }
@@ -411,15 +461,35 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   marco.remove();
 
   if (!a) return { nota: 0, detalle: { medible: false }, medible: false };
+  // Las mismas cinco señales que mide el arnés externo, para que la nota de
+  // dentro y la de fuera signifiquen lo mismo y se puedan contrastar.
+  const fallo = [a, b, c].map(x => x && x.err).find(Boolean) || null;
   const detalle = {
     pinta: a.nb > 0,
     vivo: !!(b && a.h !== b.h),
     responde: !!(c && b && b.h !== c.h),
     arranca: !/game\s*over|has perdido|fin del juego/.test(a.txt || ''),
-    completo: /<\/html>/i.test(doc),
+    sinErrores: !fallo,
   };
+  // «pinta» es puerta: sin dibujar nada, un HTML en blanco se llevaba puntos
+  // gratis por «no muestra game over» y «sin errores», ciertos por vacuidad.
   const nota = detalle.pinta ? Object.values(detalle).filter(Boolean).length : 0;
-  return { nota, detalle, medible: true };
+  return { nota, detalle, medible: true, error: fallo, cerrado: /<\/html>/i.test(doc) };
+}
+
+// Pedirle a un modelo de 4B «encuentra los defectos de este HTML» es pedirle lo
+// que peor hace: leer código largo y juzgarlo. Pero tras ejecutarlo YA sabemos
+// objetivamente qué falla. Esto convierte la medición en la lista de defectos,
+// que es información dura y no una opinión del propio modelo sobre sí mismo.
+function defectosMedidos(detalle, error) {
+  if (!detalle) return [];
+  const d = [];
+  if (!detalle.pinta) d.push('No se dibuja NADA en el canvas: revisa que exista el <canvas>, que se coja su contexto 2d y que algo se pinte al arrancar.');
+  if (!detalle.vivo) d.push('La pantalla no cambia sola: falta el bucle de animación. Tiene que haber un requestAnimationFrame que se llame a sí mismo y repinte cada fotograma.');
+  if (!detalle.responde) d.push('No reacciona a la entrada: al pulsar las flechas, W/S o la barra, y al mover el ratón, no cambia nada. Los listeners de teclado deben estar en document o window (no en el canvas, que no tiene foco).');
+  if (!detalle.arranca) d.push('Arranca ya en pantalla de fin de partida: el estado inicial debe ser «jugando», no «game over».');
+  if (!detalle.sinErrores) d.push('Lanza este error en ejecución y hay que corregirlo: ' + (error || 'error desconocido'));
+  return d;
 }
 
 export async function deepCreate({ brief, provider, rounds = 1, onProgress = () => {}, useJury = false,
@@ -433,10 +503,10 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
   // una ronda de más puede empeorar (un juego jugable acabó en pantalla de fin),
   // así que devolver «lo último» es devolver a veces lo peor.
   const juez = notaMinima != null ? (evaluar || rateArtifact) : null;
-  let mejor = html, mejorNota = -1;
+  let mejor = html, mejorNota = -1, ultimoDetalle = null, ultimoError = null;
   if (juez) {
     const v = await juez(html);
-    mejorNota = v.nota;
+    mejorNota = v.nota; ultimoDetalle = v.detalle; ultimoError = v.error;
     trace[0].nota = v.nota; trace[0].detalle = v.detalle;
     onProgress({ phase: 'rated', round: 0, nota: v.nota, detalle: v.detalle });
     if (v.nota >= notaMinima) { onProgress({ phase: 'done', rounds: 0, motivo: 'ya cumplía' }); return { html, trace, nota: v.nota }; }
@@ -444,7 +514,14 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
   for (let r = 1; r <= rounds; r++) {
     onProgress({ phase: 'critique', round: r });
     let critique;
-    if (useJury) {
+    // Si hemos ejecutado el artefacto, lo MEDIDO manda: son defectos
+    // comprobados, no sospechas. La crítica del modelo va detrás, como apoyo.
+    const medidos = juez ? defectosMedidos(ultimoDetalle, ultimoError) : [];
+    if (medidos.length) {
+      critique = 'DEFECTOS COMPROBADOS EJECUTANDO EL JUEGO (corrige estos, son seguros):\n'
+        + medidos.map(x => '- ' + x).join('\n');
+      onProgress({ phase: 'critique', round: r, medidos: medidos.length });
+    } else if (useJury) {
       const v = await juryReview({ artifact: html, provider, onProgress });
       critique = v.defects.length
         ? v.defects.map(d => `- ${d.text} (${d.votes} de ${v.jurors} revisores)`).join('\n')
@@ -466,6 +543,7 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
     }
     if (juez) {
       const v = await juez(html);
+      ultimoDetalle = v.detalle; ultimoError = v.error;
       trace[trace.length - 1].nota = v.nota; trace[trace.length - 1].detalle = v.detalle;
       onProgress({ phase: 'rated', round: r, nota: v.nota, detalle: v.detalle });
       if (v.nota > mejorNota) { mejorNota = v.nota; mejor = html; }
