@@ -49,6 +49,18 @@ const CASOS = [
   { id: 'aguanta', desc: 'un juego que NO se acaba solo no puede marcarse como tal',
     html: pagina(vivo), noFalla: 'sobrevive' },
 
+  // Lo CORRECTO tras el consejo que le damos al modelo: no arrancar hasta la
+  // primera pulsación. Medido solo antes de tocar nada, esto parecía muerto y
+  // penalizábamos justo el arreglo que habíamos pedido.
+  { id: 'espera-al-jugador', desc: 'no arranca hasta la primera tecla → sigue estando VIVO',
+    html: `<!doctype html><html><head></head><body><canvas id="c" width="300" height="200"></canvas><script>
+      const x=document.getElementById('c').getContext('2d'); let t=0, jugando=false;
+      x.fillStyle='#333'; x.fillRect(0,0,300,200);
+      document.addEventListener('keydown',()=>{ jugando=true; });
+      (function b(){ if(jugando){ t++; x.fillStyle='#000'; x.fillRect(0,0,300,200);
+        x.fillStyle='#0ff'; x.fillRect((t*3)%280,80,20,20); } requestAnimationFrame(b); })();
+    <\/script></body></html>`, noFalla: 'vivo' },
+
   { id: 'ya-terminado', desc: 'arranca en pantalla de fin de partida',
     html: `<!doctype html><html><head></head><body><canvas id="c" width="300" height="200"></canvas><p>GAME OVER</p><script>${vivo}<\/script></body></html>`,
     falla: 'arranca' },

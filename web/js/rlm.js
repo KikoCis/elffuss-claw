@@ -488,15 +488,22 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   } catch { /* */ }
   await esperar(1200);
   const c = await pedir();
+  // Cuarta lectura, SIN mandar nada más. Hace falta porque «sobrevive» empuja al
+  // modelo a que el juego no arranque hasta la primera pulsación —que es lo
+  // correcto— y entonces «vivo», medido solo ANTES de tocar nada, lo castigaba
+  // justo por hacerlo bien. Las dos señales se contradecían. Ahora vale con que
+  // se mueva solo en algún momento: antes de la entrada, o después de ella.
+  await esperar(1400);
+  const d = await pedir();
 
   window.removeEventListener('message', oir);
   marco.remove();
 
-  if (!a || !b || !c) return { nota: -1, detalle: { medible: false }, medible: false,
+  if (!a || !b || !c || !d) return { nota: -1, detalle: { medible: false }, medible: false,
     error: 'el artefacto no contestó a tiempo (no es un fallo suyo: no se pudo medir)' };
   // Las mismas cinco señales que mide el arnés externo, para que la nota de
   // dentro y la de fuera signifiquen lo mismo y se puedan contrastar.
-  const fallo = [a, b, c].map(x => x && x.err).find(Boolean) || null;
+  const fallo = [a, b, c, d].map(x => x && x.err).find(Boolean) || null;
   // El snake generado arrancaba ya moviéndose y chocaba contra la pared en un
   // segundo y medio: cuando lo abres ya ha terminado. Gráficamente impecable y
   // pasaba las cinco señales anteriores. «arranca» mira el primer instante;
@@ -504,7 +511,7 @@ export async function rateArtifact(html, { ms = 2600 } = {}) {
   const seAcabo = t => /game\s*over|has perdido|fin del juego|puntuaci[óo]n final/.test(t || '');
   const detalle = {
     pinta: a.nb > 0,
-    vivo: !!(b && a.h !== b.h),
+    vivo: !!(a.h !== b.h || c.h !== d.h),
     // escuchar Y reaccionar. Solo lo segundo daba por bueno un juego sordo que
     // simplemente seguía animando; solo lo primero daría por bueno uno que
     // registra el escuchador y no hace nada con él.
