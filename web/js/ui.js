@@ -5,7 +5,8 @@ import * as settings from './settings.js';
 import * as skills from './skills.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
 import { renderMarkdown } from './md.js';
-import { t as tr, uiLang } from './i18n.js'; // alias: dentro de tick(t) el token ya se llama t
+import { t as tr, uiLang } from './i18n.js';
+import { humanizeStreamPreview } from './humanize.js'; // alias: dentro de tick(t) el token ya se llama t
 import { UI } from './icons.js';
 import { cacheEstimate, clearModelCache } from './model-cache.js';
 import * as workspace from './workspace.js';
@@ -80,8 +81,21 @@ export function thinkingBubble() {
     tick(t) {
       buf += t;
       label.textContent = tr('writing', { n: buf.length });
-      gen.textContent = (buf.length > 240 ? '…' : '') + buf.slice(-240);
-      $('log').scrollTop = $('log').scrollHeight;
+      // Si está emitiendo un tool-call (p.ej. app.create con un HTML enorme), NO
+      // volcamos el JSON/HTML crudo que parpadea: una frase humana («creando
+      // app…»). Para el texto normal, caja que CRECE y se puede leer/scrollear
+      // entera (antes se mostraban solo los últimos 240 y desaparecía lo de
+      // arriba). Se respeta tu scroll si subes a leer.
+      const preview = humanizeStreamPreview(buf);
+      if (preview) {
+        gen.classList.add('tool-preview');
+        gen.textContent = '⟐ ' + preview;
+      } else {
+        gen.classList.remove('tool-preview');
+        const pegado = gen.scrollHeight - gen.scrollTop - gen.clientHeight < 28;
+        gen.textContent = buf;
+        if (pegado) gen.scrollTop = gen.scrollHeight;
+      }
     },
     tool(name) {
       buf = '';

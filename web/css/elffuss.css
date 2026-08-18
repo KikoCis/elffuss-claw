@@ -104,7 +104,13 @@ main {
 .msg.thinking .gen {
   width: 100%; font-family: ui-monospace, monospace; font-size: .72rem;
   white-space: pre-wrap; word-break: break-word;
-  max-height: 76px; overflow: hidden; color: #5f6880;
+  max-height: 168px; overflow-y: auto; color: #5f6880;
+  background: rgba(0,0,0,.16); border-radius: 8px; padding: 6px 8px; margin-top: 4px;
+}
+.msg.thinking .gen:empty { display: none; }
+.msg.thinking .gen.tool-preview {
+  font-family: inherit; font-size: .8rem; color: #a9b2c8;
+  background: none; max-height: none; overflow: visible; padding: 2px 0;
 }
 .msg.tool { color: var(--accent); font-size: .8rem; background: none; padding: 0 14px; }
 .msg.tool-result { font-size: .8rem; color: var(--muted); background: var(--bg2); border: 1px dashed var(--line); border-radius: 10px; padding: 6px 10px; }
