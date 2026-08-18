@@ -2,11 +2,22 @@
 // Patrón copiado de la demo verificada en agentic-install
 // (lab/bitacora/posts/08-jspace-live.html): dtype 'q4' obligatorio — q4f16
 // genera basura vía WebGPU incluso con shader-f16.
-import { MODEL } from '../model-config.js';
+import { MODEL, ONNX_MODELS, setOnnxModel } from '../model-config.js';
 import { packHistoryAsync } from '../context.js';
 
-export const name = MODEL.label;
-let generator = null, TextStreamer = null;
+export let name = MODEL.label;
+
+// Elegir qué ONNX cargar. Si cambia respecto al ya cargado, se descarta la
+// sesión para que load() cree la nueva (un modelo distinto = otra sesión).
+let generator = null, TextStreamer = null, cargadoKey = null;
+export function configure(key) {
+  const antes = MODEL.key;
+  setOnnxModel(key);
+  name = MODEL.label;
+  if (MODEL.key !== cargadoKey && generator) { try { generator?.dispose?.(); } catch {} generator = null; }
+  return MODEL.key !== antes;
+}
+export function models() { return Object.values(ONNX_MODELS); }
 
 export async function load(onProgress = () => {}) {
   if (generator) return; // un solo modelo: nunca recargar/duplicar la sesión
@@ -32,18 +43,20 @@ export async function load(onProgress = () => {}) {
     dtype: MODEL.dtype,
     progress_callback: onProgress,
   });
+  cargadoKey = MODEL.key;
 }
 
 // Liberar el modelo (vigilante de RAM): suelta los buffers wasm/WebGPU.
 export async function unload() {
   try { await generator?.dispose?.(); } catch { /* mejor esfuerzo */ }
-  generator = null;
+  generator = null; cargadoKey = null;
 }
 
 export async function chat(history, system, onToken = () => {}) {
   if (!generator) throw new Error('Modelo no cargado');
-  // ACE-lite: eviction por relevancia con presupuesto corto — los modelos
-  // pequeños se pierden (y se ralentizan) con historiales largos.
+  // ACE-lite: eviction por relevancia. Presupuesto amplio (LFM2.5 aguanta
+  // contexto largo); el tope POR MENSAJE (context.js) evita que un README
+  // gigante dispare «Too many tokens requested».
   const messages = [{ role: 'system', content: system }, ...(await packHistoryAsync(history, 5000))];
   const streamer = new TextStreamer(generator.tokenizer, {
     skip_prompt: true,
@@ -58,5 +71,14 @@ export async function chat(history, system, onToken = () => {}) {
     streamer,
   });
   const gen = out[0].generated_text;
-  return (typeof gen === 'string' ? gen : gen.at(-1).content).trim();
+  let txt = (typeof gen === 'string' ? gen : gen.at(-1).content);
+  // Modelos de razonamiento (Qwen3): fuera el <think>. Si quedó abierto por el
+  // tope de tokens, nos quedamos con lo de después de la última apertura.
+  if (txt.includes('<think>')) {
+    txt = txt.replace(/<think>[\s\S]*?<\/think>/g, '');
+    const i = txt.lastIndexOf('<think>');
+    if (i !== -1) txt = txt.slice(i + 7);
+    txt = txt.replace(/<\/?think>/g, '');
+  }
+  return txt.trim();
 }

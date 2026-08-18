@@ -35,6 +35,11 @@ async function resolveProvider(id) {
     mod.configure(id.slice(7));
     return mod;
   }
+  if (id.startsWith('onnx:')) {             // ONNX concreto (Elffuss LM, Qwen3…)
+    const mod = await import('./providers/onnx.js');
+    mod.configure(id.slice(5));
+    return mod;
+  }
   if (id.startsWith('ext:')) {
     const cfg = settings.get(id.slice(4));
     if (!cfg) throw new Error('proveedor externo desconocido');
@@ -69,16 +74,33 @@ function modelOptions() {
   if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~2.8 GB) ★ — por defecto' });
   if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
   local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) — ligero' });
+  local.push({ id: 'onnx:qwen3-0.6b', label: 'Qwen3-0.6B · WebGPU (~560 MB)' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   return [...local, ...settings.enabledExternals()];
 }
 
-const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:');
+const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:') || id.startsWith('onnx:');
 // Por defecto: Gemma-4 grande vía LiteRT-LM (build oficial -web, VERIFICADO que
 // carga y hace tool-calls). E4B en escritorio, E2B en móvil/GPU débil. Si no
 // cabe, cae al Elffuss LM healed (onnx, 850 MB) — cerebro seguro siempre.
 const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
+async function gpuCapacity() {
+  const mem = navigator.deviceMemory || 8;
+  if (!navigator.gpu) return { gpu: false, maxBuf: 0, mem };
+  try { const a = await navigator.gpu.requestAdapter();
+    return a ? { gpu: true, maxBuf: a.limits?.maxBufferSize || 0, mem } : { gpu: false, maxBuf: 0, mem };
+  } catch { return { gpu: false, maxBuf: 0, mem }; }
+}
+async function pickLocalBrain() {
+  const c = await gpuCapacity();
+  if (c.gpu && !isMobile()) {
+    if (c.maxBuf >= 2 ** 31 && c.mem >= 8) return 'litert:gemma-e4b';
+    if (c.maxBuf >= 2 ** 30 && c.mem >= 6) return 'litert:gemma-e2b';
+  }
+  if (c.gpu && isMobile()) return 'litert:gemma-e2b';
+  return 'onnx';
+}
 const defaultBrain = () => !realGPU ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
 
 const agent = new Agent(rules);
@@ -423,7 +445,7 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     const available = new Set(modelOptions().map(o => o.id));
     // si un Gemma pesado ya falló esta sesión, no reintentar (evita re-crash)
     const skipGemma = sessionStorage.getItem('elffuss.skipGemma') === '1';
-    const def = skipGemma ? 'onnx' : defaultBrain();
+    const def = skipGemma ? 'onnx' : await pickLocalBrain();
     const chain = [...new Set([saved, def, realGPU ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
