@@ -42,17 +42,40 @@ export async function xlsxToCsv(file) {
   return { sheet, csv: XLSX.utils.sheet_to_csv(wb.Sheets[sheet]) };
 }
 
+// Un modelo pequeño suele pasar el NOMBRE de la carpeta raíz como si fuera una
+// subcarpeta: fs.list(path="models") cuando la carpeta autorizada YA es «models».
+// Lo perdonamos quitando ese primer segmento redundante.
+function stripRootName(path, rootName) {
+  const parts = (path || '').split('/').filter(Boolean);
+  if (parts.length && parts[0] === rootName) parts.shift();
+  return parts;
+}
+
+// Entra en subcarpetas dando un error que ENSEÑA (qué hay) en vez del críptico
+// «could not be found».
+async function enterDir(dir, parts) {
+  for (const p of parts) {
+    try { dir = await dir.getDirectoryHandle(p); }
+    catch {
+      const hay = [];
+      try { for await (const e of dir.values()) hay.push((e.kind === 'directory' ? '📁 ' : '📄 ') + e.name); } catch {}
+      throw new Error(`No existe la subcarpeta «${p}» en «${dir.name}». Aquí hay: ${hay.join(', ') || '(vacío)'}. Para listar la carpeta raíz, usa fs.list SIN path.`);
+    }
+  }
+  return dir;
+}
+
 // Recorre 'a/b/c.txt' → { dir: handle de a/b, name: 'c.txt' }
 async function walk(handle, path, { create = false } = {}) {
-  const parts = (path || '').split('/').filter(Boolean);
+  const parts = stripRootName(path, handle.name);
   const name = parts.pop();
   for (const p of parts) handle = await handle.getDirectoryHandle(p, { create });
   return { dir: handle, name };
 }
 
 export async function list({ path = '', folder } = {}) {
-  let dir = await root(folder);
-  for (const p of path.split('/').filter(Boolean)) dir = await dir.getDirectoryHandle(p);
+  const rootH = await root(folder);
+  const dir = await enterDir(rootH, stripRootName(path, rootH.name));
   const out = [];
   for await (const entry of dir.values())
     out.push(`${entry.kind === 'directory' ? '📁' : '📄'} ${entry.name}`);
