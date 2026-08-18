@@ -16,15 +16,15 @@ export const ONNX_MODELS = {
     selfHosted: false,
     basePath: '/models/',
   },
-  'qwen3-0.6b': {
-    key: 'qwen3-0.6b',
-    label: 'Qwen3-0.6B (WebGPU)',
-    id: 'onnx-community/Qwen3-0.6B-ONNX',  // el ejemplo oficial de transformers.js
-    dtype: 'q4f16',        // el que usa el ejemplo de HF; se valida al cargar (ver onnx.js)
-    approxMB: 560,
+  'qwen3.5-0.8b': {
+    key: 'qwen3.5-0.8b',
+    label: 'Qwen3.5-0.8B (WebGPU)',
+    id: 'onnx-community/Qwen3.5-0.8B-ONNX',  // más nuevo que el 3-0.6B; verificado in-browser
+    dtype: 'q4f16',        // q4 peta con bad_alloc en este modelo; q4f16 genera limpio
+    approxMB: 600,
     selfHosted: false,
     basePath: '/models/',
-    reasoning: true,        // Qwen3 es híbrido con modo «thinking»
+    reasoning: true,        // Qwen3.5 híbrido con modo «thinking» (se limpia en onnx.js)
   },
 };
 
