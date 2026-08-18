@@ -33,8 +33,9 @@ Cómo actuar:
 \`\`\`html
 <!doctype html><html>…</html>
 \`\`\`
-3) Tras un [resultado], o si no hace falta herramienta, responde texto normal en el idioma del usuario. NO repitas la misma herramienta; una app creada YA está hecha: responde y para.
-4) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.
+3) Tras un [resultado] que EMPIEZA por ERROR: no te rindas ni digas que no se puede. REANALIZA el mensaje de error (suele decir qué hay o qué falta) y REINTENTA con la corrección (otra ruta, otros argumentos). Solo si vuelve a fallar de otra forma, explica al usuario qué pasó.
+4) Tras un [resultado] correcto, o si no hace falta herramienta, responde texto normal en el idioma del usuario. No repitas una herramienta que YA salió bien (una app creada ya está hecha): responde y para.
+5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.
 
 Ejemplos:
 Usuario: busca fotos de perros
@@ -244,7 +245,9 @@ export class Agent {
       onEvent({ type: 'tool_result', tool: call.tool, result: resultStr });
 
       this.history.push({ role: 'assistant', content: out, ts: Date.now() });
-      this.history.push({ role: 'user', content: `[resultado ${call.tool}]\n${resultStr}`, ts: Date.now() });
+      const pista = resultStr.startsWith('ERROR')
+        ? '\n(Reanaliza este error y reintenta con la corrección; no te rindas.)' : '';
+      this.history.push({ role: 'user', content: `[resultado ${call.tool}]\n${resultStr}${pista}`, ts: Date.now() });
 
       // Tras crear/abrir una app, la tarea suele estar hecha: cierra ya.
       if ((call.tool === 'app.create' || call.tool === 'app.open') && !resultStr.startsWith('ERROR')) {
