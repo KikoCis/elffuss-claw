@@ -132,6 +132,7 @@ export function askPermission(scope, meta, detail) {
 const isMobile = () => matchMedia('(max-width: 700px)').matches;
 
 export function renderApp(name, html) {
+  _stage?.hide?.($('vista-empty'), false);   // si estaba el escaparate de descarga, quitarlo
   $('vista-empty').hidden = true;
   const frame = $('appframe');
   frame.hidden = false;
@@ -309,9 +310,36 @@ export async function refreshPerms() {
 }
 
 // ---------- progreso y estado del modelo ----------
+// Escaparate de descarga: mientras baja el modelo y NO hay app abierta, mostramos
+// la galaxia + carrusel de mini-UIs en el panel Vista (en móvil evita la caja
+// flotante que se solapaba con el compositor). Con app abierta → caja flotante.
+let _stage = null;
+async function _loadStage() { if (!_stage) _stage = await import('./loading-stage.js'); return _stage; }
+function _pct(p) {
+  if (typeof p === 'string') return p;
+  if (p && p.status === 'progress' && p.total) return Math.round(p.loaded / p.total * 100);
+  return p;
+}
+async function _showStage(p) {
+  const st = await _loadStage();
+  if (!st.isMounted()) {
+    await st.show($('panel-vista'), $('vista-empty'));
+    selectTab('vista');
+    if (isMobile()) flipTo('viz');   // en móvil, enseñar el escaparate
+  }
+  st.setProgress(_pct(p));
+}
+
 export function modelProgress(p) {
   const box = $('model-progress');
-  if (p == null) { box.hidden = true; return; }
+  const appHidden = $('appframe').hidden !== false;   // ¿aún no hay app abierta?
+  if (p == null) {                                     // carga terminada
+    box.hidden = true;
+    _stage?.hide?.($('vista-empty'), appHidden);
+    return;
+  }
+  if (appHidden) { box.hidden = true; _showStage(p); return; }
+
   box.hidden = false;
   if (typeof p === 'string') {
     $('model-progress-text').textContent = p;

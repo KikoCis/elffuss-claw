@@ -95,6 +95,16 @@ const MODEL_CACHE = 'elffuss-models-v1';
 // con progreso real y lo cachea (persistente). Ante cualquier fallo, devuelve la
 // URL para que LiteRT lo baje por su cuenta (nunca bloquea la carga del modelo).
 export async function cachedModelBlob(url, onProgress = () => {}) {
+  // Runtime propio: primero OPFS persistente. Cache Storage se desalojaba en
+  // móvil → re-descarga en cada visita; OPFS aguanta en disco entre sesiones.
+  // Si OPFS no es escribible aquí (iOS hilo principal), getModelFile devuelve
+  // null y caemos al respaldo de Cache Storage de siempre.
+  try {
+    const { getModelFile } = await import('../runtime/model-store.js');
+    const f = await getModelFile(url, onProgress);
+    if (f) return f;
+  } catch (e) { console.warn('[elffuss] OPFS no disponible, uso Cache Storage:', e); }
+
   if (!self.caches) return url;
   try {
     const cache = await caches.open(MODEL_CACHE);

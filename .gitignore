@@ -10,3 +10,6 @@ tests/node_modules/
 
 # notas internas de dev, no publicar
 CLAUDE.md
+
+# plan interno del motor (traspaso a otro hilo) — no publicar
+ENGINE-PLAN.md

@@ -82,8 +82,10 @@ function modelOptions() {
 
 const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:') || id.startsWith('onnx:');
 // Por defecto: Gemma-4 grande vía LiteRT-LM (build oficial -web, VERIFICADO que
-// carga y hace tool-calls). E4B en escritorio, E2B en móvil/GPU débil. Si no
-// cabe, cae al Elffuss LM healed (onnx, 850 MB) — cerebro seguro siempre.
+// carga y hace tool-calls) SOLO en escritorio (E4B). En MÓVIL no: E2B pesa ~1.9 GB
+// y el navegador móvil (mata la pestaña por encima de ~1-2 GB de datos vivos) no lo
+// sostiene, así que se re-descargaba y fallaba. Móvil → Elffuss LM (onnx, ~850 MB):
+// entra y funciona. E2B/E4B siguen elegibles a mano para quien tenga músculo.
 const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
 async function gpuCapacity() {
   const mem = navigator.deviceMemory || 8;
@@ -98,10 +100,11 @@ async function pickLocalBrain() {
     if (c.maxBuf >= 2 ** 31 && c.mem >= 8) return 'litert:gemma-e4b';
     if (c.maxBuf >= 2 ** 30 && c.mem >= 6) return 'litert:gemma-e2b';
   }
-  if (c.gpu && isMobile()) return 'litert:gemma-e2b';
+  // Móvil: aunque el navegador móvil tenga WebGPU, NO cargar Gemma grande
+  // —no cabe en su presupuesto de memoria—. Cerebro onnx pequeño.
   return 'onnx';
 }
-const defaultBrain = () => !realGPU ? 'onnx' : (isMobile() ? 'litert:gemma-e2b' : 'litert:gemma-e4b');
+const defaultBrain = () => (!realGPU || isMobile()) ? 'onnx' : 'litert:gemma-e4b';
 
 const agent = new Agent(rules);
 let busy = false;
