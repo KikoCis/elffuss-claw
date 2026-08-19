@@ -73,11 +73,13 @@ function modelOptions() {
   const local = [];
   if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~2.8 GB) ★ — por defecto' });
   if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
-  local.push({ id: 'onnx', label: 'Elffuss LM (healed · 850 MB) — ligero' });
-  local.push({ id: 'onnx:qwen3.5-0.8b', label: 'Qwen3.5-0.8B · WebGPU (~600 MB)' });
+  local.push({ id: 'onnx:qwen3.5-0.8b', label: 'Qwen3.5-0.8B · WebGPU (~600 MB) — ligero' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
-  return [...local, ...settings.enabledExternals()];
+  // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
+  // avisados. Elffuss LM (LFM2.5-1.2B) medía flojo en el copiloto (no rastrea).
+  const weak = [{ id: 'onnx:elffuss-lm', label: 'Elffuss LM (LFM2.5-1.2B) — poco rendimiento', group: '⚠ Avanzado · sin garantía de rendimiento' }];
+  return [...local, ...settings.enabledExternals(), ...weak];
 }
 
 const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:') || id.startsWith('onnx:');
@@ -101,10 +103,10 @@ async function pickLocalBrain() {
     if (c.maxBuf >= 2 ** 30 && c.mem >= 6) return 'litert:gemma-e2b';
   }
   // Móvil: aunque el navegador móvil tenga WebGPU, NO cargar Gemma grande
-  // —no cabe en su presupuesto de memoria—. Cerebro onnx pequeño.
-  return 'onnx';
+  // —no cabe en su presupuesto de memoria—. Cerebro ligero: Qwen3.5-0.8B.
+  return 'onnx:qwen3.5-0.8b';
 }
-const defaultBrain = () => (!realGPU || isMobile()) ? 'onnx' : 'litert:gemma-e4b';
+const defaultBrain = () => (!realGPU || isMobile()) ? 'onnx:qwen3.5-0.8b' : 'litert:gemma-e4b';
 
 const agent = new Agent(rules);
 let busy = false;
@@ -300,6 +302,7 @@ async function changeModel(id) {
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
     ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
     ui.toast(t('modelReady', { where }));
+    if (id === 'onnx:elffuss-lm') ui.toast('⚠ Cerebro de bajo rendimiento: puede no rastrear bien ni dar buenos consejos. Para ventas/precisión usa Gemma (escritorio).');
     if (window.__copilotOpener) copilotPostState('Listo. Habla con el cliente y te voy soplando.');
     return true;
   } catch (e) {
@@ -309,8 +312,8 @@ async function changeModel(id) {
     if (id.startsWith('litert') && !_fellBack) {
       _fellBack = true;
       sessionStorage.setItem('elffuss.skipGemma', '1'); // no reintentar el pesado esta sesión
-      ui.toast('Ese Gemma no cargó aquí (memoria/GPU) — uso LFM2.5 (ligero).');
-      const ok = await changeModel('onnx');
+      ui.toast('Ese Gemma no cargó aquí (memoria/GPU) — uso Qwen3.5-0.8B (ligero).');
+      const ok = await changeModel('onnx:qwen3.5-0.8b');
       _fellBack = false;
       if (ok) return true;
     }
@@ -442,8 +445,8 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // ligero para no competir. Pero tu elección manda: si escogiste Gemma,
     // se respeta — pisarla era un error.
     if (/[?&]copilot=1/.test(location.search) && !saved) {
-      ui.toast('Copiloto: arranco con el cerebro ligero para no competir con el traductor. Elige Gemma arriba si prefieres precisión.');
-      if (await changeModel('onnx')) return;
+      ui.toast('Copiloto: arranco con el cerebro ligero para no competir con el traductor. Para ventas/precisión, elige Gemma arriba (escritorio).');
+      if (await changeModel('onnx:qwen3.5-0.8b')) return;
     }
     const available = new Set(modelOptions().map(o => o.id));
     // si un Gemma pesado ya falló esta sesión, no reintentar (evita re-crash)
@@ -696,7 +699,7 @@ try{parent.postMessage({type:'surface-ready'},'*');}catch(e){}
 let copilotSkill = AUDIO_SKILLS.ventas;
 let copilotData = {};
 
-function copilotInitState() { copilotData = {}; }
+function copilotInitState() { copilotData = {}; copilotTranscript = []; }
 function renderCopilotBoard() {
   try { ui.renderApp(copilotSkill.icon + ' ' + copilotSkill.name, surfaceHtml(copilotSkill)); } catch { /* */ }
 }
@@ -750,6 +753,71 @@ function copilotEmit(text) {
 }
 window.__copilotEmit = copilotEmit;
 
+// ── Extracción DETERMINISTA de datos del cliente ──────────────────────────────
+// El cerebro ligero NO rastrea fiable: Qwen marca todos los objetivos «sí» desde
+// el turno 1 (falsos positivos) y LFM2.5 no marca nada; además alucinan teléfonos.
+// Los datos regex-ables —teléfono (también HABLADO: «seis uno uno…»), email,
+// nombre— se sacan de la transcripción con reglas y MANDAN sobre el modelo.
+const _NUM = { cero: 0, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9 };
+function _spelledDigits(t) {
+  const ws = t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/);
+  let run = [], best = '';
+  for (const w of ws) {
+    if (w in _NUM) run.push(_NUM[w]);
+    else if (/^\d+$/.test(w)) { for (const d of w) run.push(+d); }
+    else { if (run.length > best.length) best = run.join(''); run = []; }
+  }
+  if (run.length > best.length) best = run.join('');
+  return best;
+}
+function _phone(t) {
+  const m = t.replace(/[\s.\-()]/g, '').match(/\+?\d{7,}/);
+  if (m) return m[0];
+  const sp = _spelledDigits(t);
+  return sp.length >= 7 ? sp : null;
+}
+const _EMAIL_RE = /[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/i;
+const _NAME_RE = /\b(?:me llamo|mi nombre es|soy|le habla|habla)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,2})/;
+const _NAME_STOP = /^(de|del|la|el|un|una|responsable|comercial|gerente|director|jefe)\b/i;
+const _INTERES_RE = /\b(me interesa|nos interesa|interesad|me viene bien|suena bien|me gustar[ií]a)\b/i;
+const _COMPRA_RE = /\b(quiero contratar|queremos contratar|quiero comprar|lo contrato|me lo quedo|adelante|cerramos|firmamos|hacemos el pedido)\b/i;
+// Solo lo que dice el CLIENTE (Hablante 2); el vendedor (Hablante 1) no es el fichado.
+function _clientText(lines) {
+  return lines.filter(l => /^\[Hablante 2|^\[interlocutor/i.test(l))
+    .map(l => l.replace(/^\[[^\]]*\]\s*/, '')).join('\n');
+}
+function deterministicFields(lines) {
+  const t = _clientText(lines), out = {};
+  const ph = _phone(t); if (ph) out.telefono = ph;
+  const em = (t.match(_EMAIL_RE) || [])[0]; if (em) out.email = em;
+  const nm = (t.match(_NAME_RE) || [])[1]; if (nm && !_NAME_STOP.test(nm)) out.nombre = nm.trim();
+  return out;
+}
+function deterministicGoals(lines) {
+  const t = _clientText(lines), out = {};
+  const f = deterministicFields(lines);
+  if (f.telefono) out.telefono = true;
+  if (f.nombre) out.nombre = true;
+  if (_INTERES_RE.test(t)) out.interes = true;
+  if (_COMPRA_RE.test(t)) out.compra = true;
+  return out;
+}
+let copilotTranscript = [];
+// Corrige copilotData con las reglas tras la respuesta del modelo:
+//  · ficha  → teléfono/email/nombre MANDAN (más fiables que el modelo pequeño).
+//  · ventas en cerebro LIGERO → objetivos SOLO por reglas (mata el «todo sí»).
+//    en Gemma → se suma como respaldo (Gemma ya rastrea bien).
+function copilotHybrid(isGemma) {
+  const sk = copilotSkill;
+  if (sk.id === 'ficha') {
+    Object.assign(copilotData, deterministicFields(copilotTranscript));
+  } else if (sk.id === 'ventas') {
+    const dg = deterministicGoals(copilotTranscript);
+    if (isGemma) { for (const k in dg) copilotData[k] = true; }
+    else { for (const s of sk.slots) copilotData[s.key] = !!dg[s.key]; }
+  }
+}
+
 // Turno de copiloto por la VÍA RÁPIDA: no pasa por el bucle agéntico (que
 // mete todas las herramientas, las skills y el estado del sistema en el
 // prompt). Un modelo pequeño se pierde en ese muro y se pone a conversar en
@@ -775,6 +843,11 @@ Si no hay nada útil que decir: CONSEJO: —`;
     copilotHist.push({ role: 'assistant', content: String(out).slice(0, 400) });
     ui.addMsg('assistant', String(out).slice(0, 300));
     copilotEmit(out);
+    // Corrección determinista: los datos regex-ables mandan sobre el modelo, y en
+    // cerebro ligero los objetivos salen solo de reglas (no del modelo, que miente).
+    copilotTranscript.push(line);
+    copilotHybrid(activeModel.startsWith('litert'));
+    copilotPostState('');   // re-pinta el board con los datos corregidos (mantiene el consejo)
   } catch (e) {
     ui.addMsg('assistant err', 'copiloto: ' + (e?.message || e));
   } finally { copilotBusy = false; }

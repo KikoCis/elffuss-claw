@@ -364,11 +364,18 @@ export function modelStatus(state) { // 'off' | 'loading' | 'on' | 'gpu'
 export function rebuildModelSelect(options, current) {
   const sel = $('model-select');
   sel.replaceChildren();
+  const groups = new Map();   // label de optgroup → <optgroup>
   for (const o of options) {
     const opt = document.createElement('option');
     opt.value = o.id;
     opt.textContent = o.label;
-    sel.appendChild(opt);
+    if (o.group) {            // cerebros «Avanzado · poco rendimiento» agrupados y avisados
+      let g = groups.get(o.group);
+      if (!g) { g = document.createElement('optgroup'); g.label = o.group; sel.appendChild(g); groups.set(o.group, g); }
+      g.appendChild(opt);
+    } else {
+      sel.appendChild(opt);
+    }
   }
   if (current && options.some(o => o.id === current)) sel.value = current;
 }

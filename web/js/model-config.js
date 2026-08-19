@@ -15,6 +15,9 @@ export const ONNX_MODELS = {
     approxMB: 850,
     selfHosted: false,
     basePath: '/models/',
+    hidden: true,           // medido flojo en el copiloto (no rastrea objetivos y
+                            // alucina datos): fuera del flujo normal, solo en el
+                            // grupo «Avanzado» del selector y con aviso.
   },
   'qwen3.5-0.8b': {
     key: 'qwen3.5-0.8b',
@@ -29,8 +32,9 @@ export const ONNX_MODELS = {
 };
 
 // Modelo ONNX activo. `let` con export = binding vivo: onnx.js ve el cambio
-// cuando setOnnxModel() reasigna. Por defecto, el nuestro (compatibilidad).
-export let MODEL = ONNX_MODELS['elffuss-lm'];
+// cuando setOnnxModel() reasigna. Por defecto, Qwen3.5-0.8B: el healed LFM2.5
+// medía flojo (ver hidden arriba), así que el ligero por defecto es Qwen.
+export let MODEL = ONNX_MODELS['qwen3.5-0.8b'];
 
 export function setOnnxModel(key) {
   if (ONNX_MODELS[key]) MODEL = ONNX_MODELS[key];
