@@ -7,3 +7,6 @@ tests/node_modules/
 tests/out_*.png
 tests/node_modules
 tests/node_modules/
+
+# notas internas de dev, no publicar
+CLAUDE.md
