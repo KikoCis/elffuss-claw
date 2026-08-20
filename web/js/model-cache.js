@@ -44,8 +44,16 @@ export async function cacheEstimate() {
 }
 
 // Vaciar la caché de modelos (botón en Ajustes).
+// Hay DOS almacenes: Cache Storage (el de siempre) y OPFS (el del almacén
+// nuevo, runtime/model-store.js). Vaciar solo el primero dejaba los pesos de
+// OPFS ocupando disco para siempre, contados por estimate() pero imposibles de
+// borrar desde la interfaz: el botón parecía roto porque los gigas no bajaban.
 export async function clearModelCache() {
   if (navigator.serviceWorker && navigator.serviceWorker.controller)
     navigator.serviceWorker.controller.postMessage('clear-models');
   try { await caches.delete('elffuss-models-v1'); } catch { /* */ }
+  try {
+    const { clearAll } = await import('./runtime/model-store.js');
+    await clearAll();
+  } catch { /* sin OPFS o sin almacén: no hay nada que vaciar */ }
 }

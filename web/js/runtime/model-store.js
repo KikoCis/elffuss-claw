@@ -142,6 +142,19 @@ export async function removeModel(url) {
   } catch { return false; }
 }
 
+// Borra TODOS los modelos guardados en OPFS.
+// Existe porque el botón «liberar espacio» de Ajustes solo vaciaba Cache
+// Storage: un modelo descargado por este almacén se quedaba ocupando disco sin
+// forma de borrarlo desde la interfaz. Y como navigator.storage.estimate() SÍ
+// lo cuenta, el usuario veía gigas que el botón no bajaba nunca.
+export async function clearAll() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(DIR, { recursive: true });
+    return true;
+  } catch { return false; }          // no existe o no hay OPFS: nada que borrar
+}
+
 // Bytes ocupados por los modelos en OPFS (aprox, para diagnóstico).
 export async function usage() {
   try {
