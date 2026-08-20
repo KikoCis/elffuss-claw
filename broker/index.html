@@ -74,14 +74,12 @@ addEventListener('message', async e => {
   if (type === 'elffuss-model-get') {
     try{
       const file = await getFile(url, p => post({ kind:'progress', ...p }));
-      post({ kind:'begin', size: file.size });
-      let off = 0;
-      while (off < file.size) {
-        const buf = await file.slice(off, off + CHUNK).arrayBuffer();
-        off += buf.byteLength;
-        post({ kind:'chunk', buf }, [buf]);        // transferible: sin copia
-      }
-      post({ kind:'end' });
+      // El File de OPFS es un Blob respaldado en DISCO: structured-clone lo pasa
+      // POR REFERENCIA (Chromium: vive en el proceso de navegador, ref-contado,
+      // paginado a disco) → NO copia los GB a la RAM de ningún renderer. El padre
+      // lo lee perezosamente con file.stream(). Mantener este iframe vivo mientras
+      // el padre lee (el Blob vivo mantiene referenciados los datos en OPFS).
+      post({ kind:'file', file });
     }catch(err){ post({ kind:'error', message: String(err?.message || err) }); }
   }
 });

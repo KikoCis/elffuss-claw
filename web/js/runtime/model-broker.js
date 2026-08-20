@@ -31,13 +31,14 @@ const origin = () => new URL(_url).origin;
 export async function getSharedModel(url, onProgress = () => {}, brokerURL = BROKER_URL) {
   await ensure(brokerURL);
   return new Promise((resolve, reject) => {
-    const id = ++_seq; const chunks = [];
+    const id = ++_seq;
     const h = e => {
       if (e.source !== _iframe.contentWindow || e.data?.id !== id) return;
       const m = e.data;
       if (m.kind === 'progress') onProgress(m);
-      else if (m.kind === 'chunk') chunks.push(m.buf);
-      else if (m.kind === 'end') { removeEventListener('message', h); resolve(new Blob(chunks)); }
+      // El broker devuelve un File respaldado en disco (structured-clone por
+      // referencia): no copia los GB a RAM. Se lee con .stream() al subirlo a GPU.
+      else if (m.kind === 'file') { removeEventListener('message', h); resolve(m.file); }
       else if (m.kind === 'error') { removeEventListener('message', h); reject(new Error(m.message)); }
     };
     addEventListener('message', h);
