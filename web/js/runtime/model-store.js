@@ -53,6 +53,19 @@ async function opfsWritableSupported(dir) {
 // Devuelve null si OPFS no está disponible/escribible → el llamador usa su
 // respaldo (Cache Storage) sin romperse.
 export async function getModelFile(url, onProgress = () => {}) {
+  // 1) Caché COMPARTIDA (broker en origen Elffuss): un modelo bajado en CUALQUIER
+  //    web de Elffuss se reutiliza aquí sin re-descargar. Fast-fail por sesión si
+  //    el broker no está disponible → caemos a la OPFS local de este origen.
+  let brokerDown = false;
+  try { brokerDown = sessionStorage.getItem('elffuss.broker.down') === '1'; } catch { /* — */ }
+  if (!brokerDown) {
+    try {
+      const { getSharedModel } = await import('./model-broker.js');
+      const blob = await getSharedModel(url, onProgress);
+      if (blob && blob.size) return blob;
+    } catch { try { sessionStorage.setItem('elffuss.broker.down', '1'); } catch { /* — */ } }
+  }
+
   if (!navigator.storage?.getDirectory) return null;
   let dir;
   try { dir = await dirHandle(); } catch { return null; }
