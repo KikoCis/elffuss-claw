@@ -5,6 +5,7 @@ Uso:  python3 server/serve.py [puerto]   (por defecto 8642)
 """
 import http.server
 import json
+import re
 import socketserver
 import sys
 import time
@@ -38,6 +39,65 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
+
+    # SimpleHTTPRequestHandler NO implementa Range, y el runtime propio lee los
+    # pesos por TROZOS: sin esto, un GGUF de cientos de MB simplemente no se
+    # puede cargar contra el servidor de desarrollo — falla en la primera
+    # petición parcial, no al final. En producción lo resuelve nginx.
+    def send_head(self):
+        rng = self.headers.get('Range')
+        if not rng:
+            return super().send_head()
+        path = self.translate_path(self.path)
+        if os.path.isdir(path):
+            return super().send_head()
+        try:
+            f = open(path, 'rb')
+        except OSError:
+            self.send_error(404)
+            return None
+        size = os.fstat(f.fileno()).st_size
+        m = re.match(r'^bytes=(\d*)-(\d*)$', rng.strip())
+        if not m:
+            f.close()
+            self.send_error(400, 'Range mal formado')
+            return None
+        ini, fin = m.group(1), m.group(2)
+        if ini == '':                       # sufijo: los últimos N bytes
+            start, end = max(0, size - int(fin or 0)), size - 1
+        else:
+            start = int(ini)
+            end = int(fin) if fin else size - 1
+        if start >= size or start > end:
+            f.close()
+            self.send_response(416)
+            self.send_header('Content-Range', 'bytes */%d' % size)
+            self.end_headers()
+            return None
+        end = min(end, size - 1)
+        f.seek(start)
+        self.send_response(206)
+        self.send_header('Content-Type', self.guess_type(path))
+        self.send_header('Content-Range', 'bytes %d-%d/%d' % (start, end, size))
+        self.send_header('Content-Length', str(end - start + 1))
+        self.send_header('Accept-Ranges', 'bytes')
+        self.end_headers()
+        self._range_left = end - start + 1
+        return f
+
+    # copyfile() del padre volcaría el fichero ENTERO desde el offset: hay que
+    # cortarlo en los bytes pedidos o una petición de 4 bytes devuelve gigas.
+    def copyfile(self, source, outputfile):
+        left = getattr(self, '_range_left', None)
+        if left is None:
+            return super().copyfile(source, outputfile)
+        self._range_left = None
+        while left > 0:
+            chunk = source.read(min(1 << 16, left))
+            if not chunk:
+                break
+            outputfile.write(chunk)
+            left -= len(chunk)
 
     def do_GET(self):
         if self.path.startswith('/proxy?'):
