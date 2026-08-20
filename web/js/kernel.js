@@ -40,6 +40,14 @@ async function resolveProvider(id) {
     mod.configure(id.slice(5));
     return mod;
   }
+  if (id.startsWith('engine:')) {           // runtime WebGPU propio (GGUF)
+    // El motor no se versiona aquí: llega a web/js/engine/ por rsync, igual que
+    // los pesos de web/models/. Si el directorio no está, el import falla y
+    // changeModel lo trata como cualquier otro fallo de carga.
+    const mod = await import('./engine/provider.js');
+    mod.configure(id.slice(7));
+    return mod;
+  }
   if (id.startsWith('ext:')) {
     const cfg = settings.get(id.slice(4));
     if (!cfg) throw new Error('proveedor externo desconocido');
@@ -68,12 +76,28 @@ const realGPUCheck = (async () => {
   catch { return (realGPU = false); }
 })();
 
+// El runtime propio NO se versiona en este repo: llega a web/js/engine/ por el
+// rsync del deploy, igual que los pesos. Se SONDEA en vez de cablear un flag que
+// haya que acordarse de cambiar — así aparece en el selector solo donde está
+// desplegado de verdad, y ofrecerlo nunca es una promesa que falle al elegirlo.
+let ENGINE_READY = false;
+const engineCheck = (async () => {
+  try {
+    const r = await fetch('js/engine/provider.js', { method: 'HEAD', cache: 'no-store' });
+    return (ENGINE_READY = r.ok);
+  } catch { return (ENGINE_READY = false); }
+})();
+
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
   if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~2.8 GB) ★ — por defecto' });
   if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
   local.push({ id: 'onnx:qwen3.5-0.8b', label: 'Qwen3.5-0.8B · WebGPU (~600 MB) — ligero' });
+  // Runtime propio: solo se ofrece si el motor está desplegado (llega por rsync,
+  // no por git). Ofrecerlo cuando no está sería prometer algo que falla al
+  // elegirlo. Ver ENGINE_READY.
+  if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen35-0.8b', label: 'Qwen3.5-0.8B · motor propio (~800 MB)' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
@@ -82,7 +106,8 @@ function modelOptions() {
   return [...local, ...settings.enabledExternals(), ...weak];
 }
 
-const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:') || id.startsWith('onnx:');
+const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:') ||
+  id.startsWith('onnx:') || id.startsWith('engine:');
 // Por defecto: Gemma-4 grande vía LiteRT-LM (build oficial -web, VERIFICADO que
 // carga y hace tool-calls) SOLO en escritorio (E4B). En MÓVIL no: E2B pesa ~1.9 GB
 // y el navegador móvil (mata la pestaña por encima de ~1-2 GB de datos vivos) no lo
@@ -438,6 +463,10 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // para que hasta la primera descarga de pesos quede cacheada y no se repita.
     await ensureModelCache();
     await realGPUCheck; // que defaultBrain()/modelOptions() vean el adaptador real, no solo la API
+    // El sondeo del motor propio resuelve después de que ui.init() pintara el
+    // selector, así que hay que repintarlo: si no, la opción no aparece hasta
+    // que algo más fuerce un refresco, y el usuario no la ve nunca.
+    if (await engineCheck) refreshModelOptions();
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     // En modo copiloto el translator YA está usando la máquina (Whisper +

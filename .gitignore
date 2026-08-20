@@ -13,3 +13,6 @@ CLAUDE.md
 
 # plan interno del motor (traspaso a otro hilo) — no publicar
 ENGINE-PLAN.md
+
+# motor de inferencia propio: repo privado aparte, llega por rsync
+web/js/engine/
