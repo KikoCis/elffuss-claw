@@ -14,6 +14,7 @@ import * as ceo from './ceo.js';
 import * as mind from './mind.js';
 import { ceoWorkspace, CEO_DEFAULT_PROFILES } from './ceo-adapter.js';
 import * as telemetry from './telemetry.js';
+import * as gram from './copilot-grammar.js';
 
 applyI18n(); // traduce el chrome al idioma del navegador antes de nada
 telemetry.init('elffuss-claw'); // opt-in, apagado por defecto — ver Ajustes
@@ -641,9 +642,9 @@ function audioSkillMd(sk) {
 
 ${sk.role}
 
-POR CADA intervención responde EXACTAMENTE en dos líneas, nada más:
-CONSEJO: <una línea accionable para el usuario, en su idioma>
-${sk.rule}
+POR CADA intervención responde EXACTAMENTE en tres líneas, nada más:
+${gram.contrato(sk)}
+ACCION es UNA de esas palabras, tal cual. En ${sk.tag} solo lo que se haya DICHO: un dato que nadie ha dicho se descarta.
 Si no hay nada útil que aportar ahora, usa "CONSEJO: —". Nunca borres un dato ya capturado.
 
 AUTO-EDICIÓN: puedes cambiarte a ti misma. Si el usuario te pide por el chat de Claw algo como "añade un campo email", "quita el presupuesto" o "sé más breve", edita ESTA misma skill con skill.edit y sigue la nueva versión desde ya.`;
@@ -746,35 +747,28 @@ function copilotPostState(advice) {
   }
 }
 
-// Parsea la respuesta del modelo: CONSEJO + la línea de datos de la skill.
+// Parsea la respuesta del modelo contra la GRAMÁTICA del copiloto
+// (copilot-grammar.js): consejo libre pero verificado, acción de vocabulario
+// cerrado, y datos que solo entran si pasan el validador de su ranura y están
+// anclados en lo que se ha dicho. Guardia: tests/copilot_gramatica.mjs.
 function copilotParse(text) {
-  const s = String(text || '');
-  const cm = s.match(/CONSEJO:\s*(.+)/i);
-  const tagRe = new RegExp(copilotSkill.tag + ':\\s*(.+)', 'i');
-  // Exigir la marca CONSEJO:. Sin ella, la respuesta es el modelo poniéndose a
-  // conversar (o haciendo de interlocutor) — y eso NO es un consejo: se tira.
-  const advice = cm ? cm[1].trim() : '';
-  const updates = {};
-  const om = s.match(tagRe);
-  // El modelo escribe «teléfono» con tilde y mis claves van sin ella: sin
-  // normalizar, el dato se perdía. También rechaza los valores-plantilla
-  // («…», «-») que a veces copia del propio ejemplo.
-  const norm = k => k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const VACIO = /^(…|\.\.\.|—|–|-|_+|n\/a|null|none|desconocido|sin datos)$/i;
-  if (om) for (const pair of om[1].split(';')) {
-    const m = pair.match(/\s*([\wáéíóúñÁÉÍÓÚÑ]+)\s*=\s*(.+)/);
-    if (!m) continue;
-    const key = norm(m[1]), raw = m[2].trim().replace(/^["'\u201c]|["'\u201d]$/g, '').trim();
-    if (copilotSkill.kind === 'goals') { if (/^(si|sí|s|yes|y|true|1)$/i.test(raw)) updates[key] = true; }
-    else if (raw && !VACIO.test(raw)) updates[key] = raw;
-  }
-  return { advice, updates };
+  return gram.parse(text, copilotSkill, { transcript: copilotTranscript.join('\n') });
 }
-function copilotEmit(text) {
-  const { advice, updates } = copilotParse(text);
+// El consejo se emite DESPUÉS de aplicar los datos (los del modelo y, si toca,
+// los deterministas): cuando el modelo no da uno utilizable, el que se compone
+// desde la acción + el tablero tiene que mirar el tablero YA corregido.
+function copilotEmit(text, { applyRules = false, isGemma = false } = {}) {
+  const { advice, action, updates, rejected } = copilotParse(text);
   for (const [k, v] of Object.entries(updates)) copilotData[k] = v;
-  const clean = (advice || '').trim().replace(/^["'\u201c\u201d\s]+|["'\u201c\u201d\s]+$/g, '').trim();
-  const show = (clean && !/^[—\-–_]+$/.test(clean)) ? clean : '';
+  if (applyRules) copilotHybrid(isGemma);
+  // Qué ha filtrado la gramática, a mano para depurar en una llamada real.
+  if (rejected.length) { window.__copilotRejected = rejected; console.debug('[copiloto] gramática rechazó:', rejected.join(', ')); }
+  // Sin consejo utilizable el copiloto NO se calla: la acción es de vocabulario
+  // cerrado (fiable incluso en cerebro ligero) y con el tablero da uno real.
+  // Solo en un turno de copiloto (applyRules): por aquí pasan TAMBIÉN las
+  // respuestas normales del chat de Claw, y esas no deben pisar el consejo con
+  // un «pregunta ahora por…» que nadie ha pedido.
+  const show = advice || (applyRules ? gram.fallbackAdvice(copilotSkill, copilotData, action) : '');
   copilotPostState(show);
   if (show && window.__copilotOpener && window.opener) {
     try { window.opener.postMessage({ kind: 'copilot-advice', text: show }, window.__copilotOpener); } catch { /* */ }
@@ -858,25 +852,29 @@ async function copilotTurn(line) {
   if (copilotBusy) return;                 // un turno a la vez: el modelo es uno
   copilotBusy = true;
   const sk = copilotSkill;
+  // El contrato lo escribe la gramática (copilot-grammar.js), no este prompt: si
+  // el formato cambia aquí y allí no, el validador tira todo lo que llegue.
   const sys = `Eres el copiloto de ${sk.name}. Escuchas una conversación ajena y AYUDAS a quien la mantiene. NUNCA respondas como si fueras un interlocutor ni continúes el diálogo.
-Responde SIEMPRE exactamente en dos líneas, sin comillas y sin nada más:
-CONSEJO: <una línea accionable para el usuario>
-${sk.rule}
+Responde SIEMPRE exactamente en tres líneas, sin comillas y sin nada más:
+${gram.contrato(sk)}
+ACCION es UNA de esas palabras, tal cual. En ${sk.tag} solo lo que se haya DICHO: nada inventado.
 Si no hay nada útil que decir: CONSEJO: —`;
   copilotHist.push({ role: 'user', content: line });
   if (copilotHist.length > 8) copilotHist = copilotHist.slice(-8);
-  const recordatorio = `\n\n(Responde SOLO con las dos líneas: CONSEJO: … y ${sk.tag}: …)`;
+  const recordatorio = `\n\n(Responde SOLO con las tres líneas: CONSEJO: … / ACCION: … / ${sk.tag}: …)`;
   const msgs = copilotHist.slice(0, -1).concat([{ role: 'user', content: line + recordatorio }]);
   try {
     const out = await agent.provider.chat(msgs, sys, () => {});
     copilotHist.push({ role: 'assistant', content: String(out).slice(0, 400) });
     ui.addMsg('assistant', String(out).slice(0, 300));
-    copilotEmit(out);
-    // Corrección determinista: los datos regex-ables mandan sobre el modelo, y en
-    // cerebro ligero los objetivos salen solo de reglas (no del modelo, que miente).
+    // La transcripción se apunta ANTES de emitir: la gramática la usa para anclar
+    // los datos (lo que nadie dijo no entra) y para cazar el consejo que solo es
+    // eco del interlocutor.
     copilotTranscript.push(line);
-    copilotHybrid(activeModel.startsWith('litert'));
-    copilotPostState('');   // re-pinta el board con los datos corregidos (mantiene el consejo)
+    // applyRules → corrección determinista dentro del emit: los datos
+    // regex-ables mandan sobre el modelo y, en cerebro ligero, los objetivos
+    // salen SOLO de reglas. El consejo se compone ya con el tablero corregido.
+    copilotEmit(out, { applyRules: true, isGemma: activeModel.startsWith('litert') });
   } catch (e) {
     ui.addMsg('assistant err', 'copiloto: ' + (e?.message || e));
   } finally { copilotBusy = false; }
