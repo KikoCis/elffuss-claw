@@ -32,16 +32,26 @@ export async function getSharedModel(url, onProgress = () => {}, brokerURL = BRO
   await ensure(brokerURL);
   return new Promise((resolve, reject) => {
     const id = ++_seq;
+    // Timeout por INACTIVIDAD: sin CUALQUIER mensaje del broker (progreso/file/
+    // error) en IDLE ms, la carga está colgada → rechazar para caer a OPFS local.
+    // No es un tope total (una descarga real tarda minutos): cada mensaje del
+    // broker reinicia el reloj, así que solo salta si el broker enmudece de verdad.
+    const IDLE = 30000;
+    let timer;
+    const arm = () => { clearTimeout(timer); timer = setTimeout(() => { removeEventListener('message', h); reject(new Error('broker sin respuesta (timeout de inactividad)')); }, IDLE); };
+    const done = fn => (...a) => { clearTimeout(timer); removeEventListener('message', h); fn(...a); };
     const h = e => {
       if (e.source !== _iframe.contentWindow || e.data?.id !== id) return;
       const m = e.data;
+      arm();                                    // cualquier señal del broker reinicia el reloj
       if (m.kind === 'progress') onProgress(m);
       // El broker devuelve un File respaldado en disco (structured-clone por
       // referencia): no copia los GB a RAM. Se lee con .stream() al subirlo a GPU.
-      else if (m.kind === 'file') { removeEventListener('message', h); resolve(m.file); }
-      else if (m.kind === 'error') { removeEventListener('message', h); reject(new Error(m.message)); }
+      else if (m.kind === 'file') done(resolve)(m.file);
+      else if (m.kind === 'error') done(reject)(new Error(m.message));
     };
     addEventListener('message', h);
+    arm();
     _iframe.contentWindow.postMessage({ type: 'elffuss-model-get', id, url }, origin());
   });
 }
