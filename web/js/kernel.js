@@ -99,6 +99,7 @@ function modelOptions() {
   // no por git). Ofrecerlo cuando no está sería prometer algo que falla al
   // elegirlo. Ver ENGINE_READY.
   if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen35-0.8b', label: 'Qwen3.5-0.8B · motor propio (~800 MB)' });
+  if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7 GB) — experimental', group: '⚠ Avanzado · sin garantía de rendimiento' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
