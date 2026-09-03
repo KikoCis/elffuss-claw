@@ -160,6 +160,23 @@ export async function getModelParts(url, onProgress = () => {}) {
   if (!net.ok || !net.body) throw new Error('descarga del modelo falló: HTTP ' + net.status);
   const total = +net.headers.get('content-length') || 0;
 
+  // Aviso temprano. Bajar gigabytes para que el navegador lo rechace al 97% y
+  // quedarse sin nada es la peor forma de enterarse de que no cabe — y pasa, con
+  // los modelos grandes es el caso normal, no el raro.
+  //
+  // Esto NO garantiza que quepa: la cuota anunciada es bastante mayor que lo que
+  // de verdad se deja escribir. Descarta el caso claro sin gastar la descarga, y
+  // el que se cuela lo caza el mensaje del catch.
+  if (total) {
+    const est = await navigator.storage.estimate().catch(() => null);
+    const libre = est ? (est.quota || 0) - (est.usage || 0) : 0;
+    if (est && libre > 0 && total > libre) {
+      throw new Error(`Este modelo ocupa ${gb(total)} y en el almacenamiento del ` +
+        `navegador solo quedan ${gb(libre)}. Libera espacio en disco o elige un ` +
+        `modelo más pequeño.`);
+    }
+  }
+
   // limpiar restos de un intento previo cortado
   await dir.removeEntry(doneName).catch(() => {});
   await borrarPartes(dir, key);
@@ -195,6 +212,14 @@ export async function getModelParts(url, onProgress = () => {}) {
   } catch (e) {
     if (writable) { try { await writable.abort(); } catch { /* — */ } }
     await borrarPartes(dir, key);                           // no dejar basura a medias
+    // El mensaje del navegador («exceed its storage quota») no dice ni cuánto
+    // entró ni qué hacer, y se le enseña TAL CUAL al usuario. Traducirlo con la
+    // cifra real es la diferencia entre «algo ha fallado» y saber qué pasa.
+    if (/quota/i.test(String((e && e.message) || e))) {
+      throw new Error(`No cabe: el navegador dejó de admitir datos tras guardar ` +
+        `${gb(loaded)} de ${gb(total)}. Su límite real es menor que el espacio que ` +
+        `anuncia. Libera espacio en disco o elige un modelo más pequeño.`);
+    }
     throw e;
   }
 
@@ -308,6 +333,10 @@ export async function usage() {
     return { usage: est.usage || 0, quota: est.quota || 0 };
   } catch { return { usage: 0, quota: 0 }; }
 }
+
+// Tamaños para mensajes de usuario: GB decimales, que es como los cuenta todo
+// el mundo fuera de un terminal.
+function gb(n) { return (n / 1e9).toFixed(1).replace('.', ',') + ' GB'; }
 
 function fmt(loaded, total, t0) {
   const mb = n => (n / 1048576).toFixed(0);
