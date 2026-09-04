@@ -171,9 +171,13 @@ export async function getModelParts(url, onProgress = () => {}) {
     const est = await navigator.storage.estimate().catch(() => null);
     const libre = est ? (est.quota || 0) - (est.usage || 0) : 0;
     if (est && libre > 0 && total > libre) {
-      throw new Error(`Este modelo ocupa ${gb(total)} y en el almacenamiento del ` +
-        `navegador solo quedan ${gb(libre)}. Libera espacio en disco o elige un ` +
-        `modelo más pequeño.`);
+      // El mensaje manda a Ajustes y no «al disco»: lo que ocupa el sitio son
+      // casi siempre los modelos que ya se han descargado antes, y eso se vacía
+      // con un botón dentro de la app. Mandar a limpiar el disco duro es mandar
+      // al sitio equivocado a alguien que tiene la solución a un clic.
+      throw new Error(`Este modelo ocupa ${gb(total)} y en el navegador solo quedan ` +
+        `${gb(libre)}. Vacía la caché de modelos en Ajustes —ahí se ve cuánto ` +
+        `ocupan los que ya has descargado— o elige un modelo más pequeño.`);
     }
   }
 
@@ -218,7 +222,7 @@ export async function getModelParts(url, onProgress = () => {}) {
     if (/quota/i.test(String((e && e.message) || e))) {
       throw new Error(`No cabe: el navegador dejó de admitir datos tras guardar ` +
         `${gb(loaded)} de ${gb(total)}. Su límite real es menor que el espacio que ` +
-        `anuncia. Libera espacio en disco o elige un modelo más pequeño.`);
+        `anuncia. Vacía la caché de modelos en Ajustes o elige uno más pequeño.`);
     }
     throw e;
   }
