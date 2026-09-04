@@ -131,7 +131,12 @@ function modelOptions() {
   // está por debajo del que el navegador anuncia, y la descarga se perdía pasado
   // el 90 %—, así que se lee del servidor en cada sesión. La etiqueta lo dice
   // porque cambia la decisión: no es «gigas una vez», es «gigas cada vez».
-  if (realGPU && ENGINE_READY && MODEL27_READY) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, no se guarda: se relee en cada sesión) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
+  //
+  // «Solo conversa» tampoco es un adorno: con 512 tokens de contexto no le cabe
+  // el catálogo de herramientas (525 él solo), así que con este modelo Elffuss
+  // habla pero no crea apps ni toca archivos. Decirlo en la etiqueta evita que
+  // se descubra pidiéndole un reloj después de esperar la descarga.
+  if (realGPU && ENGINE_READY && MODEL27_READY) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, no se guarda: se relee en cada sesión) — muy lento y solo conversa: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y

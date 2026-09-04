@@ -17,8 +17,25 @@ export function userLang() {
   return { code, name: LANGS[code.split('-')[0]] || code };
 }
 
-export function systemPrompt(context = '') {
+// Un modelo con MENOS de esto no puede oír las instrucciones completas: medidas
+// con el tokenizador de verdad son 1.315 tokens (525 solo el catálogo de
+// herramientas), y encima hay que dejar sitio para lo que escribe el usuario y
+// para la respuesta. Lo mide `tests/prompt-vs-contexto.mjs`; si el prompt
+// engorda, ese test lo dice antes de que lo diga un usuario.
+export const CTX_MINIMO_COMPLETO = 1600;
+
+export function systemPrompt(context = '', { compacto = false } = {}) {
   const lang = userLang();
+  // Versión corta para modelos de contexto pequeño. No es el prompt de siempre
+  // recortado: es OTRO trato. Sin catálogo de herramientas (525 tokens) no puede
+  // llamarlas, así que se le dice, y así no promete lo que no puede hacer. Y
+  // tampoco lleva el contexto vivo: en un modelo lento cada token del prompt se
+  // paga en segundos de espera antes de la primera letra.
+  if (compacto) {
+    return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero directa. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}).
+Aquí tienes muy poco contexto disponible, así que SOLO conversas: no tienes herramientas, no puedes crear apps ni leer archivos. Si te piden algo de eso, dilo con naturalidad y sugiere elegir otro modelo arriba.
+Responde en una o dos frases, sin listas y sin código.`;
+  }
   return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero tremendamente resolutiva. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}) — breve y con cariño. Si el usuario cambia de idioma, síguele. El chat es la única interfaz: las apps no existen, las creas tú.
 
 HERRAMIENTAS (el sistema pide los permisos, tú solo llama):
@@ -211,7 +228,13 @@ export class Agent {
       let out;
       try {
         const context = await snapshot().catch(() => '');
-        out = await this.provider.chat(this.history, systemPrompt(context),
+        // Los proveedores que saben cuánto contexto tienen lo dicen; los que no,
+        // devuelven 0 y todo sigue igual que siempre. Sin esto, Elffuss le
+        // mandaba sus 1.315 tokens de instrucciones al 27B —que tiene 512— y el
+        // primer mensaje moría con la caché llena DESPUÉS de 7,6 GB de descarga.
+        const contexto = this.provider.contextTokens?.() || 0;
+        const compacto = contexto > 0 && contexto < CTX_MINIMO_COMPLETO;
+        out = await this.provider.chat(this.history, systemPrompt(context, { compacto }),
           t => onEvent({ type: 'token', text: t }));
       } catch (e) {
         telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });
