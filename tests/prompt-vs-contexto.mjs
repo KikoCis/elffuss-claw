@@ -98,6 +98,34 @@ ok('el prompt COMPACTO cabe dejando sitio para preguntar y responder',
 ok('el compacto no es una cáscara vacía',
   tokens.compacto > 40, `${tokens.compacto} tokens`);
 
+// ---- 3 · la CADENA: ¿el agente elige el corto con el 27B delante? ----------
+// Que el prompt corto quepa no sirve de nada si nadie lo elige. Este trozo
+// recorre el mismo camino que la app —configurar el proveedor, preguntarle su
+// contexto, aplicar el umbral— y NO carga los 7,6 GB: `configure` solo apunta a
+// una entrada del registro, y el contexto es un dato de esa entrada.
+const cadena = await local.evaluate(async () => {
+  const prov = await import('./js/engine/provider.js');
+  const { CTX_MINIMO_COMPLETO } = await import('./js/agent.js');
+  prov.configure('qwen38-27b');
+  const ctx27 = prov.contextTokens();
+  prov.configure('qwen35-0.8b');
+  const ctx08 = prov.contextTokens();
+  return { ctx27, ctx08, umbral: CTX_MINIMO_COMPLETO };
+}).catch(e => ({ error: String(e.message).slice(0, 140) }));
+
+if (cadena.error) ok('el proveedor sabe decir su contexto', false, cadena.error);
+else {
+  ok('el proveedor dice el contexto del 27B sin cargar el modelo',
+    cadena.ctx27 === CTX, `${cadena.ctx27} tokens`);
+  ok('con ese contexto el agente elige el prompt COMPACTO',
+    cadena.ctx27 > 0 && cadena.ctx27 < cadena.umbral, `${cadena.ctx27} < ${cadena.umbral}`);
+  // La otra mitad del umbral: al 0.8B no se le recorta nada. Sin esto, un umbral
+  // demasiado alto dejaría a Elffuss sin herramientas en modelos que sí las
+  // aguantan, y el test seguiría en verde.
+  ok('al 0.8B NO se le recorta: mantiene herramientas',
+    cadena.ctx08 >= cadena.umbral, `${cadena.ctx08} ≥ ${cadena.umbral}`);
+}
+
 await b.close();
 console.log(fallos ? `\n${fallos} fallo(s)` : '\nTodo verde');
 process.exit(fallos ? 1 : 0);
