@@ -227,8 +227,22 @@ export async function getModelParts(url, onProgress = () => {}) {
     throw e;
   }
 
-  // marcar completado: tamaño y número de partes, que es lo que hace falta para
-  // volver a montarlo y para detectar un truncamiento posterior.
+  // ¿Llegó ENTERO? Un stream que se corta a mitad termina sin lanzar: el bucle
+  // ve `done` y sale como si hubiera acabado bien. Sin esta comprobación se
+  // marcaba como completo lo que se hubiera escrito, y la validación de después
+  // pasaba —comprueba que las partes sumen lo APUNTADO, no lo que debía pesar—,
+  // así que un modelo truncado quedaba cacheado para siempre: pesos corruptos,
+  // sin error, en cada visita. Es el mismo fallo que un rango corto entrando
+  // como pesos, un piso más arriba.
+  if (total && loaded !== total) {
+    await borrarPartes(dir, key);
+    throw new Error(`La descarga se cortó: llegaron ${gb(loaded)} de ${gb(total)}. ` +
+      `No se guarda a medias porque el modelo no funcionaría. Vuelve a intentarlo.`);
+  }
+
+  // marcar completado: el tamaño ESPERADO (no el escrito) y el número de partes,
+  // que es lo que hace falta para volver a montarlo y para detectar que el
+  // navegador haya truncado algo después.
   const dh = await dir.getFileHandle(doneName, { create: true });
   const dw = await dh.createWritable();
   await dw.write(new TextEncoder().encode(JSON.stringify({ size: loaded, total, parts: nPartes })));
