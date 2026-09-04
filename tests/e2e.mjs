@@ -152,6 +152,19 @@ const lastAssistant = page => page.locator('.msg.assistant').last().textContent(
   const p = await fresh();
   const opts = await p.$$eval('#model-select option', os => os.map(o => o.textContent));
   ok('11 · el Elffuss E4B healed (aún roto) NO se ofrece', !opts.some(o => /Elffuss E4B|healed[^)]*E4B/i.test(o)), JSON.stringify(opts));
+
+  // El ORDEN importa tanto como la lista, y esto se rompió de verdad: los
+  // <optgroup> se creaban donde apareciera su primer elemento, así que al meter
+  // el 27B —agrupado— en mitad de modelOptions(), «Básico (sin modelo)» —la
+  // salida segura— quedó pintada POR DEBAJO del encabezado «⚠ Avanzado», como si
+  // fuera uno de los cerebros avisados. Ninguna prueba lo vio porque todas miran
+  // QUÉ opciones hay, no DÓNDE. La condición es la que importa: después del
+  // primer grupo no puede quedar ninguna opción suelta.
+  const orden = await p.$$eval('#model-select > *', hijos => hijos.map(h => h.tagName));
+  const primerGrupo = orden.indexOf('OPTGROUP');
+  ok('11b · los grupos avisados van al final, sin opciones sueltas debajo',
+    primerGrupo === -1 || !orden.slice(primerGrupo).includes('OPTION'),
+    JSON.stringify(orden));
   await p.context().close();
 }
 

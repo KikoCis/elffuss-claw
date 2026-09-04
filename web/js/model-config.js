@@ -43,4 +43,8 @@ export function setOnnxModel(key) {
 
 // Los modelos EXTERNOS (OpenAI, Anthropic, Ollama local incl. Qwen3.8-27B, y el
 // servidor Ornith) son configuración avanzada opt-in → js/settings.js +
-// js/providers/api.js. Qwen3.8-27B NO cabe en el navegador; se usa por ahí.
+// js/providers/api.js.
+//
+// Ojo: el Qwen3.8-27B ya NO está solo ahí fuera. En IQ1 y con el motor propio
+// (`engine:qwen38-27b`, ver kernel.js) corre DENTRO del navegador; por API se
+// sigue ofreciendo porque son 7,6 GB de descarga y no todo el mundo los quiere.
