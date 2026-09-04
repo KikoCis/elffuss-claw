@@ -21,11 +21,18 @@ DEST=/var/www/elffuss-claw.utopiaia.com
 # acabara en producción sin que nadie lo decidiera.
 #   Para desplegarlo a propósito:  ./deploy.sh --con-motor
 # El filtro «P» evita además que el --delete borre el que ya esté en el servidor.
-MOTOR=(--filter='P models/*' --filter='P js/engine/**' --exclude='js/engine/**')
+# Los PESOS nunca viajan en este rsync: en local son enlaces a un disco externo
+# y rsync los copia COMO ENLACES, así que el servidor acababa con symlinks rotos
+# apuntando a un volumen que allí no existe. Daban 404 —el sondeo del selector
+# ocultaba el modelo, que es lo correcto— pero dejaban basura que el día que
+# alguien ponga el fichero de verdad le va a costar entender. Los gigabytes se
+# suben aparte; aquí solo se protege de que --delete borre los que ya estén.
+PESOS=(--filter='P models/*' --exclude='models/*.gguf')
+MOTOR=("${PESOS[@]}" --filter='P js/engine/**' --exclude='js/engine/**')
 for a in "$@"; do
   if [ "$a" = "--con-motor" ]; then
     echo "▲ el motor propio (js/engine/) SE INCLUYE en este despliegue"
-    MOTOR=(--filter='P models/*')
+    MOTOR=("${PESOS[@]}")
   fi
 done
 
