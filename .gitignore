@@ -16,3 +16,11 @@ ENGINE-PLAN.md
 
 # motor de inferencia propio: repo privado aparte, llega por rsync
 web/js/engine/
+
+# bytecode: lleva dentro la ruta del fichero fuente
+__pycache__/
+*.pyc
+
+# humo manual contra producción, no forma parte de la suite
+tests/claw-*.mjs
+tests/*.tmp.mjs
