@@ -343,8 +343,20 @@ export function modelProgress(p) {
   box.hidden = false;
   if (typeof p === 'string') {
     $('model-progress-text').textContent = p;
-    $('model-bar').classList.add('indet');  // sin % conocido → barra animada
-    $('model-bar').style.width = '';
+    // Sacar el % del texto, igual que hace el escaparate (loading-stage.js).
+    // Los proveedores informan con cadenas del tipo «… · 42 %», y este camino
+    // —la caja flotante, o sea con la app abierta— las daba TODAS por
+    // desconocidas: la barra se quedaba animada de principio a fin aunque el
+    // porcentaje viniera dentro. Con un modelo de gigabytes eso es la
+    // diferencia entre ver que avanza y creer que se ha colgado.
+    const m = p.match(/(\d+)\s*%/);
+    if (m) {
+      $('model-bar').classList.remove('indet');
+      $('model-bar').style.width = Math.min(100, +m[1]) + '%';
+    } else {
+      $('model-bar').classList.add('indet');  // sin % conocido → barra animada
+      $('model-bar').style.width = '';
+    }
     return;
   }
   if (p.status === 'progress' && p.total) {
@@ -364,6 +376,10 @@ export function modelStatus(state) { // 'off' | 'loading' | 'on' | 'gpu'
 export function rebuildModelSelect(options, current) {
   const sel = $('model-select');
   sel.replaceChildren();
+  // Los grupos van SIEMPRE al final, pase lo que pase con el orden de la lista.
+  // Se creaban según aparecían, y bastó meter un cerebro agrupado en mitad de la
+  // lista para que «Básico (sin modelo)» —la opción más segura que hay— quedara
+  // colgando por debajo del encabezado «⚠ Avanzado», como si fuera uno de ellos.
   const groups = new Map();   // label de optgroup → <optgroup>
   for (const o of options) {
     const opt = document.createElement('option');
@@ -371,12 +387,13 @@ export function rebuildModelSelect(options, current) {
     opt.textContent = o.label;
     if (o.group) {            // cerebros «Avanzado · poco rendimiento» agrupados y avisados
       let g = groups.get(o.group);
-      if (!g) { g = document.createElement('optgroup'); g.label = o.group; sel.appendChild(g); groups.set(o.group, g); }
+      if (!g) { g = document.createElement('optgroup'); g.label = o.group; groups.set(o.group, g); }
       g.appendChild(opt);
     } else {
       sel.appendChild(opt);
     }
   }
+  for (const g of groups.values()) sel.appendChild(g);
   if (current && options.some(o => o.id === current)) sel.value = current;
 }
 

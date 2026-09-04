@@ -89,6 +89,23 @@ const engineCheck = (async () => {
   } catch { return (ENGINE_READY = false); }
 })();
 
+// El 27B se comprueba APARTE del motor, porque son dos cosas independientes: el
+// motor llega por rsync y el modelo es un fichero de gigabytes que puede no
+// estar alojado. Con el motor puesto y el modelo no, la opción aparecería y
+// fallaría al elegirla — y esta cuesta más que ninguna, porque el fallo llega
+// después de esperar.
+//
+// Un HEAD basta y no descarga nada. Si el modelo se muda a otro alojamiento hay
+// que cambiar esta ruta también; el precio de tenerla aquí es ese, y a cambio no
+// se importa el motor entero en cada carga de página solo para preguntárselo.
+let MODEL27_READY = false;
+const modelo27Check = (async () => {
+  try {
+    const r = await fetch('models/qwen38-27b.gguf', { method: 'HEAD', cache: 'no-store' });
+    return (MODEL27_READY = r.ok);
+  } catch { return (MODEL27_READY = false); }
+})();
+
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
@@ -99,7 +116,22 @@ function modelOptions() {
   // no por git). Ofrecerlo cuando no está sería prometer algo que falla al
   // elegirlo. Ver ENGINE_READY.
   if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen35-0.8b', label: 'Qwen3.5-0.8B · motor propio (~800 MB)' });
-  if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7 GB) — experimental', group: '⚠ Avanzado · sin garantía de rendimiento' });
+  // El 27B no está aquí por dudoso: su forward está verificado contra llama.cpp
+  // capa a capa y genera texto coherente. Está aquí por lo que CUESTA, y el coste
+  // ya está MEDIDO, no supuesto: además de la descarga, leer un prompt largo
+  // —persona, herramientas y contexto, que es todo prompt real de Claw— lo deja
+  // muy por debajo de cualquier otro cerebro de la lista, y el retraso cae entero
+  // ANTES del primer token, que es donde peor se lleva.
+  //
+  // Se sigue ofreciendo porque verlo correr tiene valor por sí mismo, pero la
+  // etiqueta lo dice: quien lo elija para trabajar se va a arrepentir, y eso no
+  // puede descubrirse después de bajar los gigas.
+  //
+  // Y NO se guarda en el navegador: no cabe —el límite real de almacenamiento
+  // está por debajo del que el navegador anuncia, y la descarga se perdía pasado
+  // el 90 %—, así que se lee del servidor en cada sesión. La etiqueta lo dice
+  // porque cambia la decisión: no es «gigas una vez», es «gigas cada vez».
+  if (realGPU && ENGINE_READY && MODEL27_READY) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, no se guarda: se relee en cada sesión) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
@@ -468,7 +500,11 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // El sondeo del motor propio resuelve después de que ui.init() pintara el
     // selector, así que hay que repintarlo: si no, la opción no aparece hasta
     // que algo más fuerce un refresco, y el usuario no la ve nunca.
-    if (await engineCheck) refreshModelOptions();
+    // Los dos sondeos se esperan JUNTOS. Repintar solo con el del motor dejaría
+    // fuera el 27B cuando su comprobación tarda un poco más, y esa opción no
+    // volvería a aparecer hasta que algo forzara otro refresco.
+    const [hayMotor, hay27] = await Promise.all([engineCheck, modelo27Check]);
+    if (hayMotor || hay27) refreshModelOptions();
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     // En modo copiloto el translator YA está usando la máquina (Whisper +
