@@ -15,12 +15,18 @@ import { chromium } from 'playwright';
 import { createServer } from 'http';
 import { createReadStream, statSync, readFileSync } from 'fs';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { extname, join, normalize } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
 const WEB = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'web');
 const ORIGEN = process.env.MODELO || 'https://claw.elffuss.utopiaia.com/models/qwen38-27b.gguf';
+// El mismo guion sirve para el hermano pequeño: mismo motor, mismo proveedor,
+// mismo camino de chat, pero 800 MB en vez de 7,6 GB. Cuando el grande se muere
+// a mitad —le pasa—, esto sigue diciendo si el CÓDIGO está bien.
+//   MODELO_ID=engine:qwen35-0.8b node tests/local27.mjs
+const MODELO_ID = process.env.MODELO_ID || 'engine:qwen38-27b';
 const PUERTO = +(process.env.PUERTO || 8643);
 const RUTA_MODELO = '/models/qwen38-27b.gguf';
 
@@ -62,7 +68,11 @@ async function espejoModelo(req, res) {
   }
   res.writeHead(r.status, cab);
   if (req.method === 'HEAD' || !r.body) return res.end();
-  Readable.fromWeb(r.body).pipe(res);
+  // El navegador ABORTA rangos a mitad —lo hace, y es normal—. Con un pipe pelado
+  // eso lanza un error de stream que nadie escucha, y en Node eso no se queda en
+  // un aviso: se lleva por delante el proceso del test… y con él el navegador.
+  // Media hora buscando por qué «se moría la pestaña» era esto.
+  try { await pipeline(Readable.fromWeb(r.body), res); } catch { res.destroy(); }
 }
 
 const server = createServer(async (req, res) => {
@@ -88,21 +98,27 @@ log(`sirviendo ${WEB} y el modelo desde ${ORIGEN.startsWith('file') ? 'disco' : 
 let fallos = 0;
 const ok = (n, c, extra = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (extra ? '  — ' + extra : '')); if (!c) fallos++; };
 
-const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-angle=metal'] })
-  .catch(() => chromium.launch({ channel: 'chrome', args: ['--enable-unsafe-webgpu'] }));
+// CHROMELOG=1 saca por stderr lo que dice el propio navegador. Cuando el que se
+// muere es él, es la única voz que queda: desde fuera solo se ve que ya no está.
+// Va con DEBUG=pw:browser, que es quien enseña ese stderr.
+const ARGS = ['--enable-unsafe-webgpu', '--use-angle=metal',
+  ...(process.env.CHROMELOG ? ['--enable-logging=stderr'] : [])];
+const b = await chromium.launch({ args: ARGS })
+  .catch(() => chromium.launch({ channel: 'chrome', args: ARGS }));
 const ctx = await b.newContext({ locale: 'es-ES' });
-await ctx.addInitScript(() => {
+await ctx.addInitScript(id => {
   try {
     localStorage.setItem('elffuss.welcomed', '1');
     localStorage.setItem('elffuss.grants', JSON.stringify([]));
-    localStorage.setItem('elffuss.model', 'engine:qwen38-27b');
+    localStorage.setItem('elffuss.model', id);
   } catch { /* — */ }
-});
+}, MODELO_ID);
 const p = await ctx.newPage({ viewport: { width: 1280, height: 900 } });
 p.on('console', m => { const t = m.text(); if (/\[engine\]|No se pudo|no cabe|OOM|memoria|liberad/i.test(t)) log('  consola: ' + t.slice(0, 180)); });
 p.on('pageerror', e => log('  pageerror: ' + String(e.message).slice(0, 160)));
 let muerta = '';
 p.on('crash', () => { muerta = 'la pestaña ha CRASHEADO (el renderer)'; log('  ⚠️ ' + muerta); });
+p.on('close', () => { muerta = muerta || 'la pestaña se ha CERRADO (no crash: alguien la cerró)'; log('  ⚠️ ' + muerta); });
 // Y el navegador ENTERO también se puede ir: con 7,6 GB en la GPU no siempre se
 // muere solo la pestaña, y entonces el evento de arriba no llega nunca.
 b.on('disconnected', () => { muerta = muerta || 'el NAVEGADOR entero se ha ido'; log('  ⚠️ ' + muerta); });
@@ -116,13 +132,29 @@ const libreGB = async () => {
   return (paginas * 16384 / 1073741824).toFixed(1);
 };
 const chromiumRSS = () => {
-  const kb = sh(`ps -Ao rss,comm | grep -i chromium | awk '{s+=$1} END {print s}'`);
-  return kb === '?' || !kb ? 'no está' : (kb / 1048576).toFixed(1) + ' GB';
+  const kb = +sh(`ps -Ao rss,args | grep -i chrom | grep -v grep | awk '{s+=$1} END {print s+0}'`);
+  return kb ? (kb / 1048576).toFixed(1) + ' GB' : 'no está';
+};
+// Memoria POR PROCESO del navegador. Importa la distinción: en un Mac la memoria
+// de la GPU sale del mismo saco que la del sistema, así que si lo que crece es
+// el proceso de GPU y no el de la pestaña, lo que se está agotando son los
+// buffers del modelo y no el JavaScript.
+const porProceso = () => {
+  const filas = sh(`ps -Ao rss,args | grep -i "chromium\\|chrome" | grep -v grep`).split('\n');
+  const suma = {};
+  for (const f of filas) {
+    const rss = +(/^\s*(\d+)/.exec(f)?.[1] || 0);
+    if (!rss) continue;
+    const tipo = /--type=([a-z-]+)/.exec(f)?.[1] || 'navegador';
+    suma[tipo] = (suma[tipo] || 0) + rss;
+  }
+  return Object.entries(suma).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([t, kb]) => `${t} ${(kb / 1048576).toFixed(1)} GB`).join(' · ') || 'no está';
 };
 
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
 
-let estado = '', ultimo = '', cargado = false;
+let estado = '', ultimo = '', cargado = false, ultimoPct = -1;
 while (Date.now() - t0 < 40 * 60 * 1000 && !muerta) {
   let s;
   try {
@@ -133,7 +165,15 @@ while (Date.now() - t0 < 40 * 60 * 1000 && !muerta) {
     }));
   } catch (e) { muerta = muerta || 'la página dejó de responder: ' + String(e.message).split('\n')[0].slice(0, 90); break; }
   estado = s.est;
-  if (s.txt && s.txt !== ultimo) { ultimo = s.txt; log(ultimo.trim().slice(0, 110)); }
+  if (s.txt && s.txt !== ultimo) {
+    ultimo = s.txt;
+    // Cada 10 % se apunta también la memoria: cuando se muere a mitad, lo único
+    // que queda es la última foto de antes.
+    const pct = +(/(\d+)\s*%/.exec(ultimo)?.[1] || -1);
+    const foto = pct >= 0 && pct % 10 === 0 && pct !== ultimoPct;
+    if (foto) ultimoPct = pct;
+    log(ultimo.trim().slice(0, 110) + (foto ? `   · libres ${await libreGB()} GB · ${porProceso()}` : ''));
+  }
   if (/\b(on|gpu)\b/.test(estado)) { cargado = true; break; }
   if (/\berr(or)?\b/.test(estado)) break;
   await p.waitForTimeout(5000).catch(() => {});

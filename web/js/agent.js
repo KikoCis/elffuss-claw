@@ -233,7 +233,20 @@ export class Agent {
         // mandaba sus 1.315 tokens de instrucciones al 27B —que tiene 512— y el
         // primer mensaje moría con la caché llena DESPUÉS de 7,6 GB de descarga.
         const contexto = this.provider.contextTokens?.() || 0;
-        const compacto = contexto > 0 && contexto < CTX_MINIMO_COMPLETO;
+        // Se habla en corto por DOS razones distintas, y conviene no confundirlas:
+        //
+        //   · porque no CABE  → contexto < CTX_MINIMO_COMPLETO (lo de arriba).
+        //   · porque no da TIEMPO → el proveedor lo pide con prefiereCompacto().
+        //
+        // La segunda no se deduce de la primera. Al 27B le cabe el prompt entero
+        // (1.340 tokens sobre 2.048) y aun así no debe recibirlo: medido en la
+        // misma carga, el primer token tarda 598 s con el prompt completo y 42 s
+        // con el compacto. Diez minutos mirando una caja quieta es un usuario que
+        // se va convencido de que está roto —nos pasó a nosotros teniendo los
+        // logs delante—. Por eso se fusionan las dos con un OR en vez de decidirlo
+        // todo por tamaño: quien mande la señal de velocidad gana, quepa o no.
+        const compacto = this.provider.prefiereCompacto?.()
+          || (contexto > 0 && contexto < CTX_MINIMO_COMPLETO);
         out = await this.provider.chat(this.history, systemPrompt(context, { compacto }),
           t => onEvent({ type: 'token', text: t }));
       } catch (e) {
