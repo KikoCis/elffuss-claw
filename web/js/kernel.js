@@ -98,6 +98,20 @@ const engineCheck = (async () => {
 // Un HEAD basta y no descarga nada. Si el modelo se muda a otro alojamiento hay
 // que cambiar esta ruta también; el precio de tenerla aquí es ese, y a cambio no
 // se importa el motor entero en cada carga de página solo para preguntárselo.
+// ⛔ EL 27B ESTÁ RETIRADO DEL SELECTOR, y no por lento: CUELGA EL ORDENADOR.
+// Sus despachos de GPU duran tanto que WindowServer —el servidor gráfico de
+// macOS— no llega a pintar, se le acaban los 120 s del perro guardián del
+// kernel y la máquina entra en pánico. Tres veces registradas:
+//   2026-09-04 11:10 y 11:22  (durante pruebas; se leyó como «se murió la pestaña»)
+//   2026-09-07 19:34          (un usuario probándolo)
+// El volcado lo confirma: WindowServer bloqueado en Metal/IOGPU/AGX con Chrome
+// dentro. Colgarle el ordenador a alguien es peor que cualquier respuesta mala.
+//
+// Para volver a ofrecerlo hay que ARREGLAR la causa, no quitar esta línea: los
+// núcleos tienen que trocear su trabajo en despachos cortos para que la GPU
+// pueda atender al escritorio entre uno y otro. Hoy el bucle del SSM recorre
+// TODOS los tokens dentro de un solo despacho.
+const RETIRADO_27B_CUELGA_LA_MAQUINA = true;
 let MODEL27_READY = false;
 const modelo27Check = (async () => {
   try {
@@ -141,7 +155,7 @@ function modelOptions() {
   // hecho del código, pero que un modelo a 1 bit emita un bloque ```tool bien
   // formado no lo ha comprobado nadie. Prometer eso en una etiqueta es
   // exactamente el error que esta etiqueta existe para evitar.
-  if (realGPU && ENGINE_READY && MODEL27_READY) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, no se guarda: se relee en cada sesión) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
+  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, no se guarda: se relee en cada sesión) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
