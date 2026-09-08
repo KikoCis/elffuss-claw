@@ -7,10 +7,27 @@
 // Si el broker no está disponible, el llamador cae a su OPFS local (model-store).
 export const BROKER_URL = 'https://models.elffuss.utopiaia.com/';
 
-// Un iframe POR ORIGEN, no uno solo. Hace falta porque la cuota del navegador
-// es por origen: un modelo grande se reparte entre varios subdominios y cada
-// uno guarda su trozo en SU almacén, multiplicando el techo. Medido: 3 GB en un
-// subdominio y 3 GB en otro, y cada uno contando solo los suyos.
+// Un iframe POR ORIGEN. La maquinaria está, pero OJO con para qué sirve, porque
+// medirlo costó una tarde y el resultado no es el que parecía.
+//
+// MEDIDO con el registro del servidor —no con tiempos, que engañan porque la
+// caché HTTP los imita—: se guarda desde un sitio y se lee desde otro, y se
+// cuentan las peticiones REALES que llegan a nginx.
+//
+//   broker models  → 1 petición   · leer desde el otro sitio: 7 ms, CERO
+//                                   peticiones nuevas. COMPARTE.
+//   broker m1      → 2 peticiones · leer desde el otro sitio se lo vuelve a
+//                                   bajar entero. NO comparte.
+//
+// Mismo sitio (utopiaia.com), mismas cabeceras, misma página de broker. La
+// diferencia es real y reproducible; la CAUSA sigue sin explicar. No confundir
+// «no explicado» con «no medido»: esto está medido con el testigo bueno.
+//
+// Consecuencia práctica, y es una disyuntiva de verdad:
+//   · compartir entre sitios → un solo origen de broker (models), una sola cuota.
+//   · multiplicar la cuota   → repartir entre orígenes, y cada sitio se lo baja.
+// Hoy no se pueden las dos. Para modelos por debajo del techo (~7 GB) compensa
+// compartir; por encima, repartir y pagar la descarga por sitio.
 const _brokers = new Map();          // origen → { iframe, ready }
 let _seq = 0;
 
