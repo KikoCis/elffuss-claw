@@ -7,11 +7,25 @@
 // Si el broker no está disponible, el llamador cae a su OPFS local (model-store).
 export const BROKER_URL = 'https://models.elffuss.utopiaia.com/';
 
-let _iframe = null, _ready = null, _seq = 0, _url = BROKER_URL;
+// Un iframe POR ORIGEN, no uno solo. Hace falta porque la cuota del navegador
+// es por origen: un modelo grande se reparte entre varios subdominios y cada
+// uno guarda su trozo en SU almacén, multiplicando el techo. Medido: 3 GB en un
+// subdominio y 3 GB en otro, y cada uno contando solo los suyos.
+const _brokers = new Map();          // origen → { iframe, ready }
+let _seq = 0;
 
 function ensure(brokerURL) {
-  if (_iframe) return _ready;
-  _url = brokerURL;
+  const clave = new URL(brokerURL).origin;
+  const ya = _brokers.get(clave);
+  if (ya) return ya.ready;
+  const entrada = {};
+  _brokers.set(clave, entrada);
+  return _ensureNuevo(brokerURL, entrada);
+}
+
+function _ensureNuevo(brokerURL, entrada) {
+  let _iframe = null, _ready = null;
+  const _url = brokerURL;
   _iframe = document.createElement('iframe');
   _iframe.src = brokerURL; _iframe.setAttribute('aria-hidden', 'true');
   _iframe.style.cssText = 'position:absolute;width:0;height:0;border:0;left:-9999px;visibility:hidden';
@@ -22,13 +36,20 @@ function ensure(brokerURL) {
     _iframe.addEventListener('error', () => { clearTimeout(to); reject(new Error('broker no cargó')); });
   });
   (document.body || document.documentElement).appendChild(_iframe);
+  entrada.iframe = _iframe;
+  entrada.ready = _ready;
   return _ready;
 }
-const origin = () => new URL(_url).origin;
+const origin = url => new URL(url).origin;
+const ventana = url => _brokers.get(new URL(url).origin)?.iframe?.contentWindow;
 
 // Modelo como Blob (el navegador lo respalda en disco), desde la caché compartida.
 // Descarga una vez para TODO Elffuss; el resto de webs lo leen sin red.
-export async function getSharedModel(url, onProgress = () => {}, brokerURL = BROKER_URL) {
+export async function getSharedModel(url, onProgress = () => {}, brokerURL = null) {
+  // Por defecto el broker es el ORIGEN DEL PROPIO FICHERO: así cada trozo lo
+  // guarda quien lo sirve, la petición es del mismo origen (sin CORS) y el
+  // trozo ocupa la cuota de ESE subdominio, que es lo que multiplica el techo.
+  brokerURL = brokerURL || (origin(url) + '/');
   await ensure(brokerURL);
   return new Promise((resolve, reject) => {
     const id = ++_seq;
@@ -41,7 +62,7 @@ export async function getSharedModel(url, onProgress = () => {}, brokerURL = BRO
     const arm = () => { clearTimeout(timer); timer = setTimeout(() => { removeEventListener('message', h); reject(new Error('broker sin respuesta (timeout de inactividad)')); }, IDLE); };
     const done = fn => (...a) => { clearTimeout(timer); removeEventListener('message', h); fn(...a); };
     const h = e => {
-      if (e.source !== _iframe.contentWindow || e.data?.id !== id) return;
+      if (e.source !== ventana(brokerURL) || e.data?.id !== id) return;
       const m = e.data;
       arm();                                    // cualquier señal del broker reinicia el reloj
       if (m.kind === 'progress') onProgress(m);
@@ -52,17 +73,18 @@ export async function getSharedModel(url, onProgress = () => {}, brokerURL = BRO
     };
     addEventListener('message', h);
     arm();
-    _iframe.contentWindow.postMessage({ type: 'elffuss-model-get', id, url }, origin());
+    ventana(brokerURL).postMessage({ type: 'elffuss-model-get', id, url }, origin(brokerURL));
   });
 }
 
 // ¿ya está en la caché compartida? (para la UI: «cargando desde caché, sin bajar»)
-export async function isSharedCached(url, brokerURL = BROKER_URL) {
+export async function isSharedCached(url, brokerURL = null) {
+  brokerURL = brokerURL || (origin(url) + '/');
   try { await ensure(brokerURL); } catch { return false; }
   return new Promise(resolve => {
     const id = ++_seq; const to = setTimeout(() => { removeEventListener('message', h); resolve(false); }, 4000);
-    const h = e => { if (e.source !== _iframe.contentWindow || e.data?.id !== id) return; if (e.data.kind === 'has') { clearTimeout(to); removeEventListener('message', h); resolve(!!e.data.cached); } };
+    const h = e => { if (e.source !== ventana(brokerURL) || e.data?.id !== id) return; if (e.data.kind === 'has') { clearTimeout(to); removeEventListener('message', h); resolve(!!e.data.cached); } };
     addEventListener('message', h);
-    _iframe.contentWindow.postMessage({ type: 'elffuss-model-has', id, url }, origin());
+    ventana(brokerURL).postMessage({ type: 'elffuss-model-has', id, url }, origin(brokerURL));
   });
 }
