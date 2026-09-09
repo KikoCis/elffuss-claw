@@ -98,7 +98,22 @@ const engineCheck = (async () => {
 // Un HEAD basta y no descarga nada. Si el modelo se muda a otro alojamiento hay
 // que cambiar esta ruta también; el precio de tenerla aquí es ese, y a cambio no
 // se importa el motor entero en cada carga de página solo para preguntárselo.
-// ⛔ EL 27B ESTÁ RETIRADO DEL SELECTOR, y no por lento: CUELGA EL ORDENADOR.
+// (RETIRADO Y DEVUELTO). Estuvo fuera porque colgaba el ordenador. La causa se
+// encontró y se arregló: el motor pedía a la GPU decenas de gigabytes de
+// buffers temporales y no los soltaba hasta el final del forward, y sus núcleos
+// corrían tanto sin ceder que WindowServer no llegaba a pintar en 120 s.
+//   · reciclado entre capas → el pico bajó 16 veces (2.576 → 159 MiB a 512
+//     tokens en el modelo pequeño; en el 27B, de ~39 GB estimados a 2,4)
+//   · lotes de 128 → ningún despacho retiene la GPU tanto rato
+// Con eso, una carga completa con generación dejó de colgar nada.
+//
+// Se devuelve al selector porque el fallo tiene causa medida y corregida, no
+// porque haya dejado de reproducirse por suerte. Si vuelve a colgar una
+// máquina, el sitio correcto para mirar es el pico de memoria de GPU
+// (ops.ctx.picoBytes) y la duración de los despachos, no otra vez el modelo.
+//
+// El aviso original, por si hay que volver a retirarlo:
+// ⛔ EL 27B ESTUVO RETIRADO DEL SELECTOR, y no por lento: COLGABA EL ORDENADOR.
 // Sus despachos de GPU duran tanto que WindowServer —el servidor gráfico de
 // macOS— no llega a pintar, se le acaban los 120 s del perro guardián del
 // kernel y la máquina entra en pánico. Tres veces registradas:
@@ -111,12 +126,23 @@ const engineCheck = (async () => {
 // núcleos tienen que trocear su trabajo en despachos cortos para que la GPU
 // pueda atender al escritorio entre uno y otro. Hoy el bucle del SSM recorre
 // TODOS los tokens dentro de un solo despacho.
-const RETIRADO_27B_CUELGA_LA_MAQUINA = true;
+const RETIRADO_27B_CUELGA_LA_MAQUINA = false;   // arreglado: ver arriba
+// Se le pregunta AL MOTOR por sus propios ficheros, en vez de repetir aquí una
+// URL. Aquí había cableada la del 27B de un solo trozo; cuando pasó a dos
+// fragmentos en dos hosts, esta línea se quedó apuntando al fichero viejo y
+// seguía dando 200 de milagro, porque el fichero aún estaba en el servidor. O
+// sea: el selector decidía si ofrecer el modelo mirando un fichero que ya no se
+// usa. El día que se borre para recuperar disco, la opción desaparece y nadie
+// relaciona las dos cosas.
+//
+// Se importa `registro.js` y no `provider.js` a propósito: el registro son unos
+// kilobytes y el proveedor arrastra el motor entero, que no tiene por qué
+// bajarse quien nunca lo elija.
 let MODEL27_READY = false;
 const modelo27Check = (async () => {
   try {
-    const r = await fetch('models/qwen38-27b.gguf', { method: 'HEAD', cache: 'no-store' });
-    return (MODEL27_READY = r.ok);
+    const reg = await import('./engine/registro.js');
+    return (MODEL27_READY = await reg.disponible('qwen38-27b'));
   } catch { return (MODEL27_READY = false); }
 })();
 
@@ -141,10 +167,12 @@ function modelOptions() {
   // etiqueta lo dice: quien lo elija para trabajar se va a arrepentir, y eso no
   // puede descubrirse después de bajar los gigas.
   //
-  // Y NO se guarda en el navegador: no cabe —el límite real de almacenamiento
-  // está por debajo del que el navegador anuncia, y la descarga se perdía pasado
-  // el 90 %—, así que se lee del servidor en cada sesión. La etiqueta lo dice
-  // porque cambia la decisión: no es «gigas una vez», es «gigas cada vez».
+  // Ya SÍ se guarda, y costó entender por qué no podía. El navegador corta un
+  // fichero suelto sobre los 1,94 GB, y el broker guardaba cada modelo en uno:
+  // 3,8 GB fallaban con «exceed its storage quota», que suena a falta de
+  // espacio y no lo era. Troceando en partes de 1 GiB entra, y medido con el
+  // registro del servidor la segunda carga son CERO peticiones. La etiqueta
+  // pasa de «gigas cada vez» a «gigas una vez», que cambia la decisión.
   //
   // Aquí decía «solo conversa», y era cierto mientras el modelo tuvo 512 tokens
   // de contexto: no le cabía el catálogo de herramientas. Ya tiene 2048, que
@@ -155,7 +183,7 @@ function modelOptions() {
   // hecho del código, pero que un modelo a 1 bit emita un bloque ```tool bien
   // formado no lo ha comprobado nadie. Prometer eso en una etiqueta es
   // exactamente el error que esta etiqueta existe para evitar.
-  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, no se guarda: se relee en cada sesión) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
+  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, se guarda: solo se baja la primera vez) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
@@ -433,6 +461,7 @@ if (!localStorage.getItem('elffuss.welcomed')) {
 
 skills.initSkills();
 ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
+ui.mountDiskChip();   // cuánto ocupan los modelos en este navegador, y cómo vaciarlo
 // Botón «liberar el modelo» del panel de consumo: suelta la RAM sin recargar.
 ui.setOnFreeModel(async () => {
   const mod = activeMod;
@@ -546,6 +575,19 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     const chain = [...new Set([saved, def, realGPU ? 'onnx' : null]
       .filter(id => id && available.has(id)))];
     if (!chain.length) return;
+    // MÓVIL: no descargar medio giga sin permiso. Hasta hoy, abrir esto en un
+    // teléfono arrancaba SOLO la descarga del cerebro (~600 MB) al cargar la
+    // página. Dos motivos para no hacerlo: son los datos de alguien que no ha
+    // pedido nada, y encima el navegador de móvil mata la pestaña bastante
+    // antes de sostener el modelo, así que muchas veces se gastaban para nada.
+    // Se avisa, se deja el botón por si quiere insistir, y se recuerda su
+    // elección. El modo básico sigue atendiendo mientras tanto.
+    if (isMobile() && localStorage.getItem('elffuss.movil.ok') !== '1') {
+      ui.mobileGate('~600 MB', () => {
+        (async () => { for (const id of chain) if (await changeModel(id)) return; })();
+      });
+      return;
+    }
     const first = chain[0];
     ui.toast(first.startsWith('litert')
       ? 'Cargando Gemma (varios GB la 1ª vez)… mientras, el modo básico te atiende.'
