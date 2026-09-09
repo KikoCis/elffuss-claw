@@ -12,8 +12,12 @@
 // first-party en todas y comparte UNA sola OPFS → el modelo se descarga UNA vez
 // y se reutiliza en todas. (Un tercero que lo integre tiene su propia partición
 // por privacidad del navegador: se baja una vez POR SU site.)
-// API postMessage: {type:'elffuss-model-get', id, url} → progress* → begin →
-// chunk* (ArrayBuffer transferible) → end | error.  {type:'elffuss-model-has',id,url}
+// API postMessage: {type:'elffuss-model-get', id, url} → {kind:'progress'}* →
+// {kind:'file', file} | {kind:'error', message}.  {type:'elffuss-model-has', id, url}
+// (Aquí ponía que la respuesta venían trozos de ArrayBuffer, que es la versión
+// ANTERIOR: ahora se manda el File de OPFS por referencia, justamente para no
+// copiar los gigabytes a la RAM del renderer. La descripción vieja hizo perder
+// media hora escribiendo un cliente que esperaba mensajes que ya no llegan.)
 // ─────────────────────────────────────────────────────────────────────────────
 const DIR = 'elffuss-models';
 const CHUNK = 8 * 1024 * 1024;
@@ -43,13 +47,45 @@ async function juntar(d, k, n){
   for (let i = 0; i < n; i++) partes.push(await (await d.getFileHandle(k + '.p' + i)).getFile());
   return partes.length === 1 ? partes[0] : new Blob(partes);
 }
+// Borra TODAS las partes de una entrada, no solo las que creemos que hay.
+//
+// Aquí había un `removeEntry(k)`, y `k` no existe: los ficheros se llaman
+// `k.p0`, `k.p1`… O sea que al fallar una descarga los trozos ya escritos se
+// quedaban en disco ocupando cuota para siempre. La caché se ENVENENABA sola:
+// un fallo dejaba 3 GB huérfanos, el intento siguiente pedía 3,8 GB más y moría
+// con «exceed its storage quota» —que suena a disco lleno del usuario y era
+// basura nuestra—, y cada reintento lo empeoraba.
+//
+// Se listan las entradas de verdad en vez de contar índices —así da igual
+// cuántas partes dejara la descarga anterior—, y solo si el navegador no sabe
+// iterar el directorio se cae a borrar por número. Misma forma que la de
+// `model-store.js`, que ya lo hacía bien; el fallo estaba solo en este lado.
+async function borrarPartes(d, k){
+  await d.removeEntry(k + '.done').catch(()=>{});
+  const pref = k + '.p';
+  try{
+    const nombres = [];
+    for await (const n of d.keys()) if (n.startsWith(pref)) nombres.push(n);
+    for (const n of nombres) await d.removeEntry(n).catch(()=>{});
+  }catch{
+    // Sin iteración: por número, hasta que falten DOS seguidas (una sola
+    // ausencia puede ser el hueco de un borrado a medias).
+    for (let i = 0, huecos = 0; i < 512 && huecos < 2; i++) {
+      const ok = await d.removeEntry(pref + i).then(()=>true, ()=>false);
+      huecos = ok ? 0 : huecos + 1;
+    }
+  }
+}
 async function downloadToOPFS(url, onProgress){
   await requestPersist();
   const d = await dir(); const k = keyFor(url);
   const net = await fetch(url);
   if (!net.ok || !net.body) throw new Error('descarga falló: HTTP ' + net.status);
   const total = +net.headers.get('content-length') || 0;
-  await d.removeEntry(k + '.done').catch(()=>{});
+  // Fuera lo anterior ENTERO antes de empezar, no solo la marca: si la copia
+  // vieja tenía más partes que la nueva, las de la cola se quedarían ahí
+  // ocupando sitio y nadie volvería a mirarlas.
+  await borrarPartes(d, k);
   // TROCEADO en partes de 1 GiB. Un fichero suelto lo corta el navegador sobre
   // los 1,94 GB —medido— pase lo que pase con la cuota, así que un modelo de
   // 3,8 GB era IMPOSIBLE de cachear aquí y fallaba con «exceed its storage
@@ -82,7 +118,7 @@ async function downloadToOPFS(url, onProgress){
           const ew = await eh.createWritable();
           await ew.write(new TextEncoder().encode(String(e && e.message || e).slice(0,200)));
           await ew.close(); } catch {}
-    try{ await w.abort(); }catch{} await d.removeEntry(k).catch(()=>{}); throw e; }
+    try{ await w.abort(); }catch{} await borrarPartes(d, k); throw e; }
   const dh = await d.getFileHandle(k + '.done', { create:true }); const dw = await dh.createWritable();
   await dw.write(new TextEncoder().encode(JSON.stringify({ size: loaded, parts: nPartes }))); await dw.close();
   return await juntar(d, k, nPartes);
