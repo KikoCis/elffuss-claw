@@ -29,6 +29,10 @@ DEST=/var/www/elffuss-claw.utopiaia.com
 # suben aparte; aquí solo se protege de que --delete borre los que ya estén.
 PESOS=(--filter='P models/*' --exclude='models/*.gguf')
 MOTOR=("${PESOS[@]}" --filter='P js/engine/**' --exclude='js/engine/**')
+# El blog diario (elffuss-blog) publica en <docroot>/blog/, que NO existe en
+# web/. Sin protegerlo, este --delete lo BORRA en cada despliegue de la app:
+# pasó el 2026-09-07, tres días de posts fuera sin que nada avisara.
+BLOG=(--filter='P blog/***')
 for a in "$@"; do
   if [ "$a" = "--con-motor" ]; then
     echo "▲ el motor propio (js/engine/) SE INCLUYE en este despliegue"
@@ -36,7 +40,7 @@ for a in "$@"; do
   fi
 done
 
-rsync -az --delete "${MOTOR[@]}" -e "ssh -i $KEY" web/ "$HOST:$DEST/"
+rsync -az --delete "${MOTOR[@]}" "${BLOG[@]}" -e "ssh -i $KEY" web/ "$HOST:$DEST/"
 rsync -az -e "ssh -i $KEY" server/serve.py "$HOST:${ELFFUSS_APPDIR:-~/elffuss}/serve.py"
 ssh -i "$KEY" "$HOST" 'sudo systemctl restart elffuss-proxy'
 

@@ -750,3 +750,58 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
   });
   document.addEventListener('click', e => { if (!e.target.closest('#cmd-menu, #btn-slash, #prompt')) cmdMenu.hidden = true; });
 }
+
+
+// ---------- indicador de disco, SIEMPRE a la vista ----------
+// El dato ya existía, pero dentro del panel de Ajustes: o sea escondido. Nadie
+// sabía cuánto ocupaban los modelos en su navegador ni que se podían borrar
+// —clearModelCache() llevaba escrita desde el principio y sin enchufar a nada—.
+// Aquí va en la cabecera, pequeño y permanente, y solo aparece si hay algo
+// guardado: un chip que dice «0 MB» es ruido.
+const _gbDisk = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : Math.round(n / 1048576) + ' MB';
+
+export function mountDiskChip() {
+  const chip = document.getElementById('disk-chip');
+  if (!chip) return;
+  async function paint() {
+    const { usage, quota } = await cacheEstimate();
+    if (!usage) { chip.hidden = true; return; }
+    chip.hidden = false;
+    chip.textContent = '💾 ' + _gbDisk(usage);
+    chip.title = `Modelos guardados en este navegador: ${_gbDisk(usage)}` +
+      (quota ? ` de ${_gbDisk(quota)} disponibles` : '') + '. Pulsa para vaciarlo.';
+  }
+  chip.addEventListener('click', async () => {
+    const { usage } = await cacheEstimate();
+    const ok = confirm(`Vas a borrar ${_gbDisk(usage)} de modelos guardados en este navegador.\n\n` +
+      `No se pierde nada tuyo: solo los pesos descargados. La próxima vez habrá que bajarlos otra vez.\n\n¿Seguir?`);
+    if (!ok) return;
+    chip.textContent = '💾 …';
+    try { await clearModelCache(); toast('Caché vaciada'); }
+    catch (e) { toast('No se pudo vaciar: ' + (e.message || e)); }
+    paint();
+  });
+  paint();
+  setInterval(paint, 20000);
+}
+
+// ---------- puerta de móvil ----------
+// Antes, abrir esto en un móvil arrancaba SOLO la descarga del cerebro: medio
+// giga de datos de alguien que no había pedido nada, y encima con muchas
+// papeletas de no llegar a funcionar (el navegador de móvil cierra la pestaña
+// bastante antes de sostener un modelo entero). Ahora se avisa y se espera.
+export function mobileGate(sizeText, onAccept) {
+  const box = el('div', 'card col');
+  box.style.cssText = 'margin:14px 0;padding:14px;gap:8px';
+  box.appendChild(el('b', null, '📱 En el móvil todavía no funciona'));
+  box.appendChild(el('span', 'muted',
+    'Elffuss ejecuta el modelo dentro de tu propio navegador. En el móvil eso hoy no sale bien: ' +
+    'habría que descargar ' + sizeText + ' y el navegador suele cerrar la pestaña antes de terminar. ' +
+    'Así que no te lo descargo sin preguntar.'));
+  box.appendChild(el('span', 'muted', 'Ábrelo en un ordenador y sí funciona: ahí es donde vive.'));
+  box.appendChild(btn('Descargarlo igualmente (' + sizeText + ')', 'ghost', () => {
+    try { localStorage.setItem('elffuss.movil.ok', '1'); } catch { /* — */ }
+    box.remove(); onAccept();
+  }));
+  (document.getElementById('log') || document.body).appendChild(box);
+}
