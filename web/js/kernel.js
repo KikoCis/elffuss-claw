@@ -150,7 +150,7 @@ const modelo27Check = (async () => {
 function modelOptions() {
   const local = [];
   if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~2.8 GB) ★ — por defecto' });
-  if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB)' });
+  if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB) — más ligero, carga antes' });
   local.push({ id: 'onnx:qwen3.5-0.8b', label: 'Qwen3.5-0.8B · WebGPU (~600 MB) — ligero' });
   // Runtime propio: solo se ofrece si el motor está desplegado (llega por rsync,
   // no por git). Ofrecerlo cuando no está sería prometer algo que falla al
@@ -183,7 +183,7 @@ function modelOptions() {
   // hecho del código, pero que un modelo a 1 bit emita un bloque ```tool bien
   // formado no lo ha comprobado nadie. Prometer eso en una etiqueta es
   // exactamente el error que esta etiqueta existe para evitar.
-  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, se guarda: solo se baja la primera vez) — muy lento: para verlo funcionar, no para trabajar', group: '⚠ Avanzado · sin garantía de rendimiento' });
+  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, se guarda: solo se baja la primera vez) — lento', group: '⚠ Avanzado' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
