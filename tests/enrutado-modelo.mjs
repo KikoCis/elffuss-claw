@@ -41,7 +41,9 @@ const MODELOS = (process.env.MODELOS || 'e4b-swe:latest,hf.co/ggml-org/Qwen3.5-0
 const OLLAMA = process.env.OLLAMA || 'http://127.0.0.1:11434';
 const CASOS = path.resolve(arg('--casos', path.join(AQUI, 'enrutado-herramientas.ciego.cases.json')));
 const SALIDA = arg('--salida', null);
-const EJEMPLOS = arg('--ejemplos', 'ruta');           // 'ruta' = como la app · 'enteros' = los cinco siempre
+// 'enteros' = los cinco siempre, como la app hoy (RECORTAR_EJEMPLOS = false en agent.js)
+// 'ruta'    = los de las familias que ve el modelo
+const EJEMPLOS = arg('--ejemplos', 'enteros');
 if (!['ruta', 'enteros'].includes(EJEMPLOS)) throw new Error(`--ejemplos ${EJEMPLOS}: vale «ruta» o «enteros»`);
 
 function catalogo() {

@@ -27,9 +27,15 @@ export function configure(key) {
 }
 
 // Enseñarle solo las herramientas que vienen a cuento (herramientasPara, en
-// agent.js). Únicamente la familia E4B, que es la medida: no pierde aciertos y
-// el prompt baja unos 250 tokens. E2B está sin medir y recibe el catálogo entero.
-export function enrutaHerramientas() { return curKey === 'gemma-e4b' || curKey === 'elffuss-e4b'; }
+// agent.js) NO SE PUEDE aquí, aunque E4B lo aguante en el banco: la conversación
+// de LiteRT fija el prompt de sistema al crearse y chat() solo la recrea si
+// cambian sus primeros 200 caracteres, que son la persona. El catálogo del PRIMER
+// mensaje se quedaría para toda la conversación: «busca fotos» dejaría solo web
+// a la vista, y el «recuérdame…» de después no encontraría tasks. Estuvo así
+// unas horas el 2026-09-13; el banco no lo vio porque mide peticiones sueltas.
+// Recrear la conversación en cada cambio tiraría la caché KV y el historial.
+// false explícito = imposible (ni el interruptor 'on' lo fuerza).
+export function enrutaHerramientas() { return false; }
 
 let engine = null, conversation = null, sentCount = 0, sys = '';
 

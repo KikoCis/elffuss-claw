@@ -26,9 +26,15 @@ export function userLang() {
 export const CTX_MINIMO_COMPLETO = 1600;
 
 // Los ejemplos del prompt pueden viajar con su familia de herramientas
-// (bloqueEjemplos, en tool-router.js), pero va APAGADO hasta medirlo con modelo:
-// recortar el catálogo ya dio una sorpresa con Qwen, y esto no se da por bueno
-// solo porque ahorre tokens. Con false van los cinco siempre, como antes.
+// (bloqueEjemplos, en tool-router.js), pero va APAGADO porque medido no gana.
+// Gemma 4 E4B, banco ciego, 52 peticiones con herramienta:
+//   · prompt entero                          42/52   1.283 tokens
+//   · recortando solo el catálogo            44/52   1.033
+//   · recortando catálogo y ejemplos         42/52     934
+// Empata con el entero, pero acierta dos menos que recortar solo el catálogo, y
+// en los casos que cambian entre esas dos, tres empeoran y uno mejora. Con 52
+// casos es ruido en las dos direcciones, y ruido no basta para encender algo
+// que toca lo que el modelo imita. Con false van los cinco siempre, como antes.
 const RECORTAR_EJEMPLOS = false;
 
 export function systemPrompt(context = '', { compacto = false, herramientas = null } = {}) {
@@ -87,16 +93,25 @@ ${context}` : ''}`;
 // —como prefiereCompacto()—, y el que no dice nada recibe el catálogo entero,
 // como antes de que esto existiera. Un modelo no entra sin medirlo.
 //
+// Y el banco mide peticiones SUELTAS, así que solo vale para proveedores que
+// reconstruyen el prompt en cada llamada (motor propio, ONNX, API). Uno que
+// guarda la conversación con su prompt de sistema dentro —LiteRT— congela el
+// catálogo del primer mensaje: ese declara false, que significa «imposible».
+// Hoy ningún proveedor lo declara true: E4B, el único que lo aguanta, va por
+// LiteRT.
+//
 // Interruptor, como el del gestor de contexto:
 //   localStorage.setItem('elffuss.router', 'off')   → catálogo entero siempre
-//   localStorage.setItem('elffuss.router', 'on')    → recuperación con cualquier modelo (para medir)
+//   localStorage.setItem('elffuss.router', 'on')    → recuperación con un modelo sin medir (para medirlo)
 //   localStorage.removeItem('elffuss.router')        → lo que declare el proveedor (por defecto)
+// Un proveedor que declara false no se fuerza ni con 'on'.
 let router = null;
 export function herramientasPara(consulta, provider = null) {
   try {
     const interruptor = typeof localStorage !== 'undefined' ? localStorage.getItem('elffuss.router') : null;
-    if (interruptor === 'off') return null;
-    if (interruptor !== 'on' && !provider?.enrutaHerramientas?.()) return null;
+    const declara = provider?.enrutaHerramientas?.();
+    if (interruptor === 'off' || declara === false) return null;
+    if (interruptor !== 'on' && !declara) return null;
     router ||= crearRouter(toolHelp().split('\n'));
     const deSkills = new Set();
     for (const s of installed() || [])
