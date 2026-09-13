@@ -149,3 +149,33 @@ export function crearRouter(lineasCatalogo, opciones = {}) {
 
   return { rutear, familias, porFamilia };
 }
+
+// LOS EJEMPLOS DEL PROMPT VIAJAN CON SU FAMILIA. Recortado el catálogo, lo más
+// caro que quedaba del prompt fijo eran cinco ejemplos que iban siempre: 291
+// tokens, y solo el de skill.create pesa 129. Un ejemplo de una herramienta que
+// el modelo no ve no le enseña a usar ninguna de las que sí ve, y puede tentarle
+// a llamar a la que no está. Así que van con su familia: si el recuperador
+// enseña web y tasks, van los ejemplos de web y de tasks.
+//
+// Con null —el recuperador dudó y va el catálogo entero— van los cinco, en el
+// mismo orden y con el mismo texto de antes, byte a byte.
+//
+// La familia se lee del propio ejemplo («"tool": "web.images"») y no de una
+// etiqueta aparte, que se desincronizaría el día que alguien cambie el ejemplo.
+// Viven aquí y no en agent.js porque los bancos de tests/ los necesitan en node.
+export const EJEMPLOS = [
+  'Usuario: busca fotos de perros\nTú:\n```tool\n{"tool": "web.images", "args": {"query": "perros"}}\n```',
+  'Usuario: busca en internet quién ganó la Champions 2026\nTú:\n```tool\n{"tool": "web.search", "args": {"query": "ganador Champions 2026"}}\n```',
+  'Usuario: créame una skill para revisar mis finanzas cada mes\nTú:\n```tool\n{"tool": "skill.create", "args": {"name": "Revisor de finanzas", "description": "Ayuda a revisar finanzas mensuales", "instructions": "Cuando el usuario hable de finanzas: 1) pide o lee su archivo de gastos, 2) resume ingresos/gastos por categoría, 3) señala gastos inusuales, 4) propone un ahorro. Sé concreto y usa tablas."}}\n```',
+  'Usuario: ¿qué archivos tengo?\nTú:\n```tool\n{"tool": "fs.list", "args": {}}\n```',
+  'Usuario: recuérdame en 10 minutos beber agua\nTú:\n```tool\n{"tool": "tasks.add", "args": {"inMinutes": 10, "prompt": "beber agua"}}\n```',
+];
+const familiaEjemplo = e => (e.match(/"tool":\s*"([a-z]+)\./) || [])[1];
+
+// lineas: las que va a ver el modelo (rutear().lineas), o null si va el catálogo
+// entero. Devuelve el bloque listo para el prompt, o '' si no queda ninguno.
+export function bloqueEjemplos(lineas) {
+  const vistas = lineas && new Set(lineas.map(familiaDe));
+  const elegidos = vistas ? EJEMPLOS.filter(e => vistas.has(familiaEjemplo(e))) : EJEMPLOS;
+  return elegidos.length ? `\n\nEjemplos:\n${elegidos.join('\n')}` : '';
+}

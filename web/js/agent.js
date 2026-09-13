@@ -1,7 +1,7 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
 import { runTool, toolHelp, snapshot } from './tools/index.js';
 import { skillsPromptBlock, installed } from './skills.js';
-import { crearRouter } from './tool-router.js';
+import { crearRouter, bloqueEjemplos } from './tool-router.js';
 import { t } from './i18n.js';
 import * as telemetry from './telemetry.js';
 
@@ -24,6 +24,12 @@ export function userLang() {
 // para la respuesta. Lo mide `tests/prompt-vs-contexto.mjs`; si el prompt
 // engorda, ese test lo dice antes de que lo diga un usuario.
 export const CTX_MINIMO_COMPLETO = 1600;
+
+// Los ejemplos del prompt pueden viajar con su familia de herramientas
+// (bloqueEjemplos, en tool-router.js), pero va APAGADO hasta medirlo con modelo:
+// recortar el catálogo ya dio una sorpresa con Qwen, y esto no se da por bueno
+// solo porque ahorre tokens. Con false van los cinco siempre, como antes.
+const RECORTAR_EJEMPLOS = false;
 
 export function systemPrompt(context = '', { compacto = false, herramientas = null } = {}) {
   const lang = userLang();
@@ -53,34 +59,7 @@ Cómo actuar:
 \`\`\`
 3) Tras un [resultado] que EMPIEZA por ERROR: no te rindas ni digas que no se puede. REANALIZA el mensaje de error (suele decir qué hay o qué falta) y REINTENTA con la corrección (otra ruta, otros argumentos). Solo si vuelve a fallar de otra forma, explica al usuario qué pasó.
 4) Tras un [resultado] correcto, o si no hace falta herramienta, responde texto normal en el idioma del usuario. No repitas una herramienta que YA salió bien (una app creada ya está hecha): responde y para.
-5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.
-
-Ejemplos:
-Usuario: busca fotos de perros
-Tú:
-\`\`\`tool
-{"tool": "web.images", "args": {"query": "perros"}}
-\`\`\`
-Usuario: busca en internet quién ganó la Champions 2026
-Tú:
-\`\`\`tool
-{"tool": "web.search", "args": {"query": "ganador Champions 2026"}}
-\`\`\`
-Usuario: créame una skill para revisar mis finanzas cada mes
-Tú:
-\`\`\`tool
-{"tool": "skill.create", "args": {"name": "Revisor de finanzas", "description": "Ayuda a revisar finanzas mensuales", "instructions": "Cuando el usuario hable de finanzas: 1) pide o lee su archivo de gastos, 2) resume ingresos/gastos por categoría, 3) señala gastos inusuales, 4) propone un ahorro. Sé concreto y usa tablas."}}
-\`\`\`
-Usuario: ¿qué archivos tengo?
-Tú:
-\`\`\`tool
-{"tool": "fs.list", "args": {}}
-\`\`\`
-Usuario: recuérdame en 10 minutos beber agua
-Tú:
-\`\`\`tool
-{"tool": "tasks.add", "args": {"inMinutes": 10, "prompt": "beber agua"}}
-\`\`\`${skillsPromptBlock()}${context ? `
+5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.${bloqueEjemplos(RECORTAR_EJEMPLOS ? herramientas : null)}${skillsPromptBlock()}${context ? `
 
 CONTEXTO AHORA (estado real del sistema, úsalo al responder):
 ${context}` : ''}`;
@@ -96,13 +75,28 @@ ${context}` : ''}`;
 // que nombra una skill se enseñan siempre, o la skill se quedaría a medias sin
 // que el modelo supiera por qué.
 //
+// SOLO PARA LOS MODELOS QUE LO PIDEN. Enseñar menos herramientas no le sienta
+// igual a todos los modelos, y la literatura que dice que ayuda no midió los
+// nuestros. Medido con modelo de verdad (tests/enrutado-modelo.mjs, banco ciego,
+// 52 peticiones que necesitan herramienta, temperatura 0):
+//   · Gemma 4 E4B: 42 → 44 aciertos. Empate —gana 4, pierde 2— con unos 250
+//     tokens menos de prompt, que en local es prefill que no se paga.
+//   · Qwen3.5-0.8B: 29 → 23. Con menos herramientas a la vista contesta con una
+//     app HTML o no llama a nada, aunque la herramienta buena esté delante.
+// Por eso es opt-in: se enciende si el proveedor declara enrutaHerramientas()
+// —como prefiereCompacto()—, y el que no dice nada recibe el catálogo entero,
+// como antes de que esto existiera. Un modelo no entra sin medirlo.
+//
 // Interruptor, como el del gestor de contexto:
 //   localStorage.setItem('elffuss.router', 'off')   → catálogo entero siempre
-//   localStorage.removeItem('elffuss.router')        → recuperación (por defecto)
+//   localStorage.setItem('elffuss.router', 'on')    → recuperación con cualquier modelo (para medir)
+//   localStorage.removeItem('elffuss.router')        → lo que declare el proveedor (por defecto)
 let router = null;
-export function herramientasPara(consulta) {
+export function herramientasPara(consulta, provider = null) {
   try {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('elffuss.router') === 'off') return null;
+    const interruptor = typeof localStorage !== 'undefined' ? localStorage.getItem('elffuss.router') : null;
+    if (interruptor === 'off') return null;
+    if (interruptor !== 'on' && !provider?.enrutaHerramientas?.()) return null;
     router ||= crearRouter(toolHelp().split('\n'));
     const deSkills = new Set();
     for (const s of installed() || [])
@@ -258,7 +252,7 @@ export class Agent {
     // Una sola decisión por turno, sobre lo que pidió el usuario. El prompt no
     // debe cambiar entre los pasos de un mismo turno: un resultado de herramienta
     // podría esconderle al modelo la herramienta que necesita en el paso siguiente.
-    const ruta = herramientasPara(userText);
+    const ruta = herramientasPara(userText, this.provider);
     const herramientas = ruta?.lineas?.length ? ruta.lineas : null;
     for (let step = 0; step < MAX_STEPS; step++) {
       let out;

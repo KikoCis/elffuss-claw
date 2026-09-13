@@ -19,10 +19,17 @@ export const MODELS = {
 
 let MODEL_URL = MODELS['gemma-e2b'].url;
 let curLabel = MODELS['gemma-e2b'].label;
+let curKey = 'gemma-e2b';
 export function configure(key) {
   const m = MODELS[key] || MODELS['gemma-e2b'];
+  curKey = MODELS[key] ? key : 'gemma-e2b';
   MODEL_URL = m.url; curLabel = m.label; name = 'Gemma · LiteRT-LM (' + m.label + ')';
 }
+
+// Enseñarle solo las herramientas que vienen a cuento (herramientasPara, en
+// agent.js). Únicamente la familia E4B, que es la medida: no pierde aciertos y
+// el prompt baja unos 250 tokens. E2B está sin medir y recibe el catálogo entero.
+export function enrutaHerramientas() { return curKey === 'gemma-e4b' || curKey === 'elffuss-e4b'; }
 
 let engine = null, conversation = null, sentCount = 0, sys = '';
 

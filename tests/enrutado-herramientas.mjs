@@ -13,6 +13,11 @@
 // La primera versión exigía todas siempre, y contaba como fallo del recuperador
 // lo que era un error de la definición.
 //
+// TOKENS. Se cuentan las dos partes del prompt que recorta el recuperador: el
+// catálogo y los ejemplos, que viajan con su familia (bloqueEjemplos). El ahorro
+// es sobre la suma. Cada bloque se tokeniza suelto; dentro del prompt real la
+// frontera entre bloques puede mover un token arriba o abajo.
+//
 // Cada cambio del recuperador se mide POR SEPARADO (tabla de configuraciones),
 // para saber qué aporta cada uno en vez de quedarse con el total.
 //
@@ -29,7 +34,7 @@ import { execFileSync } from 'child_process';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.join(AQUI, '..', 'web', 'js');
-const { crearRouter, familiaDe } = await import(path.join(WEB, 'tool-router.js'));
+const { crearRouter, familiaDe, bloqueEjemplos } = await import(path.join(WEB, 'tool-router.js'));
 const { estimateTokens } = await import(path.join(WEB, 'acer-core.js'));
 
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
@@ -68,6 +73,8 @@ function tokens(s) {
   cacheTok.set(s, n);
   return n;
 }
+// Un bloque de ejemplos VACÍO son 0 tokens de verdad, no un fallo del tokenizador.
+const tokBloque = s => (s ? tokens(s) : 0);
 
 const casos = JSON.parse(fs.readFileSync(CASOS, 'utf8')).casos;
 const lineas = catalogo();
@@ -75,6 +82,8 @@ if (lineas.length < 20) throw new Error(`solo se han leído ${lineas.length} her
 const todas = [...new Set(lineas.map(familiaDe))];
 const tokLinea = new Map(lineas.map(l => [l, tokens(l)]));
 const tokTodo = lineas.reduce((a, l) => a + tokLinea.get(l), 0);
+const tokEjTodo = tokBloque(bloqueEjemplos(null));
+const tokEntero = tokTodo + tokEjTodo;
 const tipos = [...new Set(casos.map(c => c.tipo))];
 
 const acierta = (c, vistas) => c.tipo === 'compuesto'
@@ -89,15 +98,15 @@ const CONFIGS = [
   { nombre: '+vacías +web · sin señal→solo web', o: { vacias: true, siempre: ['web'], sinSenal: 'nada' }, detalle: true },
 ];
 
-console.log(`catálogo: ${lineas.length} herramientas, ${todas.length} familias, ${tokTodo} tokens ${VOCAB ? '(tokenizador real)' : '(estimados)'}`);
+console.log(`catálogo: ${lineas.length} herramientas, ${todas.length} familias, ${tokTodo} tokens · ejemplos: ${tokEjTodo} tokens ${VOCAB ? '(tokenizador real)' : '(estimados)'}`);
 console.log(`casos: ${casos.length} (${path.basename(CASOS)}) · tipos: ${tipos.join(', ')}\n`);
 
-const cab = ['configuración'.padEnd(36), 'aciertos', ' entero', 'tok', 'ahorro', ...tipos.map(t => t.slice(0, 8).padStart(8))];
+const cab = ['configuración'.padEnd(36), 'aciertos', ' entero', 'cat', ' ej', 'ahorro', ...tipos.map(t => t.slice(0, 8).padStart(8))];
 console.log('  ' + cab.join('  '));
 const detalles = [];
 for (const cfg of CONFIGS) {
   const router = crearRouter(lineas, cfg.o);
-  let ok = 0, respaldo = 0, tok = 0;
+  let ok = 0, respaldo = 0, tok = 0, tokEj = 0;
   const porTipo = Object.fromEntries(tipos.map(t => [t, { n: 0, ok: 0 }]));
   const fallos = [];
   for (const c of casos) {
@@ -109,20 +118,23 @@ for (const cfg of CONFIGS) {
     if (bien) { ok++; porTipo[c.tipo].ok++; } else fallos.push({ c, vistas, top: r?.puntuaciones.slice(0, 3) || [] });
     if (!r) respaldo++;
     tok += t;
+    tokEj += tokBloque(bloqueEjemplos(r ? r.lineas : null));
   }
-  const media = Math.round(tok / casos.length);
+  const media = Math.round(tok / casos.length), mediaEj = Math.round(tokEj / casos.length);
   const fila = [
     cfg.nombre.padEnd(36),
     `${ok}/${casos.length}`.padStart(8),
     `${Math.round(100 * respaldo / casos.length)}%`.padStart(7),
     String(media).padStart(3),
-    `${Math.round(100 * (tokTodo - media) / tokTodo)}%`.padStart(6),
+    String(mediaEj).padStart(3),
+    `${Math.round(100 * (tokEntero - media - mediaEj) / tokEntero)}%`.padStart(6),
     ...tipos.map(t => `${porTipo[t].ok}/${porTipo[t].n}`.padStart(8)),
   ];
   console.log('  ' + fila.join('  '));
   if (cfg.detalle) detalles.push({ nombre: cfg.nombre, fallos });
 }
-console.log(`\n  entero = % de peticiones en las que el recuperador duda y manda el catálogo completo (${tokTodo} tokens)`);
+console.log(`\n  entero = % de peticiones en las que el recuperador duda y manda el catálogo completo (${tokTodo} tokens) y los cinco ejemplos (${tokEjTodo})`);
+console.log(`  cat / ej = tokens medios de catálogo y de ejemplos que ve el modelo · ahorro = sobre la suma de los dos (${tokEntero})`);
 
 for (const d of detalles) {
   console.log(`\n── fallos de «${d.nombre}» (${d.fallos.length}): la familia buena NO se le enseña al modelo`);
