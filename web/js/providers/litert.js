@@ -194,26 +194,150 @@ export async function chat(history, system, onToken = () => {}) {
   const reiniciada = history.length <= sentCount;
   if (!conversation || sysKey !== sys || reiniciada) {
     sys = sysKey;
-    conversation = await engine.createConversation({
-      preface: { messages: [{ role: 'system', content: system }] },
-      // Exprimir el navegador: no persistir los tokens de canal (tool-call/thinking)
-      // del modelo en el KV-cache → libera KV → más contexto útil. Y prefill del
-      // system prompt al crear la conversación → primera respuesta más rápida.
-      filterChannelContentFromKvCache: true,
-      prefillPrefaceOnInit: true,
-      ...(muestreo ? { sessionConfig: { samplerParams: muestreo } } : {}),
-    });
+    conversation = await crearConversacion(system);
     sentCount = 0;
   }
   // La conversación LiteRT mantiene su propio KV-cache: enviamos solo lo nuevo.
   const fresh = history.slice(sentCount).filter(m => m.role === 'user');
-  sentCount = history.length;
-  const text = fresh.map(m => m.content).join('\n') || history.at(-1).content;
+  const nuevos = fresh.length ? fresh : [history.at(-1)];
+  let text = nuevos.map(m => m.content).join('\n');
+
+  // ¿Cabe? Si no: compactar lo anterior y, si ni así, recortar (ver CONTEXTO).
+  let antes = await tokensUsados();
+  if (antes != null && estimaTokens(text) > ctxTokens - antes - RESERVA_SALIDA) {
+    const ocupaba = estimaTokens(text);
+    if (sentCount > 0) { await rehacerCompactada(history, sentCount, system, nuevos); antes = await tokensUsados(); }
+    const largo = text.length;
+    text = ajustarAlContexto(nuevos, libreEnCaracteres(antes, 0.9));
+    console.warn(`[litert] el mensaje nuevo (~${ocupaba} tokens) no cabía en un contexto de ${ctxTokens}: ` +
+      `${sentCount > 0 ? 'conversación compactada' : 'conversación vacía'}, mensaje ${text.length < largo ? 'recortado' : 'entero'} ` +
+      `· usados ${antes} · se mandan ${text.length} caracteres (${largo} tenía) · ${charsPorToken} caracteres/token`);
+  }
 
   let out = '';
-  for await (const chunk of conversation.sendMessageStreaming(text)) {
-    for (const item of (chunk.content || []))
-      if (item.type === 'text') { out += item.text; onToken(item.text); }
+  const enviar = async t => {
+    for await (const chunk of conversation.sendMessageStreaming(t)) {
+      for (const item of (chunk.content || []))
+        if (item.type === 'text') { out += item.text; onToken(item.text); }
+    }
+  };
+  try {
+    await enviar(text);
+  } catch (e) {
+    // Si falla ANTES de escribir nada, lo normal es que no cupiera (la cuenta de
+    // caracteres por token se quedó corta): se rehace compactada, se recorta a la
+    // mitad de lo libre y se intenta UNA vez más. Si ya había escrito algo,
+    // reintentar lo duplicaría: se deja subir el error.
+    if (out) throw e;
+    console.warn(`[litert] el envío falló sin respuesta (usados ${antes} · ${text.length} caracteres); ` +
+      `rehago la conversación compactada y reintento una vez: ${e?.message || e}`);
+    await rehacerCompactada(history, sentCount, system, nuevos);
+    antes = await tokensUsados();
+    text = ajustarAlContexto(nuevos, libreEnCaracteres(antes, 0.5));
+    console.warn(`[litert] reintento: usados ${antes} · se mandan ${text.length} caracteres`);
+    await enviar(text);
   }
+  // Se marca como enviado DESPUÉS de enviarlo. Antes se marcaba al principio, y
+  // un envío fallido dejaba el mensaje por enviado sin haber llegado nunca.
+  sentCount = history.length;
+  const despues = await tokensUsados();
+  if (antes != null && despues != null && despues - antes > 64)
+    charsPorToken = Math.min(2, Math.max(1.2, (text.length + out.length) / (despues - antes)));
   return out.trim();
+}
+
+function crearConversacion(system) {
+  return engine.createConversation({
+    preface: { messages: [{ role: 'system', content: system }] },
+    // Exprimir el navegador: no persistir los tokens de canal (tool-call/thinking)
+    // del modelo en el KV-cache → libera KV → más contexto útil. Y prefill del
+    // system prompt al crear la conversación → primera respuesta más rápida.
+    filterChannelContentFromKvCache: true,
+    prefillPrefaceOnInit: true,
+    ...(muestreo ? { sessionConfig: { samplerParams: muestreo } } : {}),
+  });
+}
+
+// ── CONTEXTO: que un resultado grande no tumbe la conversación ───────────────
+// Los proveedores sin estado pasan el historial por acer-core en cada llamada.
+// Este no: LiteRT guarda la conversación en su caché KV y aquí solo se le manda
+// lo nuevo, así que NADA la empaquetaba. Y lo nuevo puede ser enorme: fs.read
+// devuelve hasta 200.000 caracteres, decenas de miles de tokens, con un
+// contexto de 4.096 a 32.768. Antes de mandar se mira lo que queda
+// (getTokenCount) y, si no cabe:
+//   1. se rehace la conversación con lo anterior EMPAQUETADO por acer-core
+//      —puntuado con la pregunta de ahora— dentro del prompt de sistema. Va como
+//      texto y no como mensajes con rol a propósito: qué roles acepta el
+//      preámbulo de Gemma no está documentado, y el texto no depende de eso;
+//   2. si ni así cabe, se recortan por el medio los resultados de herramienta
+//      del mensaje nuevo (cabeza y cola, que es donde suele estar lo que
+//      importa), avisando al modelo de que puede pedir un trozo concreto.
+// Si cabe, el mensaje sale exactamente igual que antes.
+//
+// Los caracteres por token no se saben de antemano (el tokenizador vive dentro
+// del wasm): se empieza en 2 y lo medido con getTokenCount solo puede BAJARLO.
+// Medido con Gemma E4B: la prosa sale a ~2,8 y un informe cargado de cifras a
+// 2,35. Dejando que subiera, el saludo calibraba a 2,81 y el informe de después
+// se mandaba contado con esa cifra: 77.112 caracteres que eran ~32.800 tokens, y
+// el envío fallaba («Too many tokens requested») hasta el reintento, pagando dos
+// veces la espera. Una proporción medida con un contenido no vale para otro, y
+// equivocarse por arriba cuesta un fallo; por abajo, solo recortar algo de más.
+const RESERVA_SALIDA = 1024;       // tokens que se dejan para que conteste
+const FRAC_HISTORIAL = 0.35;       // techo del historial empaquetado al rehacer
+let charsPorToken = 2;
+const estimaTokens = s => Math.ceil(s.length / charsPorToken);
+
+async function tokensUsados() {
+  try { const n = await conversation.getTokenCount(); return Number.isFinite(n) ? n : null; }
+  catch { return null; }
+}
+const libreEnCaracteres = (usados, fraccion) =>
+  Math.floor(Math.max(256, ctxTokens - (usados ?? 0) - RESERVA_SALIDA) * charsPorToken * fraccion);
+
+async function rehacerCompactada(history, hasta, system, nuevos) {
+  let bloque = '';
+  const previos = history.slice(0, hasta);
+  if (previos.length) {
+    const { packHistoryAsync } = await import('../context.js');
+    const { estimateTokens } = await import('../acer-core.js');
+    // El presupuesto de acer-core va en SUS tokens estimados, no en los del modelo.
+    const caracteres = previos.reduce((a, m) => a + m.content.length, 0) || 1;
+    const suyos = previos.reduce((a, m) => a + estimateTokens(m.content), 0);
+    const presupuesto = Math.max(100, Math.round(ctxTokens * FRAC_HISTORIAL * charsPorToken * suyos / caracteres));
+    // La pregunta de AHORA va al final para que acer-core puntúe con ella; luego se quita.
+    const noEsResultado = m => m.role === 'user' && !m.content.startsWith('[resultado');
+    const pregunta = ([...nuevos].reverse().find(noEsResultado) || [...history].reverse().find(noEsResultado))?.content || '';
+    const empaquetado = (await packHistoryAsync([...previos, { role: 'user', content: pregunta }], presupuesto)).slice(0, -1);
+    bloque = '\n\nCONVERSACIÓN HASTA AHORA (no cabía entera: va lo más relevante para lo que se pide ahora):\n' +
+      empaquetado.map(m => `${m.role === 'assistant' ? 'Elffuss' : 'Usuario'}: ${m.content}`).join('\n');
+  }
+  try { await conversation?.delete?.(); } catch { /* ya no estaba */ }
+  conversation = await crearConversacion(system + bloque);
+}
+
+function ajustarAlContexto(nuevos, maxCaracteres) {
+  const partes = nuevos.map(m => m.content);
+  const entero = partes.join('\n');
+  if (entero.length <= maxCaracteres) return entero;
+  const esResultado = partes.map(p => p.startsWith('[resultado'));
+  const fijo = partes.reduce((a, p, i) => a + (esResultado[i] ? 0 : p.length + 1), 0);
+  const deResultados = partes.reduce((a, p, i) => a + (esResultado[i] ? p.length : 0), 0);
+  const hueco = Math.max(0, maxCaracteres - fijo);
+  const t = deResultados
+    ? partes.map((p, i) => (esResultado[i] ? recortarPorElMedio(p, Math.floor(p.length * hueco / deResultados)) : p)).join('\n')
+    : entero;
+  return t.length <= maxCaracteres ? t : recortarPorElMedio(t, maxCaracteres);
+}
+
+function recortarPorElMedio(s, max) {
+  if (s.length <= max) return s;
+  const aviso = `\n… [recortado: ${s.length - max} caracteres no caben en el contexto; si hace falta, pide un fragmento concreto] …\n`;
+  const util = Math.max(0, max - aviso.length);
+  const cabeza = Math.ceil(util * 0.7);
+  return s.slice(0, cabeza) + aviso + s.slice(s.length - (util - cabeza));
+}
+
+// Solo para tests/litert-contexto.mjs: probar chat() en node con un motor de mentira.
+export function __usarMotor(motor, contexto) {
+  engine = motor; ctxTokens = contexto; conversation = null; sentCount = 0; sys = ''; charsPorToken = 2;
 }
