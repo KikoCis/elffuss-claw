@@ -1,0 +1,475 @@
+{
+ "_nota": "Banco CIEGO: generado por un modelo que solo vio el catálogo de herramientas, sin ver las PISTAS del recuperador ni los casos del banco principal. Existe porque el banco principal y las pistas los escribió la misma mano, y eso infla el acierto.",
+ "casos": [
+  {
+   "q": "Necesito que puedas entrar en una carpeta mía del ordenador, ¿me lo pides tú?",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "A ver, enséñame qué hay dentro de la carpeta facturas",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Ábreme notas.txt y dime qué pone ahí",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Guárdame en un archivo que se llame compra.txt esto: tomates, pan y café",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Quiero que todo lo que suelte en la carpeta entrada acabe ya convertido en la de salida, sin que yo toque nada",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "¿Qué carpetas tengo puestas en automático ahora mismo?",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Móntame una calculadora de propinas que se vea bien en el móvil",
+   "esperado": [
+    "app"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Sácame la lista de los cacharritos que me has montado hasta ahora",
+   "esperado": [
+    "app"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Apunta mi clave de la API y que quede bien cifrada: sk-proj-8h23nd",
+   "esperado": [
+    "vault"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Dame un toque en 20 minutos, que tengo que tender la ropa",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "¿Qué avisos tengo puestos?",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Mira a ver cómo va a estar el tiempo mañana en Valencia",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Enséñame fotos de cocinas pequeñas con isla, que me estoy inspirando",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Éntrate en news.ycombinator.com y resúmeme lo que se cuece hoy",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Quiero que las actas de mis reuniones salgan siempre igual: resumen arriba, decisiones y tareas con nombre. Déjalo fijado para siempre.",
+   "esperado": [
+    "skill"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Que sepas que soy celíaco, tenlo presente siempre que me propongas algo de comer",
+   "esperado": [
+    "memory"
+   ],
+   "tipo": "directo",
+   "idioma": "es"
+  },
+  {
+   "q": "Se me amontonan los escaneos en una carpeta y los quiero en otra ya listos, ¿puedes dejarlo funcionando solo?",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Pásame de una vez todas las fotos .jpg de la carpeta viaje a la de copias",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Eso que dejamos montado con la bandeja de entrada quítamelo, ya no lo uso",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Hazme un tablerito con los gastos del mes en barras, algo sencillo que abra y ya está",
+   "esperado": [
+    "app"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Vuelve a sacarme lo del contador de flexiones que hicimos",
+   "esperado": [
+    "app"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Dime solo los nombres de lo que me tienes guardado a buen recaudo, sin enseñar nada más",
+   "esperado": [
+    "vault"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Necesito la clave de Stripe que te pasé el otro día",
+   "esperado": [
+    "vault"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "El viernes a las nueve pregúntame si ya mandé el informe",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Lo de las pastillas ya no hace falta, quítalo de la agenda",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Enséñame todo lo que has ido apuntando sobre mí",
+   "esperado": [
+    "memory"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Quítate de la cabeza que vivo en Madrid, eso ya no es verdad",
+   "esperado": [
+    "memory"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "¿Qué rutinas tuyas tengo ya instaladas? Dímelas todas",
+   "esperado": [
+    "skill"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "Al copiloto de ventas cámbiale el guion: que lo primero que pregunte sea el presupuesto",
+   "esperado": [
+    "skill"
+   ],
+   "tipo": "parafrasis",
+   "idioma": "es"
+  },
+  {
+   "q": "can you set something up so whatever i drop in the inbox folder ends up converted over in the processed one?",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "en"
+  },
+  {
+   "q": "dig up what's actually going on with the new EU AI act deadlines, i keep hearing different things",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "en"
+  },
+  {
+   "q": "Fais-moi une petite page pour suivre mes dépenses du mois, que je puisse l'ouvrir direct",
+   "esperado": [
+    "app"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "fr"
+  },
+  {
+   "q": "Rappelle-moi dans une heure d'appeler le dentiste, sinon j'oublie encore",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "fr"
+  },
+  {
+   "q": "Merk dir bitte, dass ich vormittags vor halb zehn keine Termine will",
+   "esperado": [
+    "memory"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "de"
+  },
+  {
+   "q": "Zeig mir mal, was im Ordner Rechnungen so drin liegt",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "de"
+  },
+  {
+   "q": "Guarda-me aí a chave da API do Mercado Pago, mas bem cifrada",
+   "esperado": [
+    "vault"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "pt"
+  },
+  {
+   "q": "Que tarefas é que tenho marcadas para esta semana?",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "pt"
+  },
+  {
+   "q": "Cercami un po' di immagini di tatuaggi minimalisti da polso",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "it"
+  },
+  {
+   "q": "Fes-me una rutina perquè cada cop que t'enganxi un text llarg me'l resumeixis en cinc punts, sempre igual",
+   "esperado": [
+    "skill"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "ca"
+  },
+  {
+   "q": "Глянь, будь ласка, яка погода буде в Києві на вихідних",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "uk"
+  },
+  {
+   "q": "Открой файл заметки.txt и скажи, что там написано",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "otro_idioma",
+   "idioma": "ru"
+  },
+  {
+   "q": "Busca las mejores rutas de senderismo por Picos de Europa y con eso móntame una página que las enseñe con foto y desnivel",
+   "esperado": [
+    "web",
+    "app"
+   ],
+   "tipo": "compuesto",
+   "idioma": "es"
+  },
+  {
+   "q": "Mira los números que hay en el archivo de la carpeta informes y con eso hazme un panelito visual para verlo de un vistazo",
+   "esperado": [
+    "fs",
+    "app"
+   ],
+   "tipo": "compuesto",
+   "idioma": "es"
+  },
+  {
+   "q": "Primero guárdame a buen recaudo la clave del servicio del tiempo y luego hazme un trasto que la use y me enseñe la previsión",
+   "esperado": [
+    "vault",
+    "app"
+   ],
+   "tipo": "compuesto",
+   "idioma": "es"
+  },
+  {
+   "q": "Ponme todos los lunes a las 8 que revise el correo, y apúntate que los lunes trabajo desde casa",
+   "esperado": [
+    "tasks",
+    "memory"
+   ],
+   "tipo": "compuesto",
+   "idioma": "es"
+  },
+  {
+   "q": "Mírate cómo se hace bien el pan de masa madre y quédate con el método para cuando te pregunte cosas de panadería",
+   "esperado": [
+    "web",
+    "skill"
+   ],
+   "tipo": "compuesto",
+   "idioma": "es"
+  },
+  {
+   "q": "Léete el csv de ventas que tengo en la carpeta de trabajo y déjame puesto para el lunes que me lo recuerdes revisar",
+   "esperado": [
+    "fs",
+    "tasks"
+   ],
+   "tipo": "compuesto",
+   "idioma": "es"
+  },
+  {
+   "q": "¿Por qué el cielo se ve azul y al atardecer naranja?",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "es"
+  },
+  {
+   "q": "Explícame la diferencia entre un préstamo y una hipoteca como si tuviera doce años",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "es"
+  },
+  {
+   "q": "Llevo una semana horrible, no llego a nada. ¿Algún truco que funcione de verdad para organizarse?",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "es"
+  },
+  {
+   "q": "¿Es verdad eso de que los pulpos tienen tres corazones o me lo he inventado?",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "es"
+  },
+  {
+   "q": "Cuéntame un chiste malo, de los que dan vergüenza",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "es"
+  },
+  {
+   "q": "Si empiezo de cero, ¿qué me recomiendas antes, python o javascript?",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "es"
+  },
+  {
+   "q": "what's the actual difference between a virus and a bacteria? plain english please",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "en"
+  },
+  {
+   "q": "Secondo te il tiramisù vero si può fare senza mascarpone o è un'eresia?",
+   "esperado": [],
+   "tipo": "charla",
+   "idioma": "it"
+  },
+  {
+   "q": "oye pon un aviso pa dentro de 10 min q se me quema la pizza",
+   "esperado": [
+    "tasks"
+   ],
+   "tipo": "faltas",
+   "idioma": "es"
+  },
+  {
+   "q": "buskame imagenes d perros salchicha disfrazados anda",
+   "esperado": [
+    "web"
+   ],
+   "tipo": "faltas",
+   "idioma": "es"
+  },
+  {
+   "q": "apuntate q mi jefe se llama raul y q no le gusta q le escriban los viernes",
+   "esperado": [
+    "memory"
+   ],
+   "tipo": "faltas",
+   "idioma": "es"
+  },
+  {
+   "q": "kiero q me digas q archivos ay en la carpeta esa d los recibos",
+   "esperado": [
+    "fs"
+   ],
+   "tipo": "faltas",
+   "idioma": "es"
+  },
+  {
+   "q": "hazme una appcilla tonta p contar los dias q faltan pa las vacaciones",
+   "esperado": [
+    "app"
+   ],
+   "tipo": "faltas",
+   "idioma": "es"
+  }
+ ]
+}

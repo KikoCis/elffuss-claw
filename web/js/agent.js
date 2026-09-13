@@ -1,6 +1,7 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
 import { runTool, toolHelp, snapshot } from './tools/index.js';
-import { skillsPromptBlock } from './skills.js';
+import { skillsPromptBlock, installed } from './skills.js';
+import { crearRouter } from './tool-router.js';
 import { t } from './i18n.js';
 import * as telemetry from './telemetry.js';
 
@@ -24,7 +25,7 @@ export function userLang() {
 // engorda, ese test lo dice antes de que lo diga un usuario.
 export const CTX_MINIMO_COMPLETO = 1600;
 
-export function systemPrompt(context = '', { compacto = false } = {}) {
+export function systemPrompt(context = '', { compacto = false, herramientas = null } = {}) {
   const lang = userLang();
   // Versión corta para modelos de contexto pequeño. No es el prompt de siempre
   // recortado: es OTRO trato. Sin catálogo de herramientas (525 tokens) no puede
@@ -39,7 +40,7 @@ Responde en una o dos frases, sin listas y sin código.`;
   return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero tremendamente resolutiva. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}) — breve y con cariño. Si el usuario cambia de idioma, síguele. El chat es la única interfaz: las apps no existen, las creas tú.
 
 HERRAMIENTAS (el sistema pide los permisos, tú solo llama):
-${toolHelp()}
+${herramientas ? herramientas.join('\n') : toolHelp()}
 
 Cómo actuar:
 1) Para usar una herramienta responde SOLO con:
@@ -83,6 +84,36 @@ Tú:
 
 CONTEXTO AHORA (estado real del sistema, úsalo al responder):
 ${context}` : ''}`;
+}
+
+// ── qué herramientas se le enseñan al modelo en cada turno ──────────────────
+// Ver tool-router.js: se recuperan por familias según la petición y, si el
+// recuperador duda, se manda el catálogo entero. Medido en un banco a ciegas de
+// 60 peticiones (tests/enrutado-herramientas.mjs): la familia buena queda a la
+// vista en 57, y el catálogo baja de 536 a 304 tokens de media.
+//
+// Las skills instaladas pueden llamar a herramientas de cualquier familia: las
+// que nombra una skill se enseñan siempre, o la skill se quedaría a medias sin
+// que el modelo supiera por qué.
+//
+// Interruptor, como el del gestor de contexto:
+//   localStorage.setItem('elffuss.router', 'off')   → catálogo entero siempre
+//   localStorage.removeItem('elffuss.router')        → recuperación (por defecto)
+let router = null;
+export function herramientasPara(consulta) {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('elffuss.router') === 'off') return null;
+    router ||= crearRouter(toolHelp().split('\n'));
+    const deSkills = new Set();
+    for (const s of installed() || [])
+      for (const m of String(s.content || '').matchAll(/\b(fs|app|vault|tasks|web|skill|memory)\.[a-z_]+/g)) deSkills.add(m[1]);
+    const r = router.rutear(consulta, { ademas: [...deSkills] });
+    console.debug('[herramientas]', r ? r.familias.join(', ') : 'todas (sin señal clara)');
+    return r;
+  } catch (e) {
+    console.warn('[herramientas] el recuperador falló, va el catálogo entero:', e.message);
+    return null;
+  }
 }
 
 // Repara el JSON de modelos pequeños: coma final + saltos de línea/tab/CR
@@ -224,6 +255,11 @@ export class Agent {
     this.history.push({ role: 'user', content: userText, ts: Date.now() });
     const done = [];            // firmas de tool calls ya ejecutadas este turno
     let lastResult = '';
+    // Una sola decisión por turno, sobre lo que pidió el usuario. El prompt no
+    // debe cambiar entre los pasos de un mismo turno: un resultado de herramienta
+    // podría esconderle al modelo la herramienta que necesita en el paso siguiente.
+    const ruta = herramientasPara(userText);
+    const herramientas = ruta?.lineas?.length ? ruta.lineas : null;
     for (let step = 0; step < MAX_STEPS; step++) {
       let out;
       try {
@@ -240,14 +276,14 @@ export class Agent {
         //
         // La segunda no se deduce de la primera. Al 27B le cabe el prompt entero
         // (1.340 tokens sobre 2.048) y aun así no debe recibirlo: medido en la
-        // misma carga, el primer token tarda 598 s con el prompt completo y 42 s
-        // con el compacto. Diez minutos mirando una caja quieta es un usuario que
+        // misma carga, el primer token tarda unas catorce veces más con el prompt
+        // completo que con el compacto. Minutos mirando una caja quieta es un usuario que
         // se va convencido de que está roto —nos pasó a nosotros teniendo los
         // logs delante—. Por eso se fusionan las dos con un OR en vez de decidirlo
         // todo por tamaño: quien mande la señal de velocidad gana, quepa o no.
         const compacto = this.provider.prefiereCompacto?.()
           || (contexto > 0 && contexto < CTX_MINIMO_COMPLETO);
-        out = await this.provider.chat(this.history, systemPrompt(context, { compacto }),
+        out = await this.provider.chat(this.history, systemPrompt(context, { compacto, herramientas }),
           t => onEvent({ type: 'token', text: t }));
       } catch (e) {
         telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });

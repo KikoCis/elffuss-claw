@@ -40,6 +40,22 @@ header {
 .claim { color: var(--muted); font-size: .8rem; font-style: italic; }
 .controls { display: flex; align-items: center; gap: 10px; }
 .model-pick { font-size: .9rem; color: var(--muted); }
+
+/* Cabecera en UNA línea. Se partía en dos y tres (2026-09-13) por tres cosas a
+   la vez: el <select> de modelo toma el ancho de su opción más larga —la del 27B
+   pasa de 120 caracteres— y sin tope aplastaba al resto; la etiqueta que lo
+   envuelve es en línea, así que el icono se iba a una fila y el selector a otra;
+   y ni la marca, ni el lema, ni el chip de disco tenían nowrap, de modo que en vez
+   de encoger se partían. Regla: NADA en la cabecera parte línea; lo que sobra se
+   recorta. Va antes del bloque responsive para que en móvil siga mandando ese. */
+.brand { min-width: 0; }
+.brand b, .beta { white-space: nowrap; flex: none; }
+.claim { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#build { flex: none; }
+.controls { flex: none; }
+.model-pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.model-pick select { max-width: min(30vw, 380px); text-overflow: ellipsis; }
+#disk-chip { white-space: nowrap; flex: none; padding: 4px 10px; font-size: .78rem; border-radius: 999px; }
 select {
   background: var(--bg3);
   color: var(--fg);
@@ -376,7 +392,20 @@ dialog p { margin: 6px 0; font-size: .9rem; }
   .brand { font-size: .95rem; gap: 6px; }
   .logo { width: 26px; height: 26px; }
   .controls { gap: 6px; }
-  .model-pick select { max-width: 34vw; font-size: .78rem; }
+  /* En móvil la cabecera no cabe entera, así que aquí SÍ se encoge — pero lo
+     que encoge es el selector (se queda con el hueco que sobre), no los botones.
+     Sin esto, el nowrap de la regla general cambiaba «se parte en líneas» por
+     «Permisos se sale de la pantalla», que es peor: medido a 390 px. */
+  .controls { flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
+  .model-pick { flex: 1 1 auto; min-width: 0; }
+  .model-pick select { max-width: none; width: 100%; min-width: 0; font-size: .78rem; }
+  #disk-chip { padding: 4px 7px; font-size: .72rem; }
+  /* Solo el logo como marca. El nombre y el icono del selector no caben en un
+     teléfono, y con el nombre dentro el selector se le montaba ENCIMA: medido a
+     390 px, «Elffu» asomaba por detrás de la caja del selector. Al tocarlo se
+     abre el selector nativo del sistema, que sí enseña los nombres enteros. */
+  .brand { flex: none; }
+  .brand b, #model-ico { display: none; }
   #btn-clear, #btn-perms { padding: 7px 9px; font-size: .78rem; }
 
   #log { padding: 10px; }
