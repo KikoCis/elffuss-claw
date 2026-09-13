@@ -127,13 +127,14 @@ export function crearRouter(lineasCatalogo, opciones = {}) {
   }
   const familias = [...porFamilia.keys()];
   const docs = familias.map(f => fold(`${f} ${porFamilia.get(f).join(' ')} ${PISTAS[f] || ''}`));
-  const bm = buildBM25(docs, { b: o.b });
+  // Sin raíces: aquí confunden familias vecinas (ver terms() en acer-core).
+  const bm = buildBM25(docs, { b: o.b, raices: false });
 
   // ademas: familias extra que hay que enseñar en ESTA consulta (p. ej. las que
   // nombran las skills instaladas). Solo se añaden cuando hay recuperación: con
   // null ya va el catálogo entero.
   function rutear(consulta, { ademas = [] } = {}) {
-    const brutos = terms(fold(consulta));
+    const brutos = terms(fold(consulta), { raices: false });
     if (!brutos.length) return null;                   // alfabeto que el BM25 no ve
     const qt = o.vacias ? brutos.filter(t => !VACIAS.has(t)) : brutos;
     const puntuaciones = familias

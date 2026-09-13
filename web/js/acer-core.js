@@ -179,7 +179,7 @@ function truncateToTokens(s, maxTok) {
 // Sin lista de parada: la IDF endógena (más abajo) se encarga. Se admiten tokens
 // de 2 caracteres porque en código los identificadores cortos existen y a veces
 // son exactamente lo que se busca (`fs`, `db`, `id`).
-function terms(s) {
+function terms(s, opciones) {
   // Emite el token COMPUESTO y además sus PARTES.
   //
   // El tokenizador anterior estaba afinado para código y en diálogo perdía:
@@ -218,18 +218,37 @@ function terms(s) {
   // se deja: «alergica» escrita sin tilde no casa con «alérgica», como antes.
   //
   // NFC, para que la misma letra escrita compuesta o descompuesta sea un solo
-  // término. El texto ASCII puro sigue por el patrón de siempre, que da
-  // EXACTAMENTE lo mismo (comprobado con 200.000 cadenas al azar): LoCoMo sale
-  // idéntico pregunta a pregunta, y ese texto no paga la expresión Unicode.
+  // término. El texto ASCII puro se parte con el patrón de siempre, que da los
+  // mismos términos que la expresión Unicode (comprobado con 200.000 cadenas al
+  // azar) sin pagarla.
+  //
+  // RAÍZ POR TRUNCADO. Además de la palabra, sus primeros caracteres: así
+  // «полиса» casa con «полис», «бронирования» con «брони» y «vorlagen» con
+  // «vorlage». Es el lematizador más simple que hay, sin diccionarios ni idioma.
+  // Cirílico: 5 caracteres desde 6 letras (la flexión eslava cambia más la
+  // cola); el resto: 6 desde 7, y solo palabras hechas de letras, no
+  // identificadores con dígitos o _. Medido frente a no hacerlo, con la variante
+  // diseñada mirando los fallos del banco multilingüe y validada en bancos que no
+  // se miraron: segundo banco multilingüe a ciegas 86 → 89 de 108 sin perder en
+  // ruso (9 → 12/18); acer_real 91,9 → 92,8 %; LoCoMo 163 → 173 evidencias de 354.
+  // NO sirve para el recuperador de herramientas (tool-router.js), que la apaga con
+  // `{ raices: false }`: con siete descripciones, «recuerda» (memoria) y «recuérdame»
+  // (tareas) comparten «recuer», que es justo lo que tiene que distinguir. Medido:
+  // su banco ciego baja de 57 a 56 de 60 con raíces.
   const out = [];
   const seen = new Set();
   const push = (t) => { if (t.length >= 2 && !seen.has(t)) { seen.add(t); out.push(t); } };
-  const palabras = /[^\x00-\x7f]/.test(s)
-    ? s.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}_][\p{L}\p{N}_./-]*/gu)
-    : s.toLowerCase().match(/[a-z0-9_][\w./-]*/g);
+  const ascii = !/[^\x00-\x7f]/.test(s);
+  const palabras = ascii
+    ? s.toLowerCase().match(/[a-z0-9_][\w./-]*/g)
+    : s.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}_][\p{L}\p{N}_./-]*/gu);
   for (const m of palabras || []) {
     push(m);
     if (/[./-]/.test(m)) for (const part of m.split(/[./-]+/)) push(part);
+    if (opciones && opciones.raices === false) continue;
+    if (ascii) { if (m.length >= 7 && /^[a-z]+$/.test(m)) push(m.slice(0, 6)); }
+    else if (m.length >= 6 && /\p{Script=Cyrillic}/u.test(m)) push(m.slice(0, 5));
+    else if (m.length >= 7 && /^\p{L}+$/u.test(m)) push(m.slice(0, 6));
   }
   return out;
 }
@@ -249,7 +268,7 @@ function buildBM25(docs, opts) {
   const tfs = new Array(docs.length);
   let totalLen = 0;
   for (let i = 0; i < docs.length; i++) {
-    const t = terms(docs[i]);
+    const t = terms(docs[i], opts);
     const tf = new Map();
     for (const x of t) tf.set(x, (tf.get(x) || 0) + 1);
     tfs[i] = tf;
