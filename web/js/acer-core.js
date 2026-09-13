@@ -197,10 +197,37 @@ function terms(s) {
   // `src/utils.js` casa exacto y puntúa alto — y las partes se añaden para que
   // el emparejamiento parcial también funcione. Se pagan más términos por línea,
   // pero BM25 normaliza por longitud, que para eso está la `b`.
+  //
+  // CUALQUIER ALFABETO. Hasta 2026-09-13 se partía con `\w`, que en JavaScript
+  // es SOLO ASCII: «alérgica» salía [al, rgica] y «mañana» [ma, ana] —trozos que
+  // casan con palabras que no tienen nada que ver— y el ucraniano o el ruso no
+  // daban ni un término, así que ese historial se empaquetaba a ciegas. Los
+  // bancos no lo vieron porque son sesiones en inglés. Ahora se parte por letras
+  // y números de cualquier alfabeto.
+  //
+  // Las tildes NO se pliegan, aunque parezca lo natural. Plegadas, «qué», «está»
+  // y «tenía» pasan a ser «que», «esta» y «tenia», las palabras más repetidas del
+  // español, y en un historial con prosa entre el código la IDF no las hunde: son
+  // raras frente a los tokens de código. Las líneas de relleno adelantan a la
+  // buena. Medido, plegando: acer_real −3,6 puntos y el español del banco
+  // multilingüe pierde casos. Sin plegar: acer_real idéntico, y el multilingüe
+  // (tests/contexto-multilingue.mjs, 126 preguntas en 7 idiomas escritas por un
+  // modelo que no vio este código, presupuesto al 25 %) pasa de 74 a 94 aciertos
+  // sin perder ninguno; ucraniano y ruso, de 0/18 a 10/18 y 9/18. Quitar palabras
+  // vacías de la pregunta para compensar el plegado salió peor en los dos. Lo que
+  // se deja: «alergica» escrita sin tilde no casa con «alérgica», como antes.
+  //
+  // NFC, para que la misma letra escrita compuesta o descompuesta sea un solo
+  // término. El texto ASCII puro sigue por el patrón de siempre, que da
+  // EXACTAMENTE lo mismo (comprobado con 200.000 cadenas al azar): LoCoMo sale
+  // idéntico pregunta a pregunta, y ese texto no paga la expresión Unicode.
   const out = [];
   const seen = new Set();
   const push = (t) => { if (t.length >= 2 && !seen.has(t)) { seen.add(t); out.push(t); } };
-  for (const m of s.toLowerCase().match(/[a-z0-9_][\w./-]*/g) || []) {
+  const palabras = /[^\x00-\x7f]/.test(s)
+    ? s.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}_][\p{L}\p{N}_./-]*/gu)
+    : s.toLowerCase().match(/[a-z0-9_][\w./-]*/g);
+  for (const m of palabras || []) {
     push(m);
     if (/[./-]/.test(m)) for (const part of m.split(/[./-]+/)) push(part);
   }

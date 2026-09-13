@@ -17,11 +17,15 @@
 // falta: inventa. Por eso rutear() devuelve null cuando duda, y null significa
 // «todo, como siempre». Nunca peor que antes de existir esto.
 //
-// POR QUÉ SE PLIEGAN LAS TILDES ANTES DEL BM25. terms() de acer-core parte por
-// \w, que en JavaScript es ASCII: «recuérdame» sale como [recu, rdame], «mañana»
-// como [ma, ana] y el cirílico, vacío. Plegando a ASCII antes, las lenguas de
-// alfabeto latino casan. El cirílico no tiene equivalente ASCII y sale sin
-// términos → catálogo entero.
+// POR QUÉ SE PLIEGAN LAS TILDES ANTES DEL BM25. terms() de acer-core ya parte por
+// letras de cualquier alfabeto, pero NO pliega tildes a propósito (en un
+// historial largo, plegar convierte «qué» y «está» en las palabras más comunes y
+// meten ruido; ver su comentario). Aquí el problema no existe —el corpus son
+// siete descripciones escritas a mano y las palabras vacías se quitan de la
+// consulta— y lo que sí importa es que «recuerdame» sin tilde case con la pista
+// «recuérdame». Por eso se pliega la consulta y los documentos antes de llamarlo.
+// El cirílico sí da términos, pero no hay pistas en esas lenguas: casi siempre
+// no pasa el umbral → catálogo entero.
 //
 // POR QUÉ HAY PALABRAS VACÍAS AQUÍ Y NO EN ACER-CORE. acer-core no usa lista de
 // parada a propósito: sobre cientos de líneas de historial la IDF endógena hunde
