@@ -316,15 +316,17 @@ async function rehacerCompactada(history, hasta, system, nuevos) {
 }
 
 function ajustarAlContexto(nuevos, maxCaracteres) {
-  const partes = nuevos.map(m => m.content);
-  const entero = partes.join('\n');
+  const entero = nuevos.map(m => m.content).join('\n');
   if (entero.length <= maxCaracteres) return entero;
-  const esResultado = partes.map(p => p.startsWith('[resultado'));
-  const fijo = partes.reduce((a, p, i) => a + (esResultado[i] ? 0 : p.length + 1), 0);
-  const deResultados = partes.reduce((a, p, i) => a + (esResultado[i] ? p.length : 0), 0);
-  const hueco = Math.max(0, maxCaracteres - fijo);
+  // Un mensaje puede traer VARIOS resultados seguidos (Elffuss Code junta los de
+  // un mismo paso): se recorta cada uno por su lado, o el primero se comería el
+  // sitio de los demás.
+  const mensajes = nuevos.map(m => m.content.split(/\n\n(?=\[resultado )/));
+  const esResultado = b => b.startsWith('[resultado');
+  const deResultados = mensajes.flat().reduce((a, b) => a + (esResultado(b) ? b.length : 0), 0);
+  const hueco = Math.max(0, maxCaracteres - (entero.length - deResultados));
   const t = deResultados
-    ? partes.map((p, i) => (esResultado[i] ? recortarPorElMedio(p, Math.floor(p.length * hueco / deResultados)) : p)).join('\n')
+    ? mensajes.map(bs => bs.map(b => (esResultado(b) ? recortarPorElMedio(b, Math.floor(b.length * hueco / deResultados)) : b)).join('\n\n')).join('\n')
     : entero;
   return t.length <= maxCaracteres ? t : recortarPorElMedio(t, maxCaracteres);
 }

@@ -108,5 +108,17 @@ const intenta = async f => { try { return [await f(), null]; } catch (e) { retur
   ok('  rehaciendo la conversación', m.conversaciones.length === 2 && m.conversaciones[0].borrada);
 }
 
+// 5. Varios resultados en UN mensaje (Elffuss Code junta los de un paso): se recorta cada uno por su lado.
+{
+  const m = motor({ limiteReal: 4096 }); L.__usarMotor(m, 4096);
+  const bloque = n => `[resultado code.read]\n${n}-PRINCIPIO ` + 'x '.repeat(50000) + ` ${n}-FINAL`;
+  const h = [{ role: 'user', content: 'compara los dos ficheros' }, { role: 'user', content: bloque('A') + '\n\n' + bloque('B') }];
+  const [, error] = await intenta(() => L.chat(h, SISTEMA));
+  const enviado = ultima(m).enviados.at(-1) || '';
+  ok('dos resultados enormes en un mensaje: el turno no falla', !error, error || '');
+  ok('  los dos conservan principio y final, cada uno con su aviso',
+    ['A-PRINCIPIO', 'A-FINAL', 'B-PRINCIPIO', 'B-FINAL'].every(s => enviado.includes(s)) && (enviado.match(/\[recortado:/g) || []).length === 2);
+}
+
 console.log(fallos ? `\n${fallos} fallo(s)` : '\ntodo bien');
 process.exit(fallos ? 1 : 0);
