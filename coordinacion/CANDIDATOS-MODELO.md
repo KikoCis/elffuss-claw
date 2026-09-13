@@ -32,4 +32,4 @@ dtype `q4` (no q4f16); debe seguir el protocolo agéntico (tool-calls JSON +
   demuestra que basta menos. Qwen3.5-0.8B vuelve a la lista si ort-web lo
   arregla.
 - Externos por API (config avanzada, sin límite de tamaño): Ornith 9B servidor
-  (medido: 3.5 t/s CPU), OpenAI/Anthropic/Ollama con clave del usuario.
+  (medido: lento en CPU), OpenAI/Anthropic/Ollama con clave del usuario.

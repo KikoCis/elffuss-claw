@@ -67,13 +67,13 @@ genérico.
 - Recordad SIEMPRE con Ornith: **temp 1.0 / top_p 0.95** (con temp baja entra
   en bucles de repetición — documentado en el README del repack).
 
-## E-007 · Rendimiento CPU del servidor OVH — **dato de referencia** *(2026-07-12)*
-- llama.cpp, Ornith 9B Q4_K_M (5.3 GB, requant de Q8_0), 8 cores (`-t 6`):
-  **ingestión ~19 t/s, generación ~3.5 t/s**. Prompt de Elffuss ≈ 650 tokens →
-  ~33 s la primera vez (`--cache-reuse 256` reutiliza prefijo después). Una app
-  HTML de ~600 tokens ≈ 3 min.
-- El 31B IQ2_M (10.9 GB) NO cabe: 15 GB de RAM, ~9.7 disponibles → thrash de
-  disco, <1 t/s. Si algún día hay servidor con GPU o más RAM, reevaluar.
+## E-007 · Rendimiento CPU del servidor — **dato de referencia** *(2026-07-12)*
+- llama.cpp, Ornith 9B Q4_K_M (requant de Q8_0), solo CPU: la ingestión va unas
+  cinco veces más rápida que la generación. El prompt de Elffuss (≈ 650 tokens)
+  es una espera larga la primera vez (`--cache-reuse 256` reutiliza el prefijo
+  después), y una app HTML de ~600 tokens se va a varios minutos.
+- El 31B IQ2_M NO cabe en la memoria del servidor → thrash de disco, inusable.
+  Si algún día hay servidor con GPU o más memoria, reevaluar.
 
 ## E-008 · LFM2.5 requiere transformers.js v4 — **CERRADO** *(2026-07-12)*
 - Con `@huggingface/transformers@3`, LFM2.5-1.2B descarga (850 MB) y lanza un
