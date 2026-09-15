@@ -99,11 +99,10 @@ const engineCheck = (async () => {
 // que cambiar esta ruta también; el precio de tenerla aquí es ese, y a cambio no
 // se importa el motor entero en cada carga de página solo para preguntárselo.
 // (RETIRADO Y DEVUELTO). Estuvo fuera porque colgaba el ordenador. La causa se
-// encontró y se arregló: el motor pedía a la GPU decenas de gigabytes de
-// buffers temporales y no los soltaba hasta el final del forward, y sus núcleos
-// corrían tanto sin ceder que WindowServer no llegaba a pintar en 120 s.
-//   · reciclado entre capas → el pico bajó 16 veces (2.576 → 159 MiB a 512
-//     tokens en el modelo pequeño; en el 27B, de ~39 GB estimados a 2,4)
+// encontró y se arregló: el motor pedía a la GPU buffers temporales enormes y no
+// los soltaba hasta el final del forward, y sus núcleos corrían tanto sin ceder
+// que el sistema no llegaba a refrescar la pantalla.
+//   · reciclado entre capas → el pico de memoria de GPU bajó unas 16 veces
 //   · lotes de 128 → ningún despacho retiene la GPU tanto rato
 // Con eso, una carga completa con generación dejó de colgar nada.
 //
@@ -112,20 +111,11 @@ const engineCheck = (async () => {
 // máquina, el sitio correcto para mirar es el pico de memoria de GPU
 // (ops.ctx.picoBytes) y la duración de los despachos, no otra vez el modelo.
 //
-// El aviso original, por si hay que volver a retirarlo:
-// ⛔ EL 27B ESTUVO RETIRADO DEL SELECTOR, y no por lento: COLGABA EL ORDENADOR.
-// Sus despachos de GPU duran tanto que WindowServer —el servidor gráfico de
-// macOS— no llega a pintar, se le acaban los 120 s del perro guardián del
-// kernel y la máquina entra en pánico. Tres veces registradas:
-//   2026-09-04 11:10 y 11:22  (durante pruebas; se leyó como «se murió la pestaña»)
-//   2026-09-07 19:34          (un usuario probándolo)
-// El volcado lo confirma: WindowServer bloqueado en Metal/IOGPU/AGX con Chrome
-// dentro. Colgarle el ordenador a alguien es peor que cualquier respuesta mala.
-//
-// Para volver a ofrecerlo hay que ARREGLAR la causa, no quitar esta línea: los
-// núcleos tienen que trocear su trabajo en despachos cortos para que la GPU
-// pueda atender al escritorio entre uno y otro. Hoy el bucle del SSM recorre
-// TODOS los tokens dentro de un solo despacho.
+// El síntoma, por si hay que volver a retirarlo: despachos de GPU tan largos que
+// el escritorio dejaba de refrescarse y el sistema acababa reiniciándose. Colgarle
+// el ordenador a alguien es peor que cualquier respuesta mala. La regla que lo
+// evita: los núcleos troceán su trabajo en despachos cortos para que la GPU pueda
+// atender al escritorio entre uno y otro.
 const RETIRADO_27B_CUELGA_LA_MAQUINA = false;   // arreglado: ver arriba
 // Se le pregunta AL MOTOR por sus propios ficheros, en vez de repetir aquí una
 // URL. Aquí había cableada la del 27B de un solo trozo; cuando pasó a dos
