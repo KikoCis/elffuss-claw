@@ -1030,7 +1030,12 @@ function selectAndEmit(ctx, budgetTok, O) {
   let deduped = 0;
   if (O.DEDUP) {
     const bestByKey = new Map();
-    for (const m of head) for (const line of (m.content || '').split('\n')) {
+    // La cola literal cuenta IGUAL que la cabecera: lo que ya viaja entero en los últimos
+    // turnos no se vuelve a pagar recuperado más arriba. Medido con un historial de juguete:
+    // la misma línea salía DOS veces (recuperada y literal), y la recuperada es la recortada,
+    // o sea, la peor copia. Lo apuntó Burton Lancaster (RiverRider) contando cómo lo resuelve
+    // Black Window: si un pasaje recuperado vuelve literal a la ventana, se cae del conjunto.
+    for (const m of [...head, ...recent]) for (const line of (m.content || '').split('\n')) {
       const k = dedupKey(line);
       if (k) bestByKey.set(k, { score: Infinity, dup: false });
     }
