@@ -103,6 +103,86 @@ async function opfsWritableSupported(dir) {
   } catch { return false; }
 }
 
+// ¿Se puede escribir OPFS desde un Worker en este navegador? Se PRUEBA, no se
+// deduce del user-agent: la detección por cadena de navegador envejece mal y
+// aquí equivocarse significa bajarse gigabytes para tirarlos.
+//
+// Devuelve el escritor listo, o null si no hay forma — y en ese caso el
+// llamador cae a Cache Storage, que es peor pero funciona.
+async function abrirWorkerOPFS() {
+  if (typeof Worker !== 'function' || !navigator.storage?.getDirectory) return null;
+  let w = null;
+  try {
+    w = new Worker(new URL('./opfs-worker.js', import.meta.url), { type: 'module' });
+    const esc = escritorWorker(w);
+    // Prueba de verdad: abrir, escribir un byte y cerrar. Si el navegador dice
+    // que tiene la API pero falla al usarla, aquí se entera y no al 97 % de una
+    // descarga de gigabytes.
+    await esc.abrir('.probe-worker');
+    await esc.write(new Uint8Array([0]));
+    await esc.close();
+    const raiz = await navigator.storage.getDirectory();
+    const dir = await raiz.getDirectoryHandle(DIR, { create: true });
+    await dir.removeEntry('.probe-worker').catch(() => {});
+    return esc;
+  } catch {
+    try { w && w.terminate(); } catch {}
+    return null;
+  }
+}
+
+// ESCRITOR POR WORKER — el camino de iOS.
+//
+// Expone `write(bytes)` y `close()`, o sea la misma forma que el `writable` de
+// `createWritable`, para que el bucle de descarga sea UNO solo y no dos copias
+// que se desincronizan. Por dentro manda los trozos a `opfs-worker.js`, que es
+// el único sitio donde iOS deja escribir OPFS.
+//
+// Cada escritura ESPERA su acuse. Sin esperar, el hilo principal lee de la red
+// mucho más rápido de lo que el worker escribe, la cola de mensajes crece sin
+// límite y los gigabytes acaban en RAM — justo lo que este almacén existe para
+// evitar.
+function escritorWorker(worker) {
+  let seq = 0;
+  const pendientes = new Map();
+  worker.onmessage = (ev) => {
+    const { id, ok, r, error } = ev.data || {};
+    const p = pendientes.get(id);
+    if (!p) return;
+    pendientes.delete(id);
+    ok ? p.res(r) : p.rej(new Error(error || 'fallo en el worker de OPFS'));
+  };
+  // Un worker que revienta dejaría todas las esperas colgadas para siempre: la
+  // descarga se quedaría quieta sin mensaje. Se rechazan todas.
+  worker.onerror = (e) => {
+    const err = new Error('el worker de OPFS falló: ' + (e.message || e.type));
+    for (const p of pendientes.values()) p.rej(err);
+    pendientes.clear();
+  };
+  const pedir = (msg, transfer) => new Promise((res, rej) => {
+    const id = ++seq;
+    pendientes.set(id, { res, rej });
+    worker.postMessage({ ...msg, id }, transfer || []);
+  });
+  return {
+    abrir: (nombre) => pedir({ op: 'abrir', carpeta: DIR, nombre }),
+    write: (bytes) => {
+      // Se COPIA antes de transferir: `bytes` es una vista del buffer del
+      // lector de red, y transferir ese buffer lo dejaría neutralizado para el
+      // resto del chunk, que todavía hay que repartir entre partes.
+      const buf = bytes.slice().buffer;
+      return pedir({ op: 'escribir', buf }, [buf]);
+    },
+    close: () => pedir({ op: 'cerrar' }),
+    // `abort()` existe porque el camino de ERROR lo llama. Sin él, un fallo de
+    // cuota se convertiría en «writable.abort is not a function» y taparía la
+    // causa real justo cuando más falta hace verla. Aquí abortar es cerrar: el
+    // fichero a medias lo borra después `borrarPartes`.
+    abort: () => pedir({ op: 'cerrar' }).catch(() => {}),
+    fin: () => worker.terminate(),
+  };
+}
+
 // Devuelve un Blob (respaldado en disco) del modelo, entero.
 // Para los modelos grandes conviene más `openRanged`, que lee por rangos sin
 // juntar las partes. Ver `getModelParts` para el detalle.
@@ -153,7 +233,14 @@ export async function getModelParts(url, onProgress = () => {}) {
     }
   }
 
-  if (!(await opfsWritableSupported(dir))) return null;      // iOS main-thread: que decida el llamador
+  // TRES caminos, no dos. Antes aquí se devolvía null en cuanto no había
+  // `createWritable`, y eso mandaba a iOS a Cache Storage — que se desaloja,
+  // así que el teléfono se bajaba el modelo entero en cada visita.
+  let porWorker = null;
+  if (!(await opfsWritableSupported(dir))) {
+    porWorker = await abrirWorkerOPFS();
+    if (!porWorker) return null;                 // ni una cosa ni la otra: que decida el llamador
+  }
 
   // descargar → OPFS por chunks (no en RAM), partiendo cada PART bytes
   const net = await fetch(url);
@@ -188,8 +275,14 @@ export async function getModelParts(url, onProgress = () => {}) {
   let loaded = 0, nPartes = 0, enParte = 0, writable = null;
 
   const abrirParte = async () => {
-    const fh = await dir.getFileHandle(`${key}.p${nPartes}`, { create: true });
-    writable = await fh.createWritable();                   // stream a disco
+    const nombre = `${key}.p${nPartes}`;
+    if (porWorker) {
+      await porWorker.abrir(nombre);
+      writable = porWorker;                                 // misma forma: write/close
+    } else {
+      const fh = await dir.getFileHandle(nombre, { create: true });
+      writable = await fh.createWritable();                 // stream a disco
+    }
     nPartes++; enParte = 0;
   };
 
@@ -225,6 +318,10 @@ export async function getModelParts(url, onProgress = () => {}) {
         `anuncia. Vacía la caché de modelos en Ajustes o elige uno más pequeño.`);
     }
     throw e;
+  } finally {
+    // Soltar el worker SIEMPRE, también al fallar: un worker vivo se queda con
+    // el handle del fichero abierto y el siguiente intento no podría truncarlo.
+    if (porWorker) { try { porWorker.fin(); } catch { /* — */ } porWorker = null; }
   }
 
   // ¿Llegó ENTERO? Un stream que se corta a mitad termina sin lanzar: el bucle
