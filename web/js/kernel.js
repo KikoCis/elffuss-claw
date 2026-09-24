@@ -25,6 +25,7 @@ telemetry.init('elffuss-claw'); // opt-in, apagado por defecto — ver Ajustes
 const localProviders = {
   onnx: () => import('./providers/onnx.js'),
   litert: () => import('./providers/litert.js'),
+  webllm: () => import('./providers/webllm.js'),
 };
 
 // Devuelve el módulo del proveedor ya configurado, o null si es 'rules'.
@@ -33,6 +34,11 @@ async function resolveProvider(id) {
   if (localProviders[id]) return localProviders[id]();
   if (id.startsWith('litert:')) {           // Gemma vía LiteRT-LM (build elegido)
     const mod = await import('./providers/litert.js');
+    mod.configure(id.slice(7));
+    return mod;
+  }
+  if (id.startsWith('webllm:')) {           // WebLLM/MLC: kernels propios, sin ONNX
+    const mod = await import('./providers/webllm.js');
     mod.configure(id.slice(7));
     return mod;
   }
@@ -129,9 +135,18 @@ const RETIRADO_27B_CUELGA_LA_MAQUINA = false;   // arreglado: ver arriba
 // kilobytes y el proveedor arrastra el motor entero, que no tiene por qué
 // bajarse quien nunca lo elija.
 let MODEL27_READY = false;
+let MODEL27_LABEL = 'Modelo grande';
+let MODEL27_GB = 0;
 const modelo27Check = (async () => {
   try {
     const reg = await import('./engine/registro.js');
+    // El NOMBRE y el TAMAÑO salen del registro del motor, no de un literal aquí.
+    // Estaban escritos a mano y se quedaron mintiendo en tres cosas a la vez al
+    // cambiar de modelo: decían «Qwen3.8-27B IQ1» y «~7,6 GB» cuando lo que se
+    // sirve es el ternario de Prism y son 7,21 GB. Un nombre duplicado es un
+    // nombre que se queda viejo.
+    const m27 = reg.MODELS && reg.MODELS['qwen38-27b'];
+    if (m27) { MODEL27_LABEL = m27.label || MODEL27_LABEL; MODEL27_GB = (m27.bytes || 0) / 1e9; }
     return (MODEL27_READY = await reg.disponible('qwen38-27b'));
   } catch { return (MODEL27_READY = false); }
 })();
@@ -142,10 +157,15 @@ function modelOptions() {
   if (realGPU) local.push({ id: 'litert:gemma-e4b', label: 'Gemma-4 E4B · LiteRT-LM (~2.8 GB) ★ — por defecto' });
   if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB) — más ligero, carga antes' });
   local.push({ id: 'onnx:qwen3.5-0.8b', label: 'Qwen3.5-0.8B · WebGPU (~600 MB) — ligero' });
+  // MiniCPM5-2B por WebLLM: OPCIÓN, no predeterminado. Pesa 1,3 GB y MLC pide
+  // ~2 GB de VRAM — el mismo orden que Gemma E2B, que ya sabemos que NO cabe en
+  // móvil. Antes de ponerlo por defecto en ningún sitio hay que cargarlo en un
+  // teléfono de verdad.
+  if (realGPU) local.push({ id: 'webllm:minicpm5-2b', label: 'MiniCPM5-2B · WebLLM (~1,3 GB) — texto', group: '⚠ Avanzado' });
   // Runtime propio: solo se ofrece si el motor está desplegado (llega por rsync,
   // no por git). Ofrecerlo cuando no está sería prometer algo que falla al
   // elegirlo. Ver ENGINE_READY.
-  if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen35-0.8b', label: 'Qwen3.5-0.8B · motor propio (~800 MB)' });
+  if (realGPU && ENGINE_READY) local.push({ id: 'engine:qwen35-0.8b', label: 'Qwen3.5-0.8B · Elffuss Engine (~800 MB)' });
   // El 27B no está aquí por dudoso: su forward está verificado contra llama.cpp
   // capa a capa y genera texto coherente. Está aquí por lo que CUESTA, y el coste
   // ya está MEDIDO, no supuesto: además de la descarga, leer un prompt largo
@@ -173,7 +193,7 @@ function modelOptions() {
   // hecho del código, pero que un modelo a 1 bit emita un bloque ```tool bien
   // formado no lo ha comprobado nadie. Prometer eso en una etiqueta es
   // exactamente el error que esta etiqueta existe para evitar.
-  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: 'Qwen3.8-27B IQ1 · motor propio (~7,6 GB, se guarda: solo se baja la primera vez) — lento', group: '⚠ Avanzado' });
+  if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: `${MODEL27_LABEL} · Elffuss Engine (${MODEL27_GB.toFixed(1)} GB, se guarda: solo se baja la primera vez) — lento`, group: '⚠ Avanzado' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
   // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
@@ -182,7 +202,8 @@ function modelOptions() {
   return [...local, ...settings.enabledExternals(), ...weak];
 }
 
-const isLocal = id => id === 'onnx' || id === 'litert' || id.startsWith('litert:') ||
+const isLocal = id => id === 'onnx' || id === 'litert' || id === 'webllm' ||
+  id.startsWith('webllm:') || id.startsWith('litert:') ||
   id.startsWith('onnx:') || id.startsWith('engine:');
 // Por defecto: Gemma-4 grande vía LiteRT-LM (build oficial -web, VERIFICADO que
 // carga y hace tool-calls) SOLO en escritorio (E4B). En MÓVIL no: E2B pesa ~1.9 GB
