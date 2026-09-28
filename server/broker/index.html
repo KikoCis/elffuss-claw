@@ -79,24 +79,67 @@ async function borrarPartes(d, k){
 async function downloadToOPFS(url, onProgress){
   await requestPersist();
   const d = await dir(); const k = keyFor(url);
-  const net = await fetch(url);
-  if (!net.ok || !net.body) throw new Error('descarga falló: HTTP ' + net.status);
-  const total = +net.headers.get('content-length') || 0;
-  // Fuera lo anterior ENTERO antes de empezar, no solo la marca: si la copia
-  // vieja tenía más partes que la nueva, las de la cola se quedarían ahí
-  // ocupando sitio y nadie volvería a mirarlas.
-  await borrarPartes(d, k);
+  const PARTE = 1024 * 1024 * 1024;
+  // ── REANUDAR ────────────────────────────────────────────────────────────
+  // Las partes de 1 GiB ya completadas están CERRADAS, o sea durables en
+  // disco. Al fallar se borraban todas, así que un corte al 90 % de un modelo
+  // de gigas costaba la descarga entera y el usuario lo vivía como «vuelve a
+  // descargar el modelo». Ahora se conservan y se pide sólo el resto.
+  //
+  // Se empalma sólo si el fichero de origen sigue siendo el mismo tamaño: si
+  // cambió, empalmar daría un modelo corrupto que carga y devuelve basura, que
+  // es peor que volver a bajarlo. El tamaño se lee de Content-Range, que es de
+  // las pocas cabeceras que CORS deja ver desde el navegador (el ETag no).
+  let completas = 0, totalPrevio = 0;
+  try {
+    const ph = await d.getFileHandle(k + '.parte');
+    totalPrevio = JSON.parse(await (await ph.getFile()).text()).total || 0;
+    for (;;) {
+      const f = await (await d.getFileHandle(k + '.p' + completas)).getFile();
+      if (f.size !== PARTE) break;          // la última, a medias: no cuenta
+      completas++;
+    }
+  } catch { /* nada que reanudar */ }
+
+  let total = 0, aceptaRangos = false;
+  try {
+    const cab = await fetch(url, { headers: { Range: 'bytes=0-0' } });
+    aceptaRangos = cab.status === 206;
+    const cr = cab.headers.get('content-range');
+    total = cr ? +cr.split('/')[1] : (+cab.headers.get('content-length') || 0);
+    try { await cab.arrayBuffer(); } catch {}
+  } catch {}
+
+  const desde = completas * PARTE;
+  const reanuda = completas > 0 && aceptaRangos && total > 0 && desde < total && totalPrevio === total;
+  if (!reanuda) { await borrarPartes(d, k); completas = 0; }
+  else {
+    // La parte incompleta de la cola SÍ se tira: no se sabe cuánto de ella es
+    // bueno, y reescribirla cuesta un giga como mucho.
+    await d.removeEntry(k + '.p' + completas).catch(()=>{});
+    await d.removeEntry(k + '.done').catch(()=>{});
+    onProgress?.({ loaded: desde, total, reanudando: true });
+  }
+
+  const net = await fetch(url, reanuda ? { headers: { Range: `bytes=${desde}-` } } : undefined);
+  const okEstado = reanuda ? net.status === 206 : net.ok;
+  if (!okEstado || !net.body) throw new Error('descarga falló: HTTP ' + net.status);
+  if (!total) total = (+net.headers.get('content-length') || 0) + desde;
+  // La huella, para que el próximo intento sepa si lo guardado sirve.
+  try { const ph = await d.getFileHandle(k + '.parte', { create:true });
+        const pw = await ph.createWritable();
+        await pw.write(new TextEncoder().encode(JSON.stringify({ total })));
+        await pw.close(); } catch {}
   // TROCEADO en partes de 1 GiB. Un fichero suelto lo corta el navegador sobre
   // los 1,94 GB —medido— pase lo que pase con la cuota, así que un modelo de
   // 3,8 GB era IMPOSIBLE de cachear aquí y fallaba con «exceed its storage
   // quota», que despista porque suena a falta de espacio y no lo es.
-  const PARTE = 1024 * 1024 * 1024;
-  let nPartes = 0, enParte = 0, w = null;
+  let nPartes = completas, enParte = 0, w = null;
   const abrirParte = async () => {
     const fh = await d.getFileHandle(k + '.p' + nPartes, { create:true });
     w = await fh.createWritable(); nPartes++; enParte = 0;
   };
-  let loaded = 0; const reader = net.body.getReader();
+  let loaded = desde; const reader = net.body.getReader();
   try{
     await abrirParte();
     for(;;){ const { done, value } = await reader.read(); if (done) break;
@@ -118,7 +161,10 @@ async function downloadToOPFS(url, onProgress){
           const ew = await eh.createWritable();
           await ew.write(new TextEncoder().encode(String(e && e.message || e).slice(0,200)));
           await ew.close(); } catch {}
-    try{ await w.abort(); }catch{} await borrarPartes(d, k); throw e; }
+    // NO se borran las partes: cerrar confirma la que iba a medias y las
+    // completas ya estaban en disco. Es justo lo que permite reanudar.
+    try{ await w.close(); }catch{ try{ await w.abort(); }catch{} } throw e; }
+  await d.removeEntry(k + '.parte').catch(()=>{});
   const dh = await d.getFileHandle(k + '.done', { create:true }); const dw = await dh.createWritable();
   await dw.write(new TextEncoder().encode(JSON.stringify({ size: loaded, parts: nPartes }))); await dw.close();
   return await juntar(d, k, nPartes);

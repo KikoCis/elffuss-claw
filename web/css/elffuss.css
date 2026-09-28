@@ -146,18 +146,38 @@ main {
 }
 .chip:hover { color: var(--fg); border-color: var(--accent); }
 
-#composer { display: flex; gap: 8px; padding: 12px 14px 16px; }
-#prompt {
-  flex: 1;
-  background: var(--bg3);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  color: var(--fg);
-  padding: 12px 14px;
-  font-size: .95rem;
-  outline: none;
+/* El campo de texto va en SU PROPIA FILA y los botones debajo.
+   Antes compartía fila con ellos, y como los botones se inyectan desde el JS la
+   fila fue creciendo hasta seis: el sitio donde se escribe acabó siendo una
+   píldora estrecha, del mismo tamaño y forma que sus vecinas, distinguible solo
+   por un borde de un píxel. O sea el elemento MENOS visible de la barra, que es
+   justo al revés de lo que tiene que ser en un chat. */
+#composer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 16px;
 }
-#prompt:focus { border-color: var(--accent2); }
+#prompt {
+  /* Fila entera y la primera, pase lo que pase con los botones de al lado. */
+  flex: 1 0 100%;
+  order: -1;
+  background: var(--bg2, var(--bg3));
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  color: var(--fg);
+  padding: 15px 16px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+/* El marcador de posición tiene que LEERSE: es lo único que dice para qué
+   sirve la caja cuando está vacía. */
+#prompt::placeholder { color: var(--fg3, #8b8b9e); opacity: 1; }
+#prompt:focus {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent2) 22%, transparent);
+}
 #send {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   color: #fff;

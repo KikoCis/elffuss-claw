@@ -39,15 +39,35 @@ const RECORTAR_EJEMPLOS = false;
 
 export function systemPrompt(context = '', { compacto = false, herramientas = null } = {}) {
   const lang = userLang();
-  // Versión corta para modelos de contexto pequeño. No es el prompt de siempre
-  // recortado: es OTRO trato. Sin catálogo de herramientas (525 tokens) no puede
-  // llamarlas, así que se le dice, y así no promete lo que no puede hacer. Y
-  // tampoco lleva el contexto vivo: en un modelo lento cada token del prompt se
-  // paga en segundos de espera antes de la primera letra.
+  // Versión corta para modelos LENTOS. No es el prompt de siempre recortado: se
+  // quitan prosa y ejemplos, NO capacidades.
+  //
+  // Antes decía «no tienes herramientas, no puedes crear apps». Tenía sentido
+  // cuando el contexto de ese modelo era 2.048 y el catálogo no cabía: mentirle
+  // al modelo sobre lo que puede hacer era mejor que dejarle prometer lo que iba
+  // a fallar. Con el contexto en 65.536 la premisa desapareció, y lo que quedaba
+  // era un Elffuss que se niega a hacer lo único que la gente viene a pedirle.
+  //
+  // El catálogo se conserva ENTERO a propósito, como en Code: un Elffuss sin
+  // herramientas carga, responde y no sirve para nada, que es peor que fallar
+  // fuerte. Lo que sí se sigue quitando es el CONTEXTO VIVO, que crece con el
+  // estado del sistema y se paga en espera antes de la primera letra.
   if (compacto) {
-    return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero directa. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}).
-Aquí tienes muy poco contexto disponible, así que SOLO conversas: no tienes herramientas, no puedes crear apps ni leer archivos. Si te piden algo de eso, dilo con naturalidad y sugiere elegir otro modelo arriba.
-Responde en una o dos frases, sin listas y sin código.`;
+    return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero directa. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}). El chat es la única interfaz: las apps no existen, las creas tú.
+
+HERRAMIENTAS (las ÚNICAS que existen — no inventes otras):
+${herramientas ? herramientas.join('\n') : toolHelp()}
+
+Para usar una herramienta responde SOLO con:
+\`\`\`tool
+{"tool": "fs.list", "args": {}}
+\`\`\`
+Para crear una app responde SOLO con el documento HTML completo (autocontenido, CSS y JS dentro, fondo oscuro, en el idioma del usuario):
+\`\`\`html
+<!doctype html><html>…</html>
+\`\`\`
+SÍ puedes buscar en internet con web.search y web.images: nunca digas que no tienes acceso.
+Tras un [resultado] correcto, responde breve y para. Si empieza por ERROR, reanaliza y reintenta una vez antes de rendirte.${skillsPromptBlock()}`;
   }
   return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero tremendamente resolutiva. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}) — breve y con cariño. Si el usuario cambia de idioma, síguele. El chat es la única interfaz: las apps no existen, las creas tú.
 

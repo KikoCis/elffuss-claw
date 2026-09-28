@@ -4,7 +4,7 @@
 const L = {
   es: {
     welcome: 'Un sistema operativo con alma que vive en tu navegador. Aquí las apps no se instalan: se crean cuando las pides y aparecen a la derecha. Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados, programar tareas y navegar por ti. Todo se queda en tu máquina.',
-    hi: 'Привіт, soy Elffuss.',
+    hi: 'Hola, soy Elffuss.',
     chips: ['Hazme un reloj', 'Crea una app de notas', 'Autoriza una carpeta', 'Recuérdame en 1 minuto que estire', 'Abre https://example.com'],
     tabs: { vista: 'Vista', apps: 'Apps', tareas: 'Tareas', vault: 'Bóveda', skills: 'Skills', permisos: 'Permisos', ajustes: 'Ajustes' },
     ph: 'Pídeme lo que necesites…  (/ para comandos)',
@@ -99,7 +99,7 @@ const L = {
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
-    hi: 'Привіт, I’m Elffuss.',
+    hi: 'Hi, I’m Elffuss.',
     chips: ['Make me a clock', 'Create a notes app', 'Authorize a folder', 'Remind me in 1 minute to stretch', 'Open https://example.com'],
     tabs: { vista: 'View', apps: 'Apps', tareas: 'Tasks', vault: 'Vault', skills: 'Skills', permisos: 'Permissions', ajustes: 'Settings' },
     ph: 'Ask me anything…  (/ for commands)',
@@ -262,7 +262,7 @@ const L = {
 
   fr: {
     welcome: "Un système d’exploitation avec une âme qui vit dans ton navigateur. Ici les apps ne s’installent pas : elles se créent quand tu les demandes, à droite. Je peux utiliser tes dossiers (avec permission), garder des secrets chiffrés, planifier des tâches et naviguer pour toi. Tout reste sur ta machine.",
-    hi: "Привіт, je suis Elffuss.",
+    hi: "Salut, je suis Elffuss.",
     chips: ["Fais-moi une horloge", "Crée une app de notes", "Autorise un dossier", "Rappelle-moi dans 1 min de m’étirer", "Ouvre https://example.com"],
     tabs: {
       vista: "Vue",
@@ -333,7 +333,7 @@ const L = {
 
   de: {
     welcome: "Ein Betriebssystem mit Seele, das in deinem Browser lebt. Apps werden hier nicht installiert – sie entstehen, wenn du fragst, und erscheinen rechts. Ich kann deine Ordner nutzen (mit Erlaubnis), verschlüsselte Geheimnisse speichern, Aufgaben planen und für dich surfen. Alles bleibt auf deinem Gerät.",
-    hi: "Привіт, ich bin Elffuss.",
+    hi: "Hallo, ich bin Elffuss.",
     chips: ["Bau mir eine Uhr", "Erstelle eine Notiz-App", "Ordner freigeben", "Erinnere mich in 1 Min ans Strecken", "Öffne https://example.com"],
     tabs: {
       vista: "Ansicht",
@@ -404,7 +404,7 @@ const L = {
 
   pt: {
     welcome: "Um sistema operativo com alma que vive no teu navegador. Aqui as apps não se instalam: criam-se quando pedes e aparecem à direita. Posso usar as tuas pastas (com permissão), guardar segredos cifrados, agendar tarefas e navegar por ti. Tudo fica na tua máquina.",
-    hi: "Привіт, sou a Elffuss.",
+    hi: "Olá, sou a Elffuss.",
     chips: ["Faz-me um relógio", "Cria uma app de notas", "Autoriza uma pasta", "Lembra-me em 1 min de me esticar", "Abre https://example.com"],
     tabs: {
       vista: "Vista",
