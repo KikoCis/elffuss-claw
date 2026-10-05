@@ -18,13 +18,6 @@ export function userLang() {
   return { code, name: LANGS[code.split('-')[0]] || code };
 }
 
-// Un modelo con MENOS de esto no puede oír las instrucciones completas: medidas
-// con el tokenizador de verdad son 1.315 tokens (525 solo el catálogo de
-// herramientas), y encima hay que dejar sitio para lo que escribe el usuario y
-// para la respuesta. Lo mide `tests/prompt-vs-contexto.mjs`; si el prompt
-// engorda, ese test lo dice antes de que lo diga un usuario.
-export const CTX_MINIMO_COMPLETO = 1600;
-
 // Los ejemplos del prompt pueden viajar con su familia de herramientas
 // (bloqueEjemplos, en tool-router.js), pero va APAGADO porque medido no gana.
 // Gemma 4 E4B, banco ciego, 52 peticiones con herramienta:
@@ -37,7 +30,7 @@ export const CTX_MINIMO_COMPLETO = 1600;
 // que toca lo que el modelo imita. Con false van los cinco siempre, como antes.
 const RECORTAR_EJEMPLOS = false;
 
-export function systemPrompt(context = '', { compacto = false, herramientas = null } = {}) {
+export function systemPrompt(context = '', { herramientas = null } = {}) {
   const lang = userLang();
   // Versión corta para modelos LENTOS. No es el prompt de siempre recortado: se
   // quitan prosa y ejemplos, NO capacidades.
@@ -52,23 +45,12 @@ export function systemPrompt(context = '', { compacto = false, herramientas = nu
   // herramientas carga, responde y no sirve para nada, que es peor que fallar
   // fuerte. Lo que sí se sigue quitando es el CONTEXTO VIVO, que crece con el
   // estado del sistema y se paga en espera antes de la primera letra.
-  if (compacto) {
-    return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero directa. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}). El chat es la única interfaz: las apps no existen, las creas tú.
-
-HERRAMIENTAS (las ÚNICAS que existen — no inventes otras):
-${herramientas ? herramientas.join('\n') : toolHelp()}
-
-Para usar una herramienta responde SOLO con:
-\`\`\`tool
-{"tool": "fs.list", "args": {}}
-\`\`\`
-Para crear una app responde SOLO con el documento HTML completo (autocontenido, CSS y JS dentro, fondo oscuro, en el idioma del usuario):
-\`\`\`html
-<!doctype html><html>…</html>
-\`\`\`
-SÍ puedes buscar en internet con web.search y web.images: nunca digas que no tienes acceso.
-Tras un [resultado] correcto, responde breve y para. Si empieza por ERROR, reanaliza y reintenta una vez antes de rendirte.${skillsPromptBlock()}`;
-  }
+  // La rama de prompt COMPACTO se ha retirado. Recortarlo dejaba al modelo sin
+  // saber hacer tareas —el motivo de ponerlo era que el completo tarda más en
+  // procesarse— y un asistente que carga, responde y no sirve para nada es peor
+  // que uno lento. El coste del prompt completo se ataca reutilizando el
+  // prefijo entre turnos y guardando el estado entre sesiones, no recortándole
+  // al modelo lo que sabe hacer.
   return `Eres Elffuss: un sistema operativo con alma que vive en el navegador del usuario. Cálida y luminosa, pero tremendamente resolutiva. Hablas SIEMPRE en el idioma del navegador del usuario: ${lang.name} (${lang.code}) — breve y con cariño. Si el usuario cambia de idioma, síguele. El chat es la única interfaz: las apps no existen, las creas tú.
 
 HERRAMIENTAS (el sistema pide los permisos, tú solo llama):
@@ -300,19 +282,15 @@ export class Agent {
         const contexto = this.provider.contextTokens?.() || 0;
         // Se habla en corto por DOS razones distintas, y conviene no confundirlas:
         //
-        //   · porque no CABE  → contexto < CTX_MINIMO_COMPLETO (lo de arriba).
-        //   · porque no da TIEMPO → el proveedor lo pide con prefiereCompacto().
         //
-        // La segunda no se deduce de la primera. Al 27B le cabe el prompt entero
-        // (1.340 tokens sobre 2.048) y aun así no debe recibirlo: medido en la
-        // misma carga, el primer token tarda unas catorce veces más con el prompt
-        // completo que con el compacto. Minutos mirando una caja quieta es un usuario que
-        // se va convencido de que está roto —nos pasó a nosotros teniendo los
-        // logs delante—. Por eso se fusionan las dos con un OR en vez de decidirlo
-        // todo por tamaño: quien mande la señal de velocidad gana, quepa o no.
-        const compacto = this.provider.prefiereCompacto?.()
-          || (contexto > 0 && contexto < CTX_MINIMO_COMPLETO);
-        out = await this.provider.chat(this.history, systemPrompt(context, { compacto, herramientas }),
+        // Aquí se decidía si mandar un prompt RECORTADO, por dos motivos: que el
+        // modelo fuera lento, o que su contexto fuera pequeño. Se ha quitado
+        // entero. Recortarlo dejaba al modelo sin saber hacer tareas, y eso es
+        // peor que ser lento: un asistente que carga, responde y no sirve para
+        // nada decepciona más que uno que tarda. El coste del prompt completo se
+        // ataca reutilizando el prefijo entre turnos y guardando el estado entre
+        // sesiones, no quitándole capacidades al modelo.
+        out = await this.provider.chat(this.history, systemPrompt(context, { herramientas }),
           t => onEvent({ type: 'token', text: t }));
       } catch (e) {
         telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });

@@ -186,7 +186,7 @@ function modelOptions() {
   //
   // Aquí decía «solo conversa», y era cierto mientras el modelo tuvo 512 tokens
   // de contexto: no le cabía el catálogo de herramientas. Ya tiene 2048, que
-  // supera CTX_MINIMO_COMPLETO, así que recibe el prompt completo y el catálogo
+  // recibe el prompt completo y el catálogo entero: ya no hay versión recortada
   // con él. La afirmación caducó y se quita.
   //
   // NO se sustituye por «puede usar herramientas»: que reciba el catálogo es un
