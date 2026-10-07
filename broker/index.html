@@ -18,18 +18,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const DIR = 'elffuss-models';
 const CHUNK = 8 * 1024 * 1024;
-// Orígenes permitidos: las webs de Elffuss y nada más. NO todo *.utopiaia.com,
-// que es lo que ponía antes: ese dominio aloja más cosas que Elffuss.
-//   · elffuss.com y sus subdominios (el dominio de ahora)
-//   · elffuss.utopiaia.com y sus subdominios (el anterior: se sigue aceptando
+// Orígenes permitidos: las webs de Elffuss que embeben este broker, y nada más.
+// NO todo *.utopiaia.com, que es lo que ponía antes: ese dominio aloja más cosas
+// que Elffuss. Y tampoco todo *.elffuss.com: git.* es un Gitea que pinta markdown
+// escrito por cualquiera, y key.* no tiene nada que pedirle al broker. Como son
+// del mismo «site», un script colado ahí hablaría con este iframe en su caché
+// compartida: vería lo que hay guardado y podría llenarla de descargas.
+//   · elffuss.com y claw, code, t2t, translator, copilot, models, m1, m2… .elffuss.com
+//   · lo mismo bajo elffuss.utopiaia.com (el dominio anterior: se sigue aceptando
 //     mientras dure el cambio de dominio)
 //   · los alias más viejos elffuss-claw y elffuss-code .utopiaia.com
 // Las integraciones de terceros se añaden por query (?allow=https://otra.com)
 // — cada una en su propia partición.
 const extra = new URLSearchParams(location.search).getAll('allow');
+const WEBS = /^https:\/\/((claw|code|t2t|translator|copilot|models|m\d+)\.)?elffuss\.(com|utopiaia\.com)$/;
 function allowed(origin) {
-  if (/^https:\/\/([\w-]+\.)*elffuss\.com$/.test(origin)) return true;
-  if (/^https:\/\/([\w-]+\.)*elffuss\.utopiaia\.com$/.test(origin)) return true;
+  if (WEBS.test(origin)) return true;
   if (/^https:\/\/elffuss-(claw|code)\.utopiaia\.com$/.test(origin)) return true;
   if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;     // desarrollo
   return extra.includes(origin);

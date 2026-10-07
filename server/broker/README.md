@@ -6,10 +6,13 @@ que siguen sirviendo sin redirigir). Se embebe como iframe oculto desde las webs
 de Elffuss y guarda los modelos en el almacén del navegador, para que se
 descarguen **una vez** en vez de en cada sesión.
 
-Solo responde a las webs de Elffuss: `elffuss.com` y sus subdominios,
-`elffuss.utopiaia.com` y sus subdominios, los alias viejos `elffuss-claw` y
+Solo responde a las webs de Elffuss que lo embeben: `elffuss.com` y `claw`,
+`code`, `t2t`, `translator`, `copilot`, `models`, `m1`, `m2`… `.elffuss.com`, lo
+mismo bajo `elffuss.utopiaia.com`, los alias viejos `elffuss-claw` y
 `elffuss-code` `.utopiaia.com`, y `localhost` en desarrollo. No a todo
-`*.utopiaia.com`.
+`*.utopiaia.com`, y tampoco a todo `*.elffuss.com`: `git.*` es un Gitea que pinta
+markdown escrito por cualquiera y, al ser del mismo site, un script colado ahí
+hablaría con el broker en su caché compartida; `key.*` no lo necesita.
 
 Estaba solo en el servidor, editada a mano. Se versiona aquí porque lleva
 lógica que costó encontrar y que se perdería con un despliegue o una limpieza.

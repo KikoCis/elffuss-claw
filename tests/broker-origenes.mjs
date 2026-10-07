@@ -28,8 +28,11 @@ const ok = (nombre, cond, extra = '') => {
 // ── 1. La lista de orígenes del broker (las dos copias de la página) ─────────
 const ACEPTA = [
   'https://elffuss.com', 'https://claw.elffuss.com', 'https://code.elffuss.com',
-  'https://translator.elffuss.com', 'https://models.elffuss.com', 'https://m1.elffuss.com',
-  'https://elffuss.utopiaia.com', 'https://claw.elffuss.utopiaia.com', 'https://copilot.elffuss.utopiaia.com',
+  'https://translator.elffuss.com', 'https://copilot.elffuss.com', 'https://t2t.elffuss.com',
+  'https://models.elffuss.com', 'https://m1.elffuss.com', 'https://m2.elffuss.com',
+  'https://elffuss.utopiaia.com', 'https://claw.elffuss.utopiaia.com', 'https://code.elffuss.utopiaia.com',
+  'https://copilot.elffuss.utopiaia.com', 'https://translator.elffuss.utopiaia.com', 'https://t2t.elffuss.utopiaia.com',
+  'https://models.elffuss.utopiaia.com', 'https://m1.elffuss.utopiaia.com',
   'https://elffuss-claw.utopiaia.com', 'https://elffuss-code.utopiaia.com',
   'http://localhost', 'http://localhost:8642',
   'https://socio.example',                       // añadido por ?allow=
@@ -40,6 +43,12 @@ const RECHAZA = [
   'https://claw.elffuss.com.evil.net', 'https://elffuss-claw.utopiaia.com.evil.net',
   'https://x.elffuss-claw.utopiaia.com', 'http://claw.elffuss.com', 'http://127.0.0.1:8642',
   'https://otro.example', 'null',
+  // Hosts de Elffuss que no embeben el broker: git.* pinta markdown de cualquiera
+  // y key.* no lo necesita. Tampoco nombres que no existen ni anidados.
+  'https://git.elffuss.com', 'https://git.elffuss.utopiaia.com',
+  'https://key.elffuss.com', 'https://key.elffuss.utopiaia.com',
+  'https://www.elffuss.com', 'https://otra.elffuss.com', 'https://x.claw.elffuss.com',
+  'https://models.git.elffuss.com', 'https://mx.elffuss.com',
 ];
 for (const pagina of ['server/broker/index.html', 'broker/index.html']) {
   const html = readFileSync(join(RAIZ, pagina), 'utf8');
@@ -51,7 +60,7 @@ for (const pagina of ['server/broker/index.html', 'broker/index.html']) {
   const malAceptados = RECHAZA.filter(o => allowed(o));
   const malRechazados = ACEPTA.filter(o => !allowed(o));
   ok(`${pagina}: acepta las webs de Elffuss de los dos dominios`, !malRechazados.length, malRechazados.join(' '));
-  ok(`${pagina}: no acepta el resto de utopiaia.com ni imitaciones`, !malAceptados.length, malAceptados.join(' '));
+  ok(`${pagina}: no acepta git, key, el resto de utopiaia.com ni imitaciones`, !malAceptados.length, malAceptados.join(' '));
 }
 
 // ── 2. Un `document` de mentira para el SDK del broker ───────────────────────

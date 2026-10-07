@@ -75,9 +75,11 @@ Para saber si ya está sin bajarlo: `postMessage({type:'elffuss-model-has', id, 
 
 ## Requisitos y avisos
 
-- **Origen permitido**: el broker solo responde a las webs de Elffuss
-  (`elffuss.com` y sus subdominios; mientras dura el cambio de dominio, también
-  `*.elffuss.utopiaia.com`) y a `localhost` en desarrollo. Para integrar desde
+- **Origen permitido**: el broker solo responde a las webs de Elffuss que lo
+  usan (`elffuss.com` y `claw`, `code`, `t2t`, `translator`, `copilot`, `models`,
+  `m1`, `m2`… `.elffuss.com`; mientras dura el cambio de dominio, los mismos bajo
+  `elffuss.utopiaia.com`) y a `localhost` en desarrollo. No a `git.*` ni a
+  `key.*`, aunque sean de Elffuss. Para integrar desde
   otro dominio, hay que añadirlo a la lista del broker — escríbenos. (Da igual
   para la caché: tu site tendrá la suya.)
 - **`targetOrigin` explícito** en los dos sentidos y **valida `event.origin`**;
