@@ -8,10 +8,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BROKER DE MODELOS · caché OPFS compartida entre todas las webs de Elffuss.
 // Se embebe como iframe oculto desde cada propiedad (claw/translator/copilot/…).
-// Como todas son subdominios de utopiaia.com (mismo «site»), este iframe es
+// Como todas son subdominios de elffuss.com (mismo «site»), este iframe es
 // first-party en todas y comparte UNA sola OPFS → el modelo se descarga UNA vez
 // y se reutiliza en todas. (Un tercero que lo integre tiene su propia partición
-// por privacidad del navegador: se baja una vez POR SU site.)
+// por privacidad del navegador: se baja una vez POR SU site. Los hosts viejos de
+// elffuss.utopiaia.com son, para el navegador, otro site distinto.)
 // API postMessage: {type:'elffuss-model-get', id, url} → {kind:'progress'}* →
 // {kind:'file', file} | {kind:'error', message}.  {type:'elffuss-model-has', id, url}
 // (Aquí ponía que la respuesta venían trozos de ArrayBuffer, que es la versión
@@ -21,11 +22,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const DIR = 'elffuss-models';
 const CHUNK = 8 * 1024 * 1024;
-// Orígenes permitidos: todo *.utopiaia.com. Las integraciones de terceros se
-// añaden por query (?allow=https://otra.com) — cada una en su propia partición.
+// Orígenes permitidos: las webs de Elffuss y nada más. NO todo *.utopiaia.com,
+// que es lo que ponía antes: ese dominio aloja más cosas que Elffuss.
+//   · elffuss.com y sus subdominios (el dominio de ahora)
+//   · elffuss.utopiaia.com y sus subdominios (el anterior: se sigue aceptando
+//     mientras dure el cambio de dominio)
+//   · los alias más viejos elffuss-claw y elffuss-code .utopiaia.com
+// Las integraciones de terceros se añaden por query (?allow=https://otra.com)
+// — cada una en su propia partición.
 const extra = new URLSearchParams(location.search).getAll('allow');
 function allowed(origin) {
-  if (/^https:\/\/([\w-]+\.)*utopiaia\.com$/.test(origin)) return true;
+  if (/^https:\/\/([\w-]+\.)*elffuss\.com$/.test(origin)) return true;
+  if (/^https:\/\/([\w-]+\.)*elffuss\.utopiaia\.com$/.test(origin)) return true;
+  if (/^https:\/\/elffuss-(claw|code)\.utopiaia\.com$/.test(origin)) return true;
   if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;     // desarrollo
   return extra.includes(origin);
 }

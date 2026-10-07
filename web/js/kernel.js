@@ -998,15 +998,20 @@ Si no hay nada útil que decir: CONSEJO: —`;
 // ── Pipe cross-origin: skills de audio en vivo desde el Translator ──
 (function copilotPipe() {
   try { if (!/[?&]copilot=1/.test(location.search)) return; } catch { return; }
-  const ALLOWED = 'https://translator.elffuss.utopiaia.com';
+  // El Translator vive en translator.elffuss.com. El host anterior se sigue
+  // aceptando mientras dure el cambio de dominio; translator.utopiaia.com no
+  // hace falta porque solo redirige y nunca llega a abrir esta ventana.
+  const ALLOWED = ['https://translator.elffuss.com', 'https://translator.elffuss.utopiaia.com'];
   // qué skill de audio se ha pedido (?skill=ficha, etc.)
   const want = (location.search.match(/[?&]skill=([\w-]+)/) || [])[1];
   if (want && AUDIO_SKILLS[want]) copilotSkill = AUDIO_SKILLS[want];
   let started = false;
   window.addEventListener('message', e => { if (e.data && e.data.type === 'surface-ready') copilotPostState(''); });
   window.addEventListener('message', async e => {
-    if (e.origin !== ALLOWED) return;
-    window.__copilotOpener = ALLOWED;
+    if (!ALLOWED.includes(e.origin)) return;
+    // Se contesta al origen que habló, no a uno fijo: con dos hosts válidos,
+    // responder siempre al mismo dejaría mudo al otro.
+    window.__copilotOpener = e.origin;
     const m = e.data || {};
     if (m.kind === 'copilot-init' && !started) {
       started = true;
@@ -1021,7 +1026,7 @@ Si no hay nada útil que decir: CONSEJO: —`;
       copilotInitState();
       renderCopilotBoard();
       // Proyectar la superficie a la app que nos abrió → pantalla partida real.
-      try { window.opener?.postMessage({ kind: 'surface', v: 1, id: sk.id, title: sk.icon + ' ' + sk.name, html: surfaceHtml(sk) }, ALLOWED); } catch { /* */ }
+      try { window.opener?.postMessage({ kind: 'surface', v: 1, id: sk.id, title: sk.icon + ' ' + sk.name, html: surfaceHtml(sk) }, e.origin); } catch { /* */ }
       clearInterval(window.__copilotBoardWatch);
       window.__copilotBoardWatch = setInterval(() => {
         const f = document.getElementById('appframe');
@@ -1036,5 +1041,8 @@ Si no hay nada útil que decir: CONSEJO: —`;
       copilotTurn(line);
     }
   });
-  try { if (window.opener) window.opener.postMessage({ kind: 'copilot-ready' }, ALLOWED); } catch { /* */ }
+  // Aquí aún no se sabe cuál de los dos abrió la ventana (es otro origen y no se
+  // puede leer), así que se avisa a ambos: postMessage solo entrega el mensaje
+  // al que coincide con el destino y descarta el otro.
+  if (window.opener) for (const o of ALLOWED) { try { window.opener.postMessage({ kind: 'copilot-ready' }, o); } catch { /* */ } }
 })();

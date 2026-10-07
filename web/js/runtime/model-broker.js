@@ -1,11 +1,11 @@
 // Elffuss Runtime · SDK de la caché compartida de modelos.
 // ─────────────────────────────────────────────────────────────────────────────
 // Embebe un iframe oculto al BROKER (origen compartido de Elffuss) y le pide los
-// modelos por postMessage. Como el broker vive en un subdominio de utopiaia.com
+// modelos por postMessage. Como el broker vive en un subdominio de elffuss.com
 // —igual que todas las webs de Elffuss (mismo «site»)—, comparte UNA sola OPFS:
 // el modelo se descarga UNA vez y se reutiliza en claw/translator/copilot/code…
 // Si el broker no está disponible, el llamador cae a su OPFS local (model-store).
-export const BROKER_URL = 'https://models.elffuss.utopiaia.com/';
+export const BROKER_URL = 'https://models.elffuss.com/';
 
 // Un iframe POR ORIGEN. La maquinaria está, pero OJO con para qué sirve, porque
 // medirlo costó una tarde y el resultado no es el que parecía.
@@ -60,13 +60,30 @@ function _ensureNuevo(brokerURL, entrada) {
 const origin = url => new URL(url).origin;
 const ventana = url => _brokers.get(new URL(url).origin)?.iframe?.contentWindow;
 
+// Qué broker guarda un fichero.
+// ─────────────────────────────────────────────────────────────────────────────
+// El del ORIGEN DEL PROPIO FICHERO cuando ese origen sirve la página del broker
+// (models, m1, m2… de elffuss.com, o del dominio anterior mientras dure el
+// cambio): así cada trozo lo guarda quien lo sirve, la petición es del mismo
+// origen (sin CORS) y ocupa la cuota de ESE subdominio. Cualquier otro fichero
+// va al broker compartido.
+//
+// Antes se usaba el origen del fichero SIEMPRE, y con un modelo de Hugging Face
+// eso embebía huggingface.co como si fuera el broker: nadie contestaba, cada
+// sesión se comía los 8 s del timeout y después daba el broker por caído.
+const HOST_BROKER = /^(models|m\d+)\.elffuss\.(com|utopiaia\.com)$/;
+export function brokerFor(url) {
+  // Relativa → lanza, como antes: el broker vive en otro origen y la
+  // resolvería contra el suyo, que es otro fichero.
+  const u = new URL(url);
+  return u.protocol === 'https:' && HOST_BROKER.test(u.hostname) ? u.origin + '/' : BROKER_URL;
+}
+
 // Modelo como Blob (el navegador lo respalda en disco), desde la caché compartida.
 // Descarga una vez para TODO Elffuss; el resto de webs lo leen sin red.
 export async function getSharedModel(url, onProgress = () => {}, brokerURL = null) {
-  // Por defecto el broker es el ORIGEN DEL PROPIO FICHERO: así cada trozo lo
-  // guarda quien lo sirve, la petición es del mismo origen (sin CORS) y el
-  // trozo ocupa la cuota de ESE subdominio, que es lo que multiplica el techo.
-  brokerURL = brokerURL || (origin(url) + '/');
+  // Por defecto, el broker que le toca a ESE fichero (ver brokerFor).
+  brokerURL = brokerURL || brokerFor(url);
   await ensure(brokerURL);
   return new Promise((resolve, reject) => {
     const id = ++_seq;
@@ -96,7 +113,7 @@ export async function getSharedModel(url, onProgress = () => {}, brokerURL = nul
 
 // ¿ya está en la caché compartida? (para la UI: «cargando desde caché, sin bajar»)
 export async function isSharedCached(url, brokerURL = null) {
-  brokerURL = brokerURL || (origin(url) + '/');
+  brokerURL = brokerURL || brokerFor(url);
   try { await ensure(brokerURL); } catch { return false; }
   return new Promise(resolve => {
     const id = ++_seq; const to = setTimeout(() => { removeEventListener('message', h); resolve(false); }, 4000);

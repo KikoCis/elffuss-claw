@@ -20,7 +20,7 @@ ROOT = os.environ.get('ELFFUSS_ROOT') or str(Path(__file__).resolve().parent.par
 MAX_PROXY_BYTES = 2_000_000
 # En desarrollo, /v1 (modelo) se reenvía a producción; en producción lo
 # resuelve nginx directamente contra llama-server, no este forward.
-LM_UPSTREAM = os.environ.get('ELFFUSS_LM') or 'https://elffuss.utopiaia.com'
+LM_UPSTREAM = os.environ.get('ELFFUSS_LM') or 'https://elffuss.com'
 
 # /proxy/report — buzón de errores/feedback (opt-in, ver web/js/telemetry.js).
 # Nunca lleva código del proyecto del usuario, solo el mensaje técnico y
