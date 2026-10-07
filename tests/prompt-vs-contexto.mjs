@@ -15,7 +15,7 @@
 import { chromium } from 'playwright';
 
 const LOCAL = process.env.LOCAL || 'http://localhost:8642';
-const PROD = process.env.PROD || 'https://claw.elffuss.utopiaia.com';
+const PROD = process.env.PROD || 'https://claw.elffuss.com';
 const CTX = +(process.env.CTX || 512);            // el registrado para el 27B
 // Margen para lo que escribe el usuario y para la respuesta. Sin él «cabe» un
 // prompt que no deja sitio para contestar, y entonces el fallo aparece a mitad

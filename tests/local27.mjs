@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
 const WEB = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'web');
-const ORIGEN = process.env.MODELO || 'https://claw.elffuss.utopiaia.com/models/qwen38-27b.gguf';
+const ORIGEN = process.env.MODELO || 'https://claw.elffuss.com/models/qwen38-27b.gguf';
 // El mismo guion sirve para el hermano pequeño: mismo motor, mismo proveedor,
 // mismo camino de chat, pero 800 MB en vez de 7,6 GB. Cuando el grande se muere
 // a mitad —le pasa—, esto sigue diciendo si el CÓDIGO está bien.

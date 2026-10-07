@@ -1,7 +1,7 @@
 # NECESIDADES — Elffuss → agentic-install
 
 Canal de peticiones entre proyectos. **Elffuss** (SO web en el navegador,
-`~/work2026/elffuss`, producción en elffuss.utopiaia.com) pide aquí; el agente de
+`~/work2026/elffuss`, producción en elffuss.com) pide aquí; el agente de
 **agentic-install** sirve y actualiza el estado. Hermano: [ERRORES.md](ERRORES.md)
 para fallos encontrados probando.
 

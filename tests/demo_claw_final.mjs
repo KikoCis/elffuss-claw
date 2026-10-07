@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 const REC = process.env.REC || new URL('../../elffuss-assets/_recording', import.meta.url).pathname;
 const OUT = process.env.OUT || REC + '/videos';
 mkdirSync(OUT, { recursive: true });
-const BASE = process.env.BASE || 'https://elffuss-claw.utopiaia.com';
+const BASE = process.env.BASE || 'https://claw.elffuss.com';
 
 async function waitIdle(p, maxMs = 180000) {
   const t0 = Date.now();

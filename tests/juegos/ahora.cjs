@@ -31,7 +31,7 @@ const VARIANTES=[{k:"borrador",rounds:0,nota:null,bestOf:1},
   const ctx=await chromium.launchPersistentContext(os.homedir()+"/.cache/elffuss-e4b",
     {channel:"chrome",headless:true,args:["--enable-unsafe-webgpu"]});
   const p=await ctx.newPage();
-  await p.goto("https://claw.elffuss.utopiaia.com/",{waitUntil:"domcontentloaded"});
+  await p.goto("https://claw.elffuss.com/",{waitUntil:"domcontentloaded"});
   await p.waitForTimeout(1500);
 
   // GUARDIA: sin esto se mide una versión del código que no es la que crees

@@ -28,7 +28,7 @@ import { extname, join, normalize } from 'path';
 import { fileURLToPath } from 'url';
 
 const WEB = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'web');
-const ORIGEN = process.env.MODELO || 'https://claw.elffuss.utopiaia.com/models/qwen38-27b.gguf';
+const ORIGEN = process.env.MODELO || 'https://claw.elffuss.com/models/qwen38-27b.gguf';
 const PUERTO = +(process.env.PUERTO || 8646);
 const RUTA_MODELO = '/models/qwen38-27b.gguf';
 const VIDEODIR = process.env.VIDEODIR || '/tmp/claw-demo-corto';

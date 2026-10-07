@@ -6,13 +6,13 @@ for it. The agent generates it as self-contained HTML and it appears instantly i
 viewer. Nothing to install, no mandatory backend, and the model runs **inside your
 browser** (WebGPU) — everything stays on your machine.
 
-**[▶️ Live demo](https://elffuss-claw.utopiaia.com)** ·
+**[▶️ Live demo](https://claw.elffuss.com)** ·
 **[🧑‍💻 Elffuss Code (sibling project)](https://github.com/KikoCis/elffuss-code)** ·
 **[🧬 Shared core](https://github.com/KikoCis/elffuss)** ·
 **License: Apache-2.0**
 
 <p align="center">
-  <a href="https://elffuss-claw.utopiaia.com">
+  <a href="https://claw.elffuss.com">
     <img src="https://utopiaia.com/demos/elffuss/elffuss-claw-demo.gif" alt="Elffuss Claw — ask for a notes app and it's generated and rendered on the spot" width="820">
   </a>
 </p>

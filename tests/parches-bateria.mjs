@@ -50,7 +50,7 @@ const CASOS = [
 
 const b = await chromium.launch({ channel: 'chrome', headless: true });
 const p = await (await b.newContext()).newPage();
-await p.goto('https://claw.elffuss.utopiaia.com/', { waitUntil: 'domcontentloaded' });
+await p.goto('https://claw.elffuss.com/', { waitUntil: 'domcontentloaded' });
 await p.waitForTimeout(1200);
 
 const res = await p.evaluate(async ({ CASOS, HTML }) => {

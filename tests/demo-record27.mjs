@@ -15,7 +15,7 @@ import { extname, join, normalize } from 'path';
 import { fileURLToPath } from 'url';
 
 const WEB = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'web');
-const ORIGEN = process.env.MODELO || 'https://claw.elffuss.utopiaia.com/models/qwen38-27b.gguf';
+const ORIGEN = process.env.MODELO || 'https://claw.elffuss.com/models/qwen38-27b.gguf';
 const PUERTO = +(process.env.PUERTO || 8644);
 const RUTA_MODELO = '/models/qwen38-27b.gguf';
 const VIDEODIR = process.env.VIDEODIR || '/tmp/claw-demo-video';
@@ -73,7 +73,7 @@ const server = createServer(async (req, res) => {
 // producción, GGUF incluido. Tarda más (~430-545 s) pero es la experiencia real.
 const PROD = process.env.PROD === '1';
 if (!PROD) await new Promise(r => server.listen(PUERTO, r));
-const BASE = PROD ? 'https://claw.elffuss.utopiaia.com' : `http://localhost:${PUERTO}`;
+const BASE = PROD ? 'https://claw.elffuss.com' : `http://localhost:${PUERTO}`;
 const t0 = Date.now();
 const seg = () => ((Date.now() - t0) / 1000).toFixed(0).padStart(4);
 const log = s => console.log(`[${seg()}s] ${s}`);

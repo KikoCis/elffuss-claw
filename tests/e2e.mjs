@@ -2,11 +2,11 @@
 // Corre en modo básico (determinista, sin GPU): ejercita el bucle agéntico,
 // las herramientas y la UI de verdad, no mocks.
 //
-//   BASE=https://elffuss-claw.utopiaia.com node e2e.mjs   (o local con serve.py)
+//   BASE=https://claw.elffuss.com node e2e.mjs   (o local con serve.py)
 //   npm i && npm test
 import { chromium } from 'playwright';
 
-const BASE = process.env.BASE || 'https://elffuss-claw.utopiaia.com';
+const BASE = process.env.BASE || 'https://claw.elffuss.com';
 let fails = 0;
 const ok = (name, cond, extra = '') => { console.log((cond ? '✅' : '❌') + ' ' + name + (extra ? '  — ' + extra : '')); if (!cond) fails++; };
 

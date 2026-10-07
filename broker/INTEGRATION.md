@@ -3,11 +3,11 @@
 Los modelos de IA (cientos de MB a varios GB) se descargan **una vez** y se
 reutilizan. Este broker resuelve que cada web (cada *origen*) re-descargue el
 mismo modelo: expone **una** caché en disco (OPFS) desde un origen compartido
-(`models.elffuss.utopiaia.com`) al que cada web pide los modelos por `postMessage`.
+(`models.elffuss.com`) al que cada web pide los modelos por `postMessage`.
 
 ## Qué se comparte y qué NO (léelo antes de nada)
 
-- ✅ **Entre todas las webs de Elffuss** (`*.utopiaia.com`, mismo *site*): se
+- ✅ **Entre todas las webs de Elffuss** (`*.elffuss.com`, mismo *site*): se
   comparte **una sola caché**. Un modelo bajado en `claw` está al instante en
   `copilot`, `translator`, `code`. (Probado en vivo.)
 - ⚠️ **Desde OTRO dominio** (tú integras Elffuss en `tu-web.com`): el navegador
@@ -26,7 +26,7 @@ esperes compartir la descarga entre webs distintas.
 
 ```html
 <script type="module">
-const BROKER = 'https://models.elffuss.utopiaia.com/';
+const BROKER = 'https://models.elffuss.com/';
 
 let iframe, ready;
 function ensure() {
@@ -75,9 +75,11 @@ Para saber si ya está sin bajarlo: `postMessage({type:'elffuss-model-has', id, 
 
 ## Requisitos y avisos
 
-- **Origen permitido**: el broker solo responde a `*.utopiaia.com` (y `localhost`
-  en desarrollo). Para integrar desde otro dominio, hay que añadirlo a la lista
-  del broker — escríbenos. (Da igual para la caché: tu site tendrá la suya.)
+- **Origen permitido**: el broker solo responde a las webs de Elffuss
+  (`elffuss.com` y sus subdominios; mientras dura el cambio de dominio, también
+  `*.elffuss.utopiaia.com`) y a `localhost` en desarrollo. Para integrar desde
+  otro dominio, hay que añadirlo a la lista del broker — escríbenos. (Da igual
+  para la caché: tu site tendrá la suya.)
 - **`targetOrigin` explícito** en los dos sentidos y **valida `event.origin`**;
   nunca uses `'*'` para datos.
 - **COOP/COEP**: si tu app está *cross-origin isolated* (usa `SharedArrayBuffer`),
@@ -92,7 +94,7 @@ Para saber si ya está sin bajarlo: `postMessage({type:'elffuss-model-has', id, 
 
 ## Descarga sin broker (bonus, mismo-site)
 
-Si sirves los modelos desde **un solo origen** (`models.elffuss.utopiaia.com`) con
+Si sirves los modelos desde **un solo origen** (`models.elffuss.com`) con
 cabeceras `Cache-Control: public, max-age=31536000, immutable`, el navegador ya
 **deduplica la descarga de red** entre subdominios del mismo site (la caché HTTP
 se particiona por *site*). Es un extra gratis; el broker + OPFS es la capa

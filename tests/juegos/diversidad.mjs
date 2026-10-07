@@ -12,7 +12,7 @@ try { execSync('rm -f ~/.cache/elffuss-e4b/Singleton*'); } catch {}
 const ctx = await chromium.launchPersistentContext(os.homedir() + '/.cache/elffuss-e4b',
   { channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu'] });
 const p = await ctx.newPage();
-await p.goto('https://claw.elffuss.utopiaia.com/', { waitUntil: 'domcontentloaded' });
+await p.goto('https://claw.elffuss.com/', { waitUntil: 'domcontentloaded' });
 await p.waitForTimeout(1500);
 await p.evaluate(async () => { const m = await import('/js/providers/litert.js'); m.configure('gemma-e4b'); await m.load(() => {}); });
 

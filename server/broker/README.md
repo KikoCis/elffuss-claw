@@ -1,9 +1,15 @@
 # Broker de modelos
 
-La página que se sirve en `models`, `m1` y `m2` `.elffuss.utopiaia.com`. Se
-embebe como iframe oculto desde las webs de Elffuss y guarda los modelos en el
-almacén del navegador, para que se descarguen **una vez** en vez de en cada
-sesión.
+La página que se sirve en `models`, `m1` y `m2` `.elffuss.com` (y, mientras
+dura el cambio de dominio, también en los mismos hosts de `.elffuss.utopiaia.com`,
+que siguen sirviendo sin redirigir). Se embebe como iframe oculto desde las webs
+de Elffuss y guarda los modelos en el almacén del navegador, para que se
+descarguen **una vez** en vez de en cada sesión.
+
+Solo responde a las webs de Elffuss: `elffuss.com` y sus subdominios,
+`elffuss.utopiaia.com` y sus subdominios, los alias viejos `elffuss-claw` y
+`elffuss-code` `.utopiaia.com`, y `localhost` en desarrollo. No a todo
+`*.utopiaia.com`.
 
 Estaba solo en el servidor, editada a mano. Se versiona aquí porque lleva
 lógica que costó encontrar y que se perdería con un despliegue o una limpieza.
@@ -23,6 +29,8 @@ basura dentro.
 guarda referencias a los ficheros, así que no se traga los gigabytes en memoria.
 
 ## Cómo se despliega
+
+Los docroots se llaman como el host anterior:
 
     scp server/broker/index.html <host>:/tmp/br.html
     ssh <host> 'for h in models m1 m2; do
