@@ -23,13 +23,13 @@ const DEFAULTS = {
   },
   server: {
     kind: 'openai', label: 'Servidor Elffuss (Ornith 9B)', enabled: false,
-    // ⚠️ ROTO hoy, y no se arregla solo con cambiar el host. elffuss-claw.utopiaia.com
-    // ya solo redirige (y un POST que recibe un 301 se repite como GET, sin el
-    // cuerpo), y el servicio del modelo (elffuss-lm) está apagado. El destino
-    // natural sería https://claw.elffuss.com/v1, pero esa ruta la resuelve nginx
-    // en el servidor y su configuración no está en este repo: no se apunta ahí
-    // hasta que exista de verdad, porque cambiar un roto por otro no arregla nada.
-    baseURL: 'https://elffuss-claw.utopiaia.com/v1', model: 'ornith-9b', apiKey: '',
+    // Apagado: el servicio del modelo (elffuss-lm) está parado. El mismo valor que
+    // en Elffuss Code. La ruta /v1 la resuelve nginx en el servidor (no está en
+    // este repo); mientras dure el cambio de dominio la sigue sirviendo también
+    // claw.elffuss.utopiaia.com, sin redirigir. elffuss-claw.utopiaia.com no
+    // vale: solo redirige, y un POST que recibe un 301 se repite como GET, sin
+    // el cuerpo.
+    baseURL: 'https://claw.elffuss.com/v1', model: 'ornith-9b', apiKey: '',
     temperature: 1.0, top_p: 0.95, thinking: false,
     help: 'El modelo grande en el servidor de UtopiaIA. No es local: los mensajes salen de tu máquina.',
   },
