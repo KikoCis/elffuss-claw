@@ -38,7 +38,7 @@ const extra = new URLSearchParams(location.search).getAll('allow');
 const WEBS = /^https:\/\/((claw|code|t2t|translator|copilot|models|m\d+)\.)?elffuss\.(com|utopiaia\.com)$/;
 function allowed(origin) {
   if (WEBS.test(origin)) return true;
-  if (/^https:\/\/elffuss-(claw|code)\.utopiaia\.com$/.test(origin)) return true;
+  if (/^https:\/\/(elffuss-(claw|code)|burn-my-computer)\.utopiaia\.com$/.test(origin)) return true;   // alias antiguos y Burn My Computer
   if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;     // desarrollo
   return extra.includes(origin);
 }
