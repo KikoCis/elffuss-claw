@@ -174,10 +174,14 @@ export async function forceCycle() {
 
 async function tick() {
   if (!enabled) return;
-  const idle = Date.now() - lastActivity;
-  const rested = Date.now() - lastCycleEnd > COOLDOWN_MS;
-  const mightRun = isLeader && !running && !isBusy() && idle >= IDLE_MS && rested && getProvider();
-  if (mightRun && await ws?.isReady() && !running) {
+  // ¿Toca ciclo? Se mira ANTES y DESPUÉS de esperar a isReady(). Esa espera
+  // puede ser asíncrona (Claw consulta IndexedDB) y mientras dura puede llegar
+  // una pausa o actividad del usuario; como aún no hay ciclo en marcha,
+  // interrupt() no tiene nada que parar. Mirando después solo `running`, un
+  // ciclo entero arrancaba —y escribía su propuesta— justo después de pausar.
+  const toca = () => enabled && isLeader && !running && !isBusy()
+    && Date.now() - lastActivity >= IDLE_MS && Date.now() - lastCycleEnd > COOLDOWN_MS && !!getProvider();
+  if (toca() && await ws?.isReady() && toca()) {
     try { await runCycle(); } catch { /* siguiente ciclo */ }
     lastCycleEnd = Date.now();
   }
