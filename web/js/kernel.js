@@ -323,23 +323,62 @@ function send(text) {
   pump();
 }
 
+// ---- parar (botón ■) ----
+// Un AbortController POR TURNO, creado en process(): lo reciben el agente y
+// Hard Work, y stopCurrent() lo aborta. Parar vacía también la cola —lo que
+// esperaba detrás tampoco se procesa— y la guarda vacía AL MOMENTO: si no, al
+// recargar se reanudaría justo lo que acabas de parar. El turno en curso sale
+// de la cola por identidad (ver pump), así que lo que envíes después de parar
+// no se pierde aunque llegue antes de que el turno termine de soltarse.
+// (turnCtl apunta siempre al ÚLTIMO turno; abortar uno ya terminado no hace nada.)
+let turnCtl = null;
+// Época del histórico: 🧹 la sube, y un turno que empezó en una época anterior
+// no guarda el histórico al terminar (ver el botón 🧹).
+let epocaHistorial = 0;
+let pumpFin = Promise.resolve();
+function stopCurrent() {
+  try { turnCtl?.abort(); } catch { /* */ }
+  for (const it of queue) {
+    if (!it.el?.classList.contains('queued')) continue;   // el que ya está en marcha no se tacha
+    it.el.classList.remove('queued');
+    it.el.classList.add('cancelled');
+  }
+  queue.length = 0;
+  persistQueue();
+}
+
+// Mientras haya cola o turno, el botón de enviar es ■. El finally garantiza que
+// vuelve a ser ➤ aunque un turno reviente: si no, se quedaría en ■ para siempre.
 async function pump() {
   if (pumping) return;
   pumping = true;
+  ui.setWorking(true);
+  let fin; pumpFin = new Promise(r => { fin = r; });
+  try { await vaciarCola(); }
+  finally { pumping = false; ui.setWorking(false); fin(); }
+}
+
+async function vaciarCola() {
   await bootPromise; // no procesar hasta que el cerebro inicial esté resuelto
   while (queue.length) {
     const item = queue[0];
-    item.el?.classList.remove('queued');
     // El intento se cuenta y se GUARDA antes de procesar: si el turno mata la
     // pestaña, esto es lo único que queda para saber que ya se intentó —
     // guardarlo después no serviría, porque no habría después.
     item.intentos = (item.intentos || 0) + 1;
     await persistQueue();
+    // ■ pulsado MIENTRAS se guardaba: stopCurrent() ya vació la cola y tachó
+    // este mensaje (aún estaba marcado en cola). No se procesa: process()
+    // crearía un controlador nuevo que nadie aborta y la parada se perdería.
+    if (queue[0] !== item) continue;
+    item.el?.classList.remove('queued');
     if (item.intentos > MAX_INTENTOS) {
       item.el?.remove();
       ui.addMsg('sys', `⚠️ «${String(item.text).slice(0, 60)}…» se quedó a medias dos veces y no lo reintento solo: ` +
         `puede estar agotando la memoria. Vuelve a enviarlo si quieres insistir.`);
-      queue.shift();
+      // Por identidad, como al terminar un turno (ver abajo), y no con shift().
+      const j = queue.indexOf(item);
+      if (j >= 0) queue.splice(j, 1);
       await persistQueue();
       continue;
     }
@@ -348,14 +387,18 @@ async function pump() {
     // (incluye este turno como lastDone). Solo entonces sacamos de la cola.
     // Si el refresco cae entre ambos commits, el mensaje aparece en histórico
     // Y en cola → restoreQueue lo deduplica; nunca se pierde.
-    queue.shift();
+    // Por IDENTIDAD y no con shift(): si se paró a mitad, la cola ya se vació
+    // y lo que haya ahora delante es un mensaje nuevo, que shift() tiraría.
+    const i = queue.indexOf(item);
+    if (i >= 0) queue.splice(i, 1);
     await persistQueue();
   }
-  pumping = false;
 }
 
 async function process(text) {
-  if (hardMode) return processHardWork(text);
+  const signal = (turnCtl = new AbortController()).signal;
+  const epoca = epocaHistorial;
+  if (hardMode) return processHardWork(text, signal, epoca);
   busy = true;
   const thinking = ui.thinkingBubble();
   // Tasa de resolución y tiempo por tarea: se miden AQUÍ, envolviendo la
@@ -367,7 +410,7 @@ async function process(text) {
   // Contar solo las excepciones daría un 100 % permanente: el fallo típico no
   // es una excepción, es una respuesta que llega como `error` al usuario.
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  let huboError = false;
+  let huboError = false, parado = false;
   try {
     await agent.handle(text, ev => {
       if (ev.type === 'prefill') thinking.prefill?.(ev.hechos, ev.total);
@@ -376,12 +419,16 @@ async function process(text) {
       if (ev.type === 'tool') { thinking.tool(ev.call.tool); ui.addTool(ev.call); }
       if (ev.type === 'tool_result') ui.addToolResult(ev.tool, ev.result);
       if (ev.type === 'error') { huboError = true; ui.addMsg('assistant err', ev.text); }
-    });
+      if (ev.type === 'aborted') { parado = true; ui.addMsg('assistant muted', ev.text); }   // parado: aviso, no error
+    }, { signal });
   } catch (e) {
     huboError = true;
     throw e;
   } finally {
-    try {
+    // Un turno PARADO no es una tarea resuelta ni fallida: no se apunta.
+    // Contarlo como resuelta inflaría la tasa, y su tiempo sería el que tardaste
+    // en pulsar ■, no el de la tarea.
+    if (!parado) try {
       const vm = await import('./velocimetro.js');
       const ahora = (typeof performance !== 'undefined' ? performance.now() : Date.now());
       vm.tarea({ ok: !huboError, ms: ahora - t0 });
@@ -390,19 +437,24 @@ async function process(text) {
     busy = false;
     // Histórico persistente COMMITEADO (await) antes de vaciar la cola: al
     // refrescar, la conversación sigue ahí y ningún mensaje se pierde.
-    await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
-    await db.set('kv', 'lastDone', text).catch(() => {});
-    workspace.touch('history');
+    if (epoca === epocaHistorial) {
+      await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
+      await db.set('kv', 'lastDone', text).catch(() => {});
+      workspace.touch('history');
+    }
   }
 }
 
 // Hard Work (RLM): trabaja la carpeta autorizada ENTERA por partes. El modelo
 // no ve todo de golpe — se trocea, se pregunta a cada parte y se funde. Tarda,
 // pero abarca material que no cabe en la ventana del modelo.
-async function processHardWork(question) {
+// `signal` es el del turno: rlm.js lo pasa a cada llamada al modelo y lo mira
+// entre trozos y rondas; al parar lanza un AbortError, que aquí es un aviso.
+async function processHardWork(question, signal, epoca) {
   busy = true;
   const thinking = ui.thinkingBubble();
   const fail = msg => { thinking.remove(); ui.addMsg('assistant', msg); busy = false; };
+  const siParado = () => { if (signal?.aborted) throw Object.assign(new Error('parado'), { name: 'AbortError' }); };
   try {
     if (activeModel === 'rules') return fail('Hard Work necesita un cerebro cargado: elige un modelo local o remoto en el selector de arriba y vuelve a intentarlo.');
     const names = await fs.folders().catch(() => []);
@@ -410,13 +462,14 @@ async function processHardWork(question) {
       // Sin carpeta que leer → modo CREACIÓN: el modelo hace un borrador, se
       // autocritica y se reescribe. Misma petición, dos pasadas → mejor app.
       const res = await deepCreate({
-        brief: question, provider: agent.provider, rounds: 1,
+        brief: question, provider: agent.provider, rounds: 1, signal,
         onProgress: p => thinking.tool(
           p.phase === 'draft' ? 'Hard Work · borrador…'
             : p.phase === 'critique' ? `Hard Work · autocrítica ${p.round}`
             : p.phase === 'rewrite' ? `Hard Work · reescribiendo ${p.round}`
             : 'Hard Work · listo'),
       });
+      siParado();
       thinking.remove();
       const name = (question.trim().slice(0, 24) || 'app');
       try { await apps.create({ name, html: res.html }); } catch { /* si falla, al menos responde */ }
@@ -428,9 +481,10 @@ async function processHardWork(question) {
     thinking.tool('Hard Work · abriendo carpeta…');
     const root = await fs.root();
     const context = await gatherFolder(root, { maxBytes: 1.5e6 });
+    siParado();
     if (!context.trim()) return fail('Esa carpeta no tiene archivos de texto que pueda leer. Autoriza otra con documentos/código y reintenta.');
     const res = await hardWork({
-      question, context, provider: agent.provider,
+      question, context, provider: agent.provider, signal,
       onProgress: p => {
         if (p.phase === 'plan') thinking.tool(`Hard Work · ${p.chunks} partes (${Math.round(p.chars / 1000)}k)${p.truncated ? ' — recorté al máximo' : ''}`);
         else if (p.phase === 'map') thinking.tool(`Hard Work · leyendo ${p.i}/${p.n}`);
@@ -438,17 +492,22 @@ async function processHardWork(question) {
         else if (p.phase === 'reduce') thinking.tool('Hard Work · sintetizando…');
       },
     });
+    siParado();
     thinking.remove();
     ui.addMsg('assistant', res.answer + `\n\n_⛏ Hard Work (RLM): leí ${names[0]} en ${res.chunks} partes, ${res.kept} con señal.${res.truncated ? ' Material recortado al máximo — acota la carpeta para abarcarlo entero.' : ''}_`);
     agent.history.push({ role: 'user', content: question, ts: Date.now() });
     agent.history.push({ role: 'assistant', content: res.answer, ts: Date.now() });
   } catch (e) {
     thinking.remove();
-    ui.addMsg('assistant err', 'Hard Work falló: ' + (e?.message || String(e)));
+    // Parar no es un fallo: aviso discreto, como en el chat normal.
+    if (signal?.aborted) ui.addMsg('assistant muted', t('stopped'));
+    else ui.addMsg('assistant err', 'Hard Work falló: ' + (e?.message || String(e)));
   } finally {
     busy = false;
-    await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
-    await db.set('kv', 'lastDone', question).catch(() => {});
+    if (epoca === epocaHistorial) {
+      await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
+      await db.set('kv', 'lastDone', question).catch(() => {});
+    }
   }
 }
 
@@ -493,6 +552,16 @@ async function restoreHistory() {
 }
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
+  // PARAR PRIMERO. Un turno en marcha guarda el histórico al terminar: si lo
+  // hacía DESPUÉS de este borrado, la conversación «borrada» volvía al recargar.
+  // Subir la época hace que ese turno ya no guarde, y se espera (con tope) a que
+  // el turno abortado suelte el modelo antes de recargar. Es una época y no una
+  // bandera porque la recarga puede no llegar a ocurrir (si el navegador
+  // pregunta antes de salir y le dices que no): los turnos nuevos tienen que
+  // seguir guardando.
+  epocaHistorial++;
+  stopCurrent();
+  await Promise.race([pumpFin, new Promise(r => setTimeout(r, 3000))]);
   await db.del('kv', 'history').catch(() => {});
   await db.del('kv', 'queue').catch(() => {});
   agent.history = [];
@@ -579,7 +648,7 @@ if (!localStorage.getItem('elffuss.welcomed')) {
 }
 
 skills.initSkills();
-ui.init({ onSend: send, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
+ui.init({ onSend: send, onStop: stopCurrent, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
 ui.mountDiskChip();   // cuánto ocupan los modelos en este navegador, y cómo vaciarlo
 // Botón «liberar el modelo» del panel de consumo: suelta la RAM sin recargar.
 ui.setOnFreeModel(async () => {
