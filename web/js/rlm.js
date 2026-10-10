@@ -13,6 +13,13 @@
 //
 // El motor es agnóstico del proveedor: solo necesita algo con
 // `chat(history, system, onToken)` (lo cumplen rules/onnx/litert/api).
+//
+// PARAR: hardWork() y deepCreate() aceptan `signal` (un AbortSignal). Viaja a
+// cada llamada al modelo como 4º argumento de chat() —que es donde se va casi
+// todo el tiempo— y además se comprueba ENTRE llamadas: entre trozos, grupos,
+// tramos de continuación, candidatos y rondas. Al parar se lanza un error con
+// name 'AbortError', que quien llama trata como parada y no como fallo. Sin
+// señal, todo es exactamente igual que antes.
 
 const CHARS_PER_TOK = 4; // misma estimación que context.js
 const DEFAULTS = {
@@ -24,6 +31,13 @@ const DEFAULTS = {
 };
 
 const clip = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
+
+function siParado(signal) {
+  if (!signal?.aborted) return;
+  const e = new Error('Hard Work parado');
+  e.name = 'AbortError';
+  throw e;
+}
 
 // Trocea respetando límites de línea cuando es posible (no parte a mitad de
 // palabra si hay un salto cerca del corte).
@@ -43,12 +57,13 @@ function chunk(text, chunkChars, overlapChars) {
 }
 
 // sub(): UNA inferencia del modelo local sobre un fragmento. Es la recursión.
-async function sub(provider, system, prompt, timeoutMs) {
-  const run = provider.chat([{ role: 'user', content: prompt }], system, () => {});
-  if (!timeoutMs) return run;
+async function sub(provider, system, prompt, timeoutMs, signal = null) {
+  siParado(signal);
+  const run = provider.chat([{ role: 'user', content: prompt }], system, () => {}, signal);
+  if (!timeoutMs) { const r = await run; siParado(signal); return r; }
   let to;
   const guard = new Promise((_, rej) => { to = setTimeout(() => rej(new Error('sub-llamada agotó el tiempo')), timeoutMs); });
-  try { return await Promise.race([run, guard]); }
+  try { const r = await Promise.race([run, guard]); siParado(signal); return r; }
   finally { clearTimeout(to); }
 }
 
@@ -56,7 +71,7 @@ const MAP_SYS = 'Eres un analista minucioso. Te doy UN fragmento de un material 
 const REDUCE_SYS = 'Eres un sintetizador. Te doy una pregunta y varios hallazgos extraídos de fragmentos distintos del MISMO material. Fúndelos en una única respuesta, coherente y completa, a la pregunta. Resuelve solapes, no repitas, no inventes lo que no esté en los hallazgos. Responde en el idioma de la pregunta.';
 
 // Motor RLM. Devuelve { answer, chunks, kept }.
-export async function hardWork({ question, context, provider, onProgress = () => {}, opts = {} }) {
+export async function hardWork({ question, context, provider, onProgress = () => {}, opts = {}, signal = null }) {
   const o = { ...DEFAULTS, ...opts };
   if (!provider || typeof provider.chat !== 'function') throw new Error('Hard Work necesita un cerebro cargado (elige un modelo local o remoto arriba).');
   const q = String(question || '').trim();
@@ -73,28 +88,30 @@ export async function hardWork({ question, context, provider, onProgress = () =>
   // MAP — un modelo local es UN motor, así que las sub-llamadas van en serie.
   const findings = [];
   for (let i = 0; i < parts.length; i++) {
+    siParado(signal);
     onProgress({ phase: 'map', i: i + 1, n: parts.length });
     let ans;
-    try { ans = await sub(provider, MAP_SYS, `PREGUNTA:\n${q}\n\nFRAGMENTO ${i + 1}/${parts.length}:\n${parts[i]}`, o.callTimeoutMs); }
-    catch { ans = 'NADA'; }
+    try { ans = await sub(provider, MAP_SYS, `PREGUNTA:\n${q}\n\nFRAGMENTO ${i + 1}/${parts.length}:\n${parts[i]}`, o.callTimeoutMs, signal); }
+    catch { siParado(signal); ans = 'NADA'; }   // un trozo que falla no tumba el resto; parar, sí
     ans = String(ans || '').trim();
     if (ans && !/^NADA\b/i.test(ans)) findings.push(`[${i + 1}] ${ans}`);
   }
   onProgress({ phase: 'mapped', kept: findings.length, of: parts.length });
   if (!findings.length) return { answer: 'Revisé el material por partes y no encontré nada relevante para eso.', chunks: parts.length, kept: 0, truncated };
 
-  const answer = await reduce(provider, q, findings, o, onProgress, 0);
+  const answer = await reduce(provider, q, findings, o, onProgress, 0, signal);
   return { answer: String(answer || '').trim(), chunks: parts.length, kept: findings.length, truncated };
 }
 
 // REDUCE jerárquico: si los hallazgos caben, funde en uno; si no, agrupa,
 // funde cada grupo y recurre con las respuestas parciales.
-async function reduce(provider, q, findings, o, onProgress, depth) {
+async function reduce(provider, q, findings, o, onProgress, depth, signal = null) {
+  siParado(signal);
   const budget = o.chunkTokens * CHARS_PER_TOK * 2; // el reduce puede ver algo más que un trozo
   const joined = findings.join('\n');
   if (joined.length <= budget || depth >= o.maxDepth) {
     onProgress({ phase: 'reduce', depth, final: true });
-    return sub(provider, REDUCE_SYS, `PREGUNTA:\n${q}\n\nHALLAZGOS:\n${clip(joined, budget)}`, o.callTimeoutMs);
+    return sub(provider, REDUCE_SYS, `PREGUNTA:\n${q}\n\nHALLAZGOS:\n${clip(joined, budget)}`, o.callTimeoutMs, signal);
   }
   const groups = [];
   let cur = [];
@@ -107,11 +124,12 @@ async function reduce(provider, q, findings, o, onProgress, depth) {
   onProgress({ phase: 'reduce', depth, groups: groups.length, final: false });
   const partials = [];
   for (let g = 0; g < groups.length; g++) {
+    siParado(signal);
     onProgress({ phase: 'reduce-group', depth, g: g + 1, n: groups.length });
-    const p = await sub(provider, REDUCE_SYS, `PREGUNTA:\n${q}\n\nHALLAZGOS (grupo ${g + 1}/${groups.length}):\n${groups[g].join('\n')}`, o.callTimeoutMs);
+    const p = await sub(provider, REDUCE_SYS, `PREGUNTA:\n${q}\n\nHALLAZGOS (grupo ${g + 1}/${groups.length}):\n${groups[g].join('\n')}`, o.callTimeoutMs, signal);
     partials.push(`[g${g + 1}] ${String(p || '').trim()}`);
   }
-  return reduce(provider, q, partials, o, onProgress, depth + 1);
+  return reduce(provider, q, partials, o, onProgress, depth + 1, signal);
 }
 
 // ── Hard Work · CREACIÓN: borrador → autocrítica → reescritura ──────────────
@@ -138,18 +156,21 @@ const CONT_SYS = 'Continúas un documento HTML/JS que se cortó a media escritur
 // Genera y, si el modelo se quedó sin tokens a media escritura (el HTML no
 // cierra </html>), pide la continuación desde la cola y la cose. Así el techo
 // de 1024 tokens deja de truncar apps grandes: se completan por tramos.
-async function genComplete(provider, system, prompt, { maxCont = 4 } = {}) {
-  let full = String(await provider.chat([{ role: 'user', content: prompt }], system, () => {}) || '');
+async function genComplete(provider, system, prompt, { maxCont = 4, signal = null } = {}) {
+  siParado(signal);
+  let full = String(await provider.chat([{ role: 'user', content: prompt }], system, () => {}, signal) || '');
   for (let i = 0; i < maxCont && !/<\/html>/i.test(full); i++) {
+    siParado(signal);
     const tail = full.slice(-1400);
     let cont = String(await provider.chat(
       [{ role: 'user', content: `FINAL de lo escrito hasta ahora (continúa desde aquí, sin repetirlo):\n${tail}` }],
-      CONT_SYS, () => {}) || '');
+      CONT_SYS, () => {}, signal) || '');
     // Defensa: si el modelo reabre el documento en vez de continuar, recórtalo.
     cont = cont.replace(/^[\s\S]*?<!doctype html>/i, '').replace(/^[\s\S]*?<html[^>]*>/i, '');
     if (!cont.trim()) break;
     full += cont;
   }
+  siParado(signal);
   return full;
 }
 
@@ -200,7 +221,7 @@ const JURY_LENSES_EXTRA = [
   { key: 'bordes', name: 'casos límite', ask: 'casos límite y validación: entradas vacías, negativas o fuera de rango, ausencia de comprobaciones, resultados absurdos que nadie detiene' },
 ];
 
-export async function juryReview({ artifact, provider, onProgress = () => {}, lenses = null, requireEvidence = true }) {
+export async function juryReview({ artifact, provider, onProgress = () => {}, lenses = null, requireEvidence = true, signal = null }) {
   const dropped = [];
   if (!provider?.chat) throw new Error('el jurado necesita un cerebro cargado');
   const material = String(artifact || '').slice(0, 6000);
@@ -210,12 +231,13 @@ export async function juryReview({ artifact, provider, onProgress = () => {}, le
   // Ronda 1 — cada jurado propone defectos desde SU lente, sin ver a los demás.
   const proposals = [];
   for (const L of lenses) {
+    siParado(signal);
     onProgress({ phase: 'jury-propose', lens: L.name });
     const sys = `Eres un revisor especializado en ${L.ask}. Te doy el código de una app web. Enumera SOLO los defectos REALES que veas desde tu especialidad. Por cada uno escribe DOS líneas seguidas:
 DEFECTO: <qué está mal, en una línea>
 PRUEBA: <copia LITERAL del fragmento de código que lo demuestra, tal cual aparece>
 Máximo 4 defectos. Si no ves ninguno, escribe NINGUNO. La PRUEBA debe estar copiada del código palabra por palabra; si no puedes copiarla, no incluyas ese defecto.`;
-    const out = await provider.chat([{ role: 'user', content: 'CÓDIGO:\n' + material }], sys, () => {});
+    const out = await provider.chat([{ role: 'user', content: 'CÓDIGO:\n' + material }], sys, () => {}, signal);
     // Emparejar DEFECTO con su PRUEBA y COMPROBAR que la cita existe de verdad
     // en el código. Es un filtro determinista: si el modelo no sabe citar, se
     // lo ha inventado. (El modelo verifica mucho mejor de lo que propone, pero
@@ -255,6 +277,7 @@ Máximo 4 defectos. Si no ves ninguno, escribe NINGUNO. La PRUEBA debe estar cop
   // ajenos) y vota cuáles son de verdad. Aquí es donde puede retirar el suyo.
   const votes = candidates.map(() => 0);
   for (const L of lenses) {
+    siParado(signal);
     onProgress({ phase: 'jury-vote', lens: L.name });
     const list = candidates.map((c, i) => `${i + 1}. ${c}`).join('\n');
     // OJO con el formato: poner "N: SI" como plantilla hacía que el modelo
@@ -267,7 +290,7 @@ Máximo 4 defectos. Si no ves ninguno, escribe NINGUNO. La PRUEBA debe estar cop
 3: SI
 Nada más: ni explicaciones ni texto extra. Ante la duda, NO.`;
     const out = await provider.chat(
-      [{ role: 'user', content: 'CÓDIGO:\n' + material + '\n\nDEFECTOS PROPUESTOS:\n' + list }], sys, () => {});
+      [{ role: 'user', content: 'CÓDIGO:\n' + material + '\n\nDEFECTOS PROPUESTOS:\n' + list }], sys, () => {}, signal);
     const txt = String(out);
     let parsed = 0;
     for (const m of txt.matchAll(/(\d+)\s*[:.)\-]\s*(S[IÍ]|YES|NO)\b/gi)) {
@@ -283,6 +306,7 @@ Nada más: ni explicaciones ni texto extra. Ante la duda, NO.`;
     onProgress({ phase: 'jury-parsed', lens: L.name, parsed });
   }
 
+  siParado(signal);
   // Moderador — se queda con los que tienen apoyo de la mayoría del jurado.
   const need = Math.ceil(lenses.length / 2);
   const defects = candidates.map((text, i) => ({ text, votes: votes[i] }))
@@ -548,11 +572,13 @@ function defectosMedidos(detalle, error) {
 }
 
 export async function deepCreate({ brief, provider, rounds = 1, onProgress = () => {}, useJury = false,
-                                   editMode = 'rewrite', notaMinima = null, evaluar = null, bestOf = 1 }) {
+                                   editMode = 'rewrite', notaMinima = null, evaluar = null, bestOf = 1,
+                                   signal = null }) {
   if (!provider || typeof provider.chat !== 'function') throw new Error('Hard Work necesita un cerebro cargado (elige un modelo arriba).');
   if (!String(brief || '').trim()) throw new Error('Hard Work: dime qué quieres que cree.');
+  siParado(signal);
   onProgress({ phase: 'draft' });
-  let html = extractHtml(await genComplete(provider, CREATE_SYS, String(brief)));
+  let html = extractHtml(await genComplete(provider, CREATE_SYS, String(brief), { signal }));
   const trace = [{ round: 0, html }];
 
   // Varias tiradas y nos quedamos con la que MEJOR puntúa al ejecutarla.
@@ -566,15 +592,19 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
     const juzga = evaluar || rateArtifact;
     let mejorHtml = html, mejorV = await juzga(html);
     onProgress({ phase: 'candidato', i: 0, nota: mejorV.nota });
-    for (let i = 1; i < bestOf; i++) {
-      provider.setSampling({ temperature: 0.85, seed: 1000 + i * 137 });
-      const otro = extractHtml(await genComplete(provider, CREATE_SYS, String(brief)));
-      const v = otro ? await juzga(otro) : { nota: -1 };
-      onProgress({ phase: 'candidato', i, nota: v.nota });
-      trace.push({ candidato: i, html: otro, nota: v.nota });
-      if (v.nota > mejorV.nota) { mejorHtml = otro; mejorV = v; }
-    }
-    provider.setSampling(null);            // dejarlo como estaba: voraz
+    // El muestreo vuelve a voraz también si se para a mitad: si no, el
+    // proveedor se quedaría con temperatura para todo lo que venga después.
+    try {
+      for (let i = 1; i < bestOf; i++) {
+        siParado(signal);
+        provider.setSampling({ temperature: 0.85, seed: 1000 + i * 137 });
+        const otro = extractHtml(await genComplete(provider, CREATE_SYS, String(brief), { signal }));
+        const v = otro ? await juzga(otro) : { nota: -1 };
+        onProgress({ phase: 'candidato', i, nota: v.nota });
+        trace.push({ candidato: i, html: otro, nota: v.nota });
+        if (v.nota > mejorV.nota) { mejorHtml = otro; mejorV = v; }
+      }
+    } finally { provider.setSampling(null); }   // dejarlo como estaba: voraz
     html = mejorHtml; trace[0].html = html; trace[0].nota = mejorV.nota;
     onProgress({ phase: 'mejorCandidato', nota: mejorV.nota });
   }
@@ -584,6 +614,7 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
   const juez = notaMinima != null ? (evaluar || rateArtifact) : null;
   let mejor = html, mejorNota = -1, ultimoDetalle = null, ultimoError = null;
   if (juez) {
+    siParado(signal);
     const v = await juez(html);
     mejorNota = v.nota; ultimoDetalle = v.detalle; ultimoError = v.error;
     trace[0].nota = v.nota; trace[0].detalle = v.detalle;
@@ -591,6 +622,7 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
     if (v.nota >= notaMinima) { onProgress({ phase: 'done', rounds: 0, motivo: 'ya cumplía' }); return { html, trace, nota: v.nota }; }
   }
   for (let r = 1; r <= rounds; r++) {
+    siParado(signal);
     onProgress({ phase: 'critique', round: r });
     let critique;
     // Si hemos ejecutado el artefacto, lo MEDIDO manda: son defectos
@@ -601,26 +633,29 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
         + medidos.map(x => '- ' + x).join('\n');
       onProgress({ phase: 'critique', round: r, medidos: medidos.length });
     } else if (useJury) {
-      const v = await juryReview({ artifact: html, provider, onProgress });
+      const v = await juryReview({ artifact: html, provider, onProgress, signal });
       critique = v.defects.length
         ? v.defects.map(d => `- ${d.text} (${d.votes} de ${v.jurors} revisores)`).join('\n')
         : 'Sin defectos con apoyo suficiente del jurado.';
     } else {
-      critique = String(await provider.chat([{ role: 'user', content: `APP/JUEGO:\n${html}` }], CRITIQUE_SYS, () => {})).trim();
+      critique = String(await provider.chat([{ role: 'user', content: `APP/JUEGO:\n${html}` }], CRITIQUE_SYS, () => {}, signal)).trim();
     }
+    siParado(signal);
     onProgress({ phase: 'rewrite', round: r, modo: editMode });
     if (editMode === 'patch') {
       const resp = await provider.chat(
-        [{ role: 'user', content: `HTML ACTUAL:\n${html}\n\nDEFECTOS A CORREGIR:\n${critique}` }], PATCH_SYS, () => {});
+        [{ role: 'user', content: `HTML ACTUAL:\n${html}\n\nDEFECTOS A CORREGIR:\n${critique}` }], PATCH_SYS, () => {}, signal);
+      siParado(signal);
       const { html: nuevo, aplicados, fallidos } = applyPatches(html, resp);
       onProgress({ phase: 'patched', round: r, aplicados: aplicados.length, fallidos: fallidos.length });
       if (aplicados.length) { html = nuevo; trace.push({ round: r, critique, html, aplicados, fallidos }); }
       else trace.push({ round: r, critique, html, aplicados: [], fallidos });
     } else {
-      const improved = extractHtml(await genComplete(provider, REWRITE_SYS, `HTML ACTUAL:\n${html}\n\nCRÍTICA A CORREGIR:\n${critique}`));
+      const improved = extractHtml(await genComplete(provider, REWRITE_SYS, `HTML ACTUAL:\n${html}\n\nCRÍTICA A CORREGIR:\n${critique}`, { signal }));
       if (improved && /<\w+[\s>]/.test(improved)) { html = improved; trace.push({ round: r, critique, html }); }
     }
     if (juez) {
+      siParado(signal);
       const v = await juez(html);
       ultimoDetalle = v.detalle; ultimoError = v.error;
       trace[trace.length - 1].nota = v.nota; trace[trace.length - 1].detalle = v.detalle;
@@ -634,6 +669,7 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
       if (v.nota < mejorNota) onProgress({ phase: 'peor', round: r, nota: v.nota, mejor: mejorNota });
     }
   }
+  siParado(signal);
   onProgress({ phase: 'done', rounds: trace.length - 1 });
   return juez ? { html: mejor, trace, nota: mejorNota } : { html, trace };
 }
