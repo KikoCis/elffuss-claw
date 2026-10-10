@@ -17,6 +17,35 @@
 // try/catch y el panel se pinta igual sin él.
 
 const CLAVE = 'elffuss.velocimetro.v1';
+
+// Textos. Este módulo lo comparten Claw y Code y cada una tiene su i18n: la app
+// anfitriona pasa su traductor con usarTraductor(t) (t(clave, vars) → texto, o la
+// propia clave si no la tiene). Sin traductor, o sin la clave, va en español,
+// como hasta ahora. Antes todo estaba escrito aquí en español y en inglés salían
+// el título del chip, el panel y su nombre accesible en español.
+const ES = {
+  vmTitle: 'Velocidad de esta máquina', vmCtx: 'contexto {n}',
+  vmPrefill: 'tok/s leyendo el prompt', vmGen: 'tok/s escribiendo', vmTtft: 'hasta la primera letra',
+  vmProcessed: 'tokens procesados', vmReused: ' · {n} reusados', vmNoTurns: 'Todavía no has hablado con el modelo.',
+  vmAlert: 'Leer el prompt va casi tan lento como escribir, y eso no debería pasar: leer procesa cientos de posiciones a la vez y escribir solo una. Suele significar que algo está compitiendo por la GPU, o que el modelo no cabe holgado. En un equipo despejado leer va varias veces más rápido.',
+  vmReading: 'Leyendo el prompt', vmWriting: 'Escribiendo', vmNeed2: '{what}: hacen falta 2 turnos para dibujar',
+  vmMax: 'máx {v} tok/s', vmTurns: '{n} turnos', vmTasks: 'Tareas', vmSolved: 'se resuelven ({ok} de {n})',
+  vmPerTask: 'por tarea, mediana', vmNoTasks: 'Sin tareas registradas todavía.',
+  vmNote: 'Son los números de TU equipo en esta sesión, medidos por el propio motor. Cambian con la máquina, con lo que tengas abierto y con la temperatura, así que no son una cifra del producto.',
+  vmChipWriting: 'Escribiendo a {g} tok/s · el prompt se leyó a {p} tok/s · primera letra en {t}. Pulsa para ver la gráfica.',
+  vmChipReading: 'Leyendo el prompt a {p} tok/s. Pulsa para ver la gráfica.',
+};
+let traductor = null;
+export function usarTraductor(fn) { traductor = typeof fn === 'function' ? fn : null; }
+function tx(clave, vars) {
+  let s = null;
+  try { s = traductor?.(clave, vars); } catch { /* traductor roto: español */ }
+  if (typeof s === 'string' && s && s !== clave) return s;
+  const base = ES[clave] ?? clave;
+  return vars ? base.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '')) : base;
+}
+// Lo que se mete en innerHTML va escapado (el nombre del modelo, los textos).
+const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MAX = 60;                  // turnos guardados: suficiente para ver forma
 let hist = [];                   // [{ p: prefillTokS, g: genTokS, t: ttftMs }]
 let tareas = [];                 // [{ ok: bool, ms: number }]
@@ -55,12 +84,12 @@ function linea(vals, w, h, color) {
 
 function grafica(key, color, etiqueta) {
   const vals = hist.map(x => x[key]).filter(v => Number.isFinite(v) && v > 0);
-  if (vals.length < 2) return `<div class="vm-vacio">${etiqueta}: hacen falta 2 turnos para dibujar</div>`;
+  if (vals.length < 2) return `<div class="vm-vacio">${esc(tx('vmNeed2', { what: etiqueta }))}</div>`;
   const max = Math.max(...vals);
   return `<div class="vm-graf">
-    <div class="vm-graf-top"><span>${etiqueta}</span><span>máx ${uno(max)} tok/s</span></div>
-    <svg viewBox="0 0 220 38" preserveAspectRatio="none" aria-label="${etiqueta}">${linea(vals, 220, 38, color)}</svg>
-    <div class="vm-graf-pie">${vals.length} turnos</div>
+    <div class="vm-graf-top"><span>${esc(etiqueta)}</span><span>${esc(tx('vmMax', { v: uno(max) }))}</span></div>
+    <svg viewBox="0 0 220 38" preserveAspectRatio="none" aria-label="${esc(etiqueta)}">${linea(vals, 220, 38, color)}</svg>
+    <div class="vm-graf-pie">${esc(tx('vmTurns', { n: vals.length }))}</div>
   </div>`;
 }
 
@@ -86,29 +115,23 @@ function pintarPanel() {
   const ctxTxt = ctx ? (ctx >= 1024 ? `${Math.round(ctx / 1024)}k` : String(ctx)) : '';
 
   panel.innerHTML = `
-    <div class="vm-tit">Velocidad de esta máquina${modelo ? ` <span class="vm-modelo">${modelo}${ctxTxt ? ` · contexto ${ctxTxt}` : ''}</span>` : ''}</div>
+    <div class="vm-tit">${esc(tx('vmTitle'))}${modelo ? ` <span class="vm-modelo">${esc(modelo)}${ctxTxt ? ` · ${esc(tx('vmCtx', { n: ctxTxt }))}` : ''}</span>` : ''}</div>
     ${m ? `<div class="vm-filas">
-      <div><b>${uno(m.prefillTokS)}</b><span>tok/s leyendo el prompt</span></div>
-      <div><b>${uno(m.genTokS)}</b><span>tok/s escribiendo</span></div>
-      <div><b>${ms(m.ttftMs)}</b><span>hasta la primera letra</span></div>
-      <div><b>${m.procesados}</b><span>tokens procesados${m.reusados ? ` · ${m.reusados} reusados` : ''}</span></div>
-    </div>` : `<div class="vm-vacio">Todavía no has hablado con el modelo.</div>`}
-    ${m && m.genTokS > 0 && m.prefillTokS < m.genTokS * 1.5 ? `<div class="vm-alerta">
-      Leer el prompt va casi tan lento como escribir, y eso no deberia pasar:
-      leer procesa cientos de posiciones a la vez y escribir solo una. Suele
-      significar que algo esta compitiendo por la GPU, o que el modelo no cabe
-      holgado. En un equipo despejado leer va varias veces mas rapido.
-    </div>` : ''}
-    ${grafica('p', 'var(--accent2, #6e63c5)', 'Leyendo el prompt')}
-    ${grafica('g', 'var(--accent, #4ade80)', 'Escribiendo')}
-    <div class="vm-tit vm-tit2">Tareas</div>
+      <div><b>${uno(m.prefillTokS)}</b><span>${esc(tx('vmPrefill'))}</span></div>
+      <div><b>${uno(m.genTokS)}</b><span>${esc(tx('vmGen'))}</span></div>
+      <div><b>${ms(m.ttftMs)}</b><span>${esc(tx('vmTtft'))}</span></div>
+      <div><b>${m.procesados}</b><span>${esc(tx('vmProcessed'))}${m.reusados ? esc(tx('vmReused', { n: m.reusados })) : ''}</span></div>
+    </div>` : `<div class="vm-vacio">${esc(tx('vmNoTurns'))}</div>`}
+    ${m && m.genTokS > 0 && m.prefillTokS < m.genTokS * 1.5 ? `<div class="vm-alerta">${esc(tx('vmAlert'))}</div>` : ''}
+    ${grafica('p', 'var(--accent2, #6e63c5)', tx('vmReading'))}
+    ${grafica('g', 'var(--accent, #4ade80)', tx('vmWriting'))}
+    <div class="vm-tit vm-tit2">${esc(tx('vmTasks'))}</div>
     ${hechas ? `<div class="vm-filas">
-      <div><b>${tasa}%</b><span>se resuelven (${bien} de ${hechas})</span></div>
-      <div><b>${ms(tmed)}</b><span>por tarea, mediana</span></div>
-    </div>` : `<div class="vm-vacio">Sin tareas registradas todavía.</div>`}
-    <div class="vm-nota">Son los números de TU equipo en esta sesión, medidos por el
-      propio motor. Cambian con la máquina, con lo que tengas abierto y con la
-      temperatura, así que no son una cifra del producto.</div>`;
+      <div><b>${tasa}%</b><span>${esc(tx('vmSolved', { ok: bien, n: hechas }))}</span></div>
+      <div><b>${ms(tmed)}</b><span>${esc(tx('vmPerTask'))}</span></div>
+    </div>` : `<div class="vm-vacio">${esc(tx('vmNoTasks'))}</div>`}
+    <div class="vm-nota">${esc(tx('vmNote'))}</div>`;
+  panel.setAttribute('aria-label', tx('vmTitle'));
 }
 
 function pintarChip(m) {
@@ -121,9 +144,8 @@ function pintarChip(m) {
   const v = escribiendo ? m.genTokS : m.prefillTokS;
   chip.textContent = `⚡ ${uno(v)} tok/s`;
   chip.title = escribiendo
-    ? `Escribiendo a ${uno(m.genTokS)} tok/s · el prompt se leyó a ${uno(m.prefillTokS)} tok/s · ` +
-      `primera letra en ${ms(m.ttftMs)}. Pulsa para ver la gráfica.`
-    : `Leyendo el prompt a ${uno(m.prefillTokS)} tok/s. Pulsa para ver la gráfica.`;
+    ? tx('vmChipWriting', { g: uno(m.genTokS), p: uno(m.prefillTokS), t: ms(m.ttftMs) })
+    : tx('vmChipReading', { p: uno(m.prefillTokS) });
 }
 
 /** Una tarea del agente ha terminado. `ok`: ¿se resolvió? `ms`: lo que costó. */
@@ -155,7 +177,7 @@ function cablear() {
   chip.setAttribute('aria-expanded', 'false');
   if (panel) {
     panel.setAttribute('role', 'region');
-    panel.setAttribute('aria-label', 'Velocidad de esta máquina');
+    panel.setAttribute('aria-label', tx('vmTitle'));
   }
   chip.addEventListener('click', () => abrirPanel(!!panel?.hidden));
   // Cerrar al pulsar fuera, como el resto de los desplegables de la cabecera.

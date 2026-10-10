@@ -80,7 +80,7 @@ function mustBeOpen() {
 }
 
 export async function setSecret({ name, secret } = {}, { desdePanel = false } = {}) {
-  if (!name || !secret) throw new Error('Faltan name o secret');
+  if (!name || !secret) throw new Error(t('vaultNeedNameSecret'));
   if (!desdePanel) await requirePerm('vault', t('pdVaultSet', { name }));
   mustBeOpen();
   await db.set('vault', 's:' + name, await encrypt(secret));
@@ -92,7 +92,7 @@ export async function getSecret({ name } = {}, { desdePanel = false } = {}) {
   if (!desdePanel) await requirePerm('vault', t('pdVaultGet', { name }));
   mustBeOpen();
   const blob = await db.get('vault', 's:' + name);
-  if (!blob) throw new Error(`No existe el secreto «${name}»`);
+  if (!blob) throw new Error(t('vaultNoSecret', { name }));
   armLock();
   return decrypt(blob);
 }
@@ -100,7 +100,7 @@ export async function getSecret({ name } = {}, { desdePanel = false } = {}) {
 // Borrar un secreto pide la bóveda ABIERTA, como leerlo: con ella bloqueada el
 // panel ni siquiera enseña la lista (ver alBloquear).
 export async function removeSecret({ name } = {}) {
-  if (!name) throw new Error('Falta name');
+  if (!name) throw new Error(t('vaultNeedName'));
   mustBeOpen();
   await db.del('vault', 's:' + name);
   armLock();

@@ -1,5 +1,7 @@
 // «Modo básico»: cerebro determinista sin modelo — cubre las demos clave sin
 // descargar nada. Para lenguaje libre, carga un modelo en el selector de modelo.
+// `tr` y no `t`: dentro de chat() `t` es el texto en minúsculas.
+import { t as tr } from '../i18n.js';
 export const name = 'Básico (sin modelo)';
 export async function load() {}
 
@@ -71,15 +73,11 @@ x.fillText(String(d.label).slice(0,14),0,0);x.restore();});`);
 const generic = desc => SHELL('Boceto',
   `<div style="max-width:560px;text-align:center;padding:20px"><h2>✳ Boceto de app</h2><p style="color:#8b949e">Esto es un boceto del modo básico. Pediste:</p><blockquote style="background:#161b22;border-left:3px solid #ff4d8d;padding:12px;border-radius:8px;text-align:left">${desc.replace(/</g, '&lt;')}</blockquote><p style="color:#8b949e">Carga un modelo (en el selector de modelo, arriba) y Elffuss generará esta app de verdad, a medida.</p></div>`, '');
 
-const HELP = `Estoy en modo básico (sin modelo). Entiendo órdenes directas:
-• «hazme un reloj / una app de notas / una calculadora»
-• «autoriza una carpeta» · «lista los archivos» · «lee <archivo>»
-• «recuérdame dentro de N minutos <algo>» · «lista las tareas»
-• «guarda el secreto <nombre>: <valor>» · «lista los secretos»
-• «abre https://…»
-Para lenguaje libre y apps a medida, carga un modelo en el [selector de modelo](#/modelo) de arriba.`;
-// (El selector de modelo es el desplegable de la cabecera; 🧠 es la Mente. El
-// enlace #/modelo lo enfoca: ver rutas.js.)
+// La ayuda va en el idioma de la página (i18n: basicHelp). Las órdenes que
+// entiende este motor son en español, y en inglés se dice así, con su traducción
+// al lado. (El selector de modelo es el desplegable de la cabecera; 🧠 es la
+// Mente. El enlace #/modelo lo enfoca: ver rutas.js.)
+const HELP = () => tr('basicHelp');
 
 export async function chat(history) {
   const last = history[history.length - 1];
@@ -88,7 +86,7 @@ export async function chat(history) {
   // Tras una herramienta: convertir su resultado en la respuesta…
   if (text.startsWith('[resultado')) {
     const body = text.slice(text.indexOf('\n') + 1).trim();
-    if (body.startsWith('ERROR:')) return 'No pude: ' + body.slice(6).trim();
+    if (body.startsWith('ERROR:')) return tr('basicCouldNot', { err: body.slice(6).trim() });
     // …o encadenar: si lo leído era para un gráfico, generar la app ahora.
     if (text.startsWith('[resultado fs.read')) {
       const prevUser = [...history].reverse().find(m => m.role === 'user' && !m.content.startsWith('['));
@@ -188,6 +186,6 @@ export async function chat(history) {
   if (mOpen && !url) return call({ tool: 'app.open', args: { name: mOpen[1] } });
   if (/(lista|ver|muestra|qué|que).*apps/.test(t)) return call({ tool: 'app.list', args: {} });
 
-  if (/^(hola|buenas|hey|hi)\b/.test(t)) return '¡Hola! ' + HELP;
-  return HELP;
+  if (/^(hola|buenas|hey|hi)\b/.test(t)) return tr('basicHi') + HELP();
+  return HELP();
 }

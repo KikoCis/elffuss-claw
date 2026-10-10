@@ -39,4 +39,4 @@ for t in ux-*.mjs; do BASE=http://localhost:8743 node "$t"; done
 enlaces) · `ux-mente` · `ux-borrar` (🧹 y «Borrar todo») · `ux-modelos` (💾) ·
 `ux-velocimetro` · `ux-movil` · `ux-copiloto` · `ux-skills` · `ux-ajustes` ·
 `ux-paneles` (Apps, Tareas, Permisos) · `ux-teclado` (menú «/», atajos, chips) ·
-`ux-hardwork` · `ux-modelo` (selector) · `ux-splash`.
+`ux-hardwork` · `ux-modelo` (selector) · `ux-splash` · `ux-ingles` (lo rehecho, en inglés).

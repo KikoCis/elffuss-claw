@@ -334,7 +334,7 @@ function send(text, { hard = false } = {}) {
   const el = ui.addMsg('user queued', text);
   queue.push({ id: nuevoId(), text, el, hard });
   persistQueue();
-  if (queue.length > 1) ui.toast(`En cola (${queue.length - 1} por delante) — no se pierde ni refrescando.`);
+  if (queue.length > 1) ui.toast(t('queuedAhead', { n: queue.length - 1 }));
   pump();
 }
 
@@ -520,10 +520,10 @@ async function processHardWork(question, signal, epoca, id = null) {
       const res = await deepCreate({
         brief: question, provider: agent.provider, rounds: 1, signal,
         onProgress: p => thinking.tool(
-          p.phase === 'draft' ? 'Hard Work · borrador…'
-            : p.phase === 'critique' ? `Hard Work · autocrítica ${p.round}`
-            : p.phase === 'rewrite' ? `Hard Work · reescribiendo ${p.round}`
-            : 'Hard Work · listo'),
+          p.phase === 'draft' ? t('hwPhDraft')
+            : p.phase === 'critique' ? t('hwPhCritique', { n: p.round })
+            : p.phase === 'rewrite' ? t('hwPhRewrite', { n: p.round })
+            : t('hwPhDone')),
       });
       siParado();
       thinking.remove();
@@ -541,7 +541,7 @@ async function processHardWork(question, signal, epoca, id = null) {
       agent.history.push({ role: 'assistant', content: fallo ? '(Hard Work: no pude guardar la app: ' + fallo + ')' : '(app creada con Hard Work)', ts: Date.now() });
       return; // el finally resetea busy y guarda el histórico
     }
-    thinking.tool('Hard Work · abriendo carpeta…');
+    thinking.tool(t('hwPhOpening'));
     const root = await fs.root();
     const context = await gatherFolder(root, { maxBytes: 1.5e6 });
     siParado();
@@ -549,15 +549,15 @@ async function processHardWork(question, signal, epoca, id = null) {
     const res = await hardWork({
       question, context, provider: agent.provider, signal,
       onProgress: p => {
-        if (p.phase === 'plan') thinking.tool(`Hard Work · ${p.chunks} partes (${Math.round(p.chars / 1000)}k)${p.truncated ? ' — recorté al máximo' : ''}`);
-        else if (p.phase === 'map') thinking.tool(`Hard Work · leyendo ${p.i}/${p.n}`);
-        else if (p.phase === 'reduce-group') thinking.tool(`Hard Work · fundiendo grupo ${p.g}/${p.n}`);
-        else if (p.phase === 'reduce') thinking.tool('Hard Work · sintetizando…');
+        if (p.phase === 'plan') thinking.tool(t('hwPhPlan', { n: p.chunks, k: Math.round(p.chars / 1000) }) + (p.truncated ? t('hwPhPlanTrunc') : ''));
+        else if (p.phase === 'map') thinking.tool(t('hwPhMap', { i: p.i, n: p.n }));
+        else if (p.phase === 'reduce-group') thinking.tool(t('hwPhMerge', { g: p.g, n: p.n }));
+        else if (p.phase === 'reduce') thinking.tool(t('hwPhSynth'));
       },
     });
     siParado();
     thinking.remove();
-    ui.addMsg('assistant', res.answer + `\n\n_⛏ Hard Work (RLM): leí ${names[0]} en ${res.chunks} partes, ${res.kept} con señal.${res.truncated ? ' Material recortado al máximo — acota la carpeta para abarcarlo entero.' : ''}_`);
+    ui.addMsg('assistant', res.answer + `\n\n_${t('hwRead', { folder: names[0], n: res.chunks, kept: res.kept })}${res.truncated ? t('hwReadTrunc') : ''}_`);
     agent.history.push({ role: 'user', content: question, ts: Date.now() });
     agent.history.push({ role: 'assistant', content: res.answer, ts: Date.now() });
   } catch (e) {
@@ -566,7 +566,7 @@ async function processHardWork(question, signal, epoca, id = null) {
     // cuando el AbortError no viene de ■ sino del proveedor (el motor propio
     // corta el turno al descargarse): eso no es «Hard Work falló».
     if (signal?.aborted || e?.name === 'AbortError') avisoParado(null);
-    else ui.addMsg('assistant err', 'Hard Work falló: ' + (e?.message || String(e)));
+    else ui.addMsg('assistant err', t('hwFailed', { err: e?.message || String(e) }));
   } finally {
     if (burbujaTurno === thinking) burbujaTurno = null;
     if (canceladasEnParada) avisoParado(null);   // ver process()
@@ -601,7 +601,7 @@ async function restoreQueue() {
     const el = ui.addMsg('user queued', it.text);
     queue.push({ id: it.id || nuevoId(), text: it.text, intentos: it.intentos || 0, el, hard: !!it.hard });
   }
-  ui.toast(`${pending.length} mensaje(s) pendientes recuperados — los proceso en cuanto cargue el cerebro.`);
+  ui.toast(t('queueRestored', { n: pending.length }));
   pump();
 }
 
@@ -768,8 +768,12 @@ ui.setOnWipe(async () => {
 // es quien mide (`alMedir`). Con cualquier otro cerebro se monta con null y el
 // chip se esconde: antes se quedaba con la última cifra del motor a la vista.
 function montarVelocimetro(mod) {
-  import('./velocimetro.js').then(vm => vm.montar(mod?.alMedir ? mod : null)).catch(() => { /* sin velocímetro la app funciona igual */ });
+  import('./velocimetro.js').then(vm => { vm.usarTraductor?.(t); vm.montar(mod?.alMedir ? mod : null); })
+    .catch(() => { /* sin velocímetro la app funciona igual */ });
 }
+// Sus textos van en el idioma de la página desde el principio (el módulo lo
+// comparte Code, que pone su propio traductor).
+import('./velocimetro.js').then(vm => vm.usarTraductor?.(t)).catch(() => { /* — */ });
 
 // Ficha pública de cada cerebro local (ⓘ junto al selector). Sin ficha pública
 // —el 27B— no hay ⓘ: nunca se enlazan los ficheros de pesos.
@@ -782,6 +786,11 @@ const FICHAS = {
 };
 const etiquetaDe = id => modelOptions().find(o => o.id === id)?.label?.split(' · ')[0] || id;
 function pintarFicha(id) { ui.setFichaModelo(FICHAS[id] || null, etiquetaDe(id)); }
+
+// Errores de carga que se enseñan al usuario: los de providers/api.js (core
+// compartido, sin i18n) llegan en español; los conocidos se traducen aquí.
+const ERRORES_CARGA = { 'falta la clave de API (config avanzada)': 'errApiKeyMissing', 'proveedor sin configurar': 'errProviderUnset' };
+const errorLegible = e => { const m = e?.message || String(e); return ERRORES_CARGA[m] ? t(ERRORES_CARGA[m]) : m; };
 
 // `volviendo`: es la vuelta al cerebro que funcionaba tras un fallo (no se
 // intenta volver otra vez si también falla).
@@ -796,7 +805,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     ui.modelStatus('off');
     localStorage.setItem('elffuss.model', 'rules');
     ui.setModel('rules');
-    ui.toast('Modo básico: sin modelo, órdenes directas.');
+    ui.toast(t('basicModeOn'));
     return true;
   }
   ui.modelStatus('loading');
@@ -808,7 +817,7 @@ async function changeModel(id, { volviendo = false } = {}) {
   ui.modeloCargando(true);            // sin cargas en paralelo: el selector espera
   try {
     const mod = await resolveProvider(id);
-    ui.modelProgress('Preparando modelo…');
+    ui.modelProgress(t('modelPreparing'));
     await mod.load(p => ui.modelProgress(p));
     ui.modelProgress(null);
     agent.setProvider(mod);
@@ -838,7 +847,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     // funcionando te dejaba en Qwen3.5-0.8B (otra descarga de ~600 MB) en vez de
     // en el que tenías.
     if (!volviendo && previo && previo !== 'rules' && previo !== id) {
-      ui.toast(t('modelFailedBack', { id: etiquetaDe(id), err: e?.message || String(e), prev: etiquetaDe(previo) }));
+      ui.toast(t('modelFailedBack', { id: etiquetaDe(id), err: errorLegible(e), prev: etiquetaDe(previo) }));
       await changeModel(previo, { volviendo: true });
       return false;
     }
@@ -857,7 +866,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     montarVelocimetro(null);
     pintarFicha(null);
     ui.setModel('rules');
-    ui.toast('⚠️ No se pudo cargar ' + id + ': ' + (e?.message || String(e)));
+    ui.toast(t('modelFailed', { id: etiquetaDe(id), err: errorLegible(e) }));
     return false;
   } finally {
     // Pase lo que pase —éxito, fallo, o el respaldo que vuelve a entrar aquí—
@@ -1145,7 +1154,7 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // ligero para no competir. Pero tu elección manda: si escogiste Gemma,
     // se respeta — pisarla era un error.
     if (/[?&]copilot=1/.test(location.search) && !saved) {
-      ui.toast('Copiloto: arranco con el cerebro ligero para no competir con el traductor. Para ventas/precisión, elige Gemma arriba (escritorio).');
+      ui.toast(t('copilotLightBrain'));
       if (await changeModel('onnx:qwen3.5-0.8b')) return;
     }
     const available = new Set(modelOptions().map(o => o.id));
@@ -1172,9 +1181,7 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
       return;
     }
     const first = chain[0];
-    ui.toast(first.startsWith('litert')
-      ? 'Cargando Gemma (varios GB la 1ª vez)… mientras, el modo básico te atiende.'
-      : 'Cargando el cerebro local… mientras, el modo básico te atiende.');
+    ui.toast(first.startsWith('litert') ? t('loadingGemma') : t('loadingLocal'));
     for (const id of chain)
       if (await changeModel(id)) return;
   } finally {
@@ -1201,15 +1208,11 @@ setInterval(async () => {
     ui.setModel('rules');
     ui.modelStatus('off');
     try { await mod?.unload?.(); } catch { /* mejor esfuerzo */ }
-    ui.addMsg('assistant',
-      '⚠️ Ojo: tu ordenador está muy a full de memoria — puedes experimentar caídas ' +
-      'o rendimiento lento si sigues usándolo. Por el momento me he parado y he ' +
-      'liberado el modelo. Si quieres, me arrancas de nuevo desde el selector ' +
-      'de arriba. ');
-    ui.toast('⚠️ RAM muy llena: modelo local liberado automáticamente');
+    ui.addMsg('assistant', t('ramFreedMsg'));
+    ui.toast(t('ramFreedToast'));
   } else if (ratio > 0.82 && !ramWarned) {
     ramWarned = true;
-    ui.toast(`⚠️ La memoria del navegador va al ${Math.round(ratio * 100)}% — si sigue subiendo, liberaré el modelo yo sola.`);
+    ui.toast(t('ramWarn', { pct: Math.round(ratio * 100) }));
   }
 }, 15000);
 
@@ -1237,15 +1240,17 @@ watch.startWatcher((msg, w) => {
 workspace.init({
   app: 'claw', ns: 'elffuss', db,
   stores: [
-    { id: 'apps', label: 'Apps generadas', icon: '🎨', kind: 'idb-store', store: 'apps',
+    // Las etiquetas son getters: se leen al pintar «Qué hay guardado», en el idioma
+    // de la página (antes salían en español también en inglés).
+    { id: 'apps', get label() { return t('stApps'); }, icon: '🎨', kind: 'idb-store', store: 'apps',
       files: { ext: '.html', name: a => a.name, body: a => a.html } },
-    { id: 'skills', label: 'Skills', icon: '🧩', kind: 'idb-key', store: 'kv', key: 'skills',
+    { id: 'skills', get label() { return t('stSkills'); }, icon: '🧩', kind: 'idb-key', store: 'kv', key: 'skills',
       files: { ext: '.md', name: s => s.name, body: s => `---\nname: ${s.name}\ndescription: ${s.description || ''}\n---\n\n${s.content || ''}` } },
-    { id: 'history', label: 'Conversación', icon: '💬', kind: 'idb-key', store: 'kv', key: 'history' },
-    { id: 'memory', label: 'Memoria', icon: '🧠', kind: 'idb-store', store: 'memory' },
-    { id: 'tasks', label: 'Tareas programadas', icon: '⏰', kind: 'idb-store', store: 'tasks' },
-    { id: 'vault', label: 'Bóveda (cifrada)', icon: '🔐', kind: 'idb-store', store: 'vault', sensitive: true },
-    { id: 'prefs', label: 'Preferencias', icon: '⚙️', kind: 'ls',
+    { id: 'history', get label() { return t('stHistory'); }, icon: '💬', kind: 'idb-key', store: 'kv', key: 'history' },
+    { id: 'memory', get label() { return t('stMemory'); }, icon: '🧠', kind: 'idb-store', store: 'memory' },
+    { id: 'tasks', get label() { return t('stTasks'); }, icon: '⏰', kind: 'idb-store', store: 'tasks' },
+    { id: 'vault', get label() { return t('stVault'); }, icon: '🔐', kind: 'idb-store', store: 'vault', sensitive: true },
+    { id: 'prefs', get label() { return t('stPrefs'); }, icon: '⚙️', kind: 'ls',
       keys: ['elffuss.model', 'elffuss.acer', 'elffuss.resumen', 'elffuss.semantic'] },
   ],
 });
