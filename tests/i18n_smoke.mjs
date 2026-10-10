@@ -6,13 +6,17 @@ import { chromium } from 'playwright';
 const MY = /(i18n|humanize|ui\.js|main\.js|mind\.js|apps\.js|kernel\.js|agent\.js)/;
 const isMine = m => MY.test(m) || /ReferenceError|is not defined|SyntaxError|Cannot access|before initialization/.test(m);
 
-const CLAW = 'http://localhost:8811';
-const CODE = 'http://localhost:8812';
+// CLAW=… CODE=… para probar otra copia (por defecto, los puertos de siempre).
+const CLAW = process.env.CLAW || 'http://localhost:8811';
+const CODE = process.env.CODE || 'http://localhost:8812';
 let failures = 0;
 const ok = (label, cond, extra = '') => { console.log(`${cond ? '✓' : '✗ FAIL'} ${label}${extra ? ' — ' + extra : ''}`); if (!cond) failures++; };
 
 async function load(browser, url, locale) {
   const ctx = await browser.newContext({ locale });
+  // Claw ya «bienvenido»: el splash de primera visita es un diálogo modal y deja
+  // inerte lo de detrás mientras está abierto.
+  await ctx.addInitScript(() => { try { localStorage.setItem('elffuss.welcomed', '1'); } catch { /* */ } });
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => { if (isMine(e.message)) errs.push('pageerror: ' + e.message); });
@@ -49,14 +53,16 @@ for (const locale of ['en-US', 'es-ES']) {
     };
   });
   console.log('  runtime:', JSON.stringify(rt));
-  // paneles: descartar el splash (intercepta clics) y navegar por las pestañas
-  await page.locator('#splash-enter').click({ timeout: 1500 }).catch(()=>{});
-  await page.evaluate(() => document.getElementById('splash')?.remove()).catch(()=>{});
+  // paneles: si aun así saliera el splash, se cierra con «Entrar» (quitar el nodo
+  // a mano dejaba la página inerte: el modal no se cerraba) y se navega por las pestañas
+  if (await page.locator('#splash-enter').isVisible().catch(() => false)) await page.locator('#splash-enter').click({ timeout: 3000 }).catch(()=>{});
   const panels = {};
   for (const [tab, id] of [['apps','panel-apps'],['tareas','panel-tareas'],['permisos','panel-permisos'],['ajustes','panel-ajustes']]) {
     await page.locator(`#tabs button[data-tab="${tab}"]`).click({ timeout: 3000 }).catch(()=>{});
     await page.waitForTimeout(150);
-    panels[tab] = ((await page.locator(`#${id} h3`).first().textContent().catch(()=>'' ))||'').trim();
+    // Ajustes ya no empieza con un <h3>: empieza con la tarjeta de consumo («📊 …»).
+    const sel = tab === 'ajustes' ? `#${id} .card b` : `#${id} h3`;
+    panels[tab] = ((await page.locator(sel).first().textContent().catch(()=>'' ))||'').trim();
   }
   const scopes = await page.evaluate(async () => {
     const pm = await import('/js/permissions.js');
@@ -68,7 +74,7 @@ for (const locale of ['en-US', 'es-ES']) {
     ok('panel Apps EN', panels.apps === 'Apps created', panels.apps);
     ok('panel Tasks EN', panels.tareas === 'Scheduled tasks', panels.tareas);
     ok('panel Perms EN', panels.permisos === 'Granted permissions', panels.permisos);
-    ok('panel Settings EN', /Models & advanced settings/.test(panels.ajustes), panels.ajustes);
+    ok('panel Settings EN', /Usage right now/.test(panels.ajustes), panels.ajustes);
     ok('SCOPE fs EN', scopes.appsLabel === 'Apps' && /Read and write/.test(scopes.fsDesc), JSON.stringify(scopes));
     ok('perm btns EN', permBtns.deny === 'Deny' && permBtns.allow === 'Allow', JSON.stringify(permBtns));
     ok('saludo EN («I’m Elffuss»)', /I’m Elffuss|I'm Elffuss/.test(sys));

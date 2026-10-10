@@ -6,7 +6,9 @@ const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? 
 
 const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
 const ctx = await b.newContext();
-await ctx.addInitScript(() => { try { localStorage.setItem('elffuss.model', 'rules'); } catch {} });
+// Ya «bienvenido»: el splash de primera visita es un diálogo modal con el foco
+// en «Entrar», y el primer Enter era para él (no se enviaba «hola uno»).
+await ctx.addInitScript(() => { try { localStorage.setItem('elffuss.model', 'rules'); localStorage.setItem('elffuss.welcomed', '1'); } catch {} });
 const p = await ctx.newPage({ viewport: { width: 1200, height: 860 } });
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
 await p.waitForTimeout(1800);
