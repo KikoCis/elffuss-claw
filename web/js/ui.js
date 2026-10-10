@@ -744,15 +744,15 @@ function _pct(p) {
   if (p && p.status === 'progress' && p.total) return Math.round(p.loaded / p.total * 100);
   return p;
 }
+// El escaparate se monta en la Vista SOLO si ya la estás mirando. Antes cada
+// cambio de cerebro —también uno remoto, que ni descarga— te llevaba a la Vista
+// (estando en Ajustes, saltabas a la Vista) y en el móvil te sacaba del chat.
 async function _showStage(p) {
   const st = await _loadStage();
-  if (!st.isMounted()) {
-    await st.show($('panel-vista'), $('vista-empty'));
-    selectTab('vista');
-    if (isMobile()) flipTo('viz');   // en móvil, enseñar el escaparate
-  }
+  if (!st.isMounted()) await st.show($('panel-vista'), $('vista-empty'));
   st.setProgress(_pct(p));
 }
+const mirandoLaVista = () => tabActiva() === 'vista' && (!isMobile() || document.body.classList.contains('show-viz'));
 
 export function modelProgress(p) {
   const box = $('model-progress');
@@ -762,9 +762,16 @@ export function modelProgress(p) {
     _stage?.hide?.($('vista-empty'), appHidden);
     return;
   }
-  if (appHidden) { box.hidden = true; _showStage(p); return; }
+  if (appHidden && (mirandoLaVista() || _stage?.isMounted?.())) { box.hidden = true; _showStage(p); return; }
 
   box.hidden = false;
+  // La barra es una barra de progreso de verdad para un lector de pantalla.
+  const track = box.querySelector('.track');
+  const anunciar = pct => {
+    if (pct == null) track.removeAttribute('aria-valuenow');
+    else track.setAttribute('aria-valuenow', String(pct));
+    track.setAttribute('aria-valuetext', $('model-progress-text').textContent || '');
+  };
   if (typeof p === 'string') {
     $('model-progress-text').textContent = p;
     // Sacar el % del texto, igual que hace el escaparate (loading-stage.js).
@@ -777,9 +784,11 @@ export function modelProgress(p) {
     if (m) {
       $('model-bar').classList.remove('indet');
       $('model-bar').style.width = Math.min(100, +m[1]) + '%';
+      anunciar(Math.min(100, +m[1]));
     } else {
       $('model-bar').classList.add('indet');  // sin % conocido → barra animada
       $('model-bar').style.width = '';
+      anunciar(null);
     }
     return;
   }
@@ -789,11 +798,41 @@ export function modelProgress(p) {
     $('model-bar').style.width = pct + '%';
     $('model-progress-text').textContent =
       `Descargando modelo · ${pct}% · ${(p.loaded / 1e6 | 0)}/${(p.total / 1e6 | 0)} MB`;
+    anunciar(pct);
+  }
+}
+
+// Mientras carga un cerebro el selector se desactiva: elegir otro a la vez
+// arrancaba una segunda carga en paralelo.
+export function modeloCargando(on) {
+  const sel = $('model-select');
+  sel.disabled = !!on;
+  if (on) sel.setAttribute('aria-busy', 'true'); else sel.removeAttribute('aria-busy');
+}
+
+// ⓘ junto al selector: la ficha del modelo cargado en Hugging Face (un
+// <option> no puede llevar enlace). Sin ficha pública, no hay ⓘ. Nunca se
+// enlazan los ficheros de pesos.
+let fichaModelo = null;
+export function setFichaModelo(url, nombre = '') {
+  fichaModelo = url ? { url, nombre } : null;
+  const a = $('model-card');
+  if (!a) return;
+  a.hidden = !url;
+  if (url) {
+    a.href = url;
+    a.title = tr('modelCardL', { name: nombre });
+    a.setAttribute('aria-label', a.title);
   }
 }
 
 export function modelStatus(state) { // 'off' | 'loading' | 'on' | 'gpu'
-  $('model-status').className = 'dot ' + state;
+  const d = $('model-status');
+  d.className = 'dot ' + state;
+  // El punto solo era color (y un title en español): ahora dice el estado.
+  const txt = tr({ off: 'modelStOff', loading: 'modelStLoading', on: 'modelStOn', gpu: 'modelStGpu' }[state] || 'modelStOff');
+  d.title = txt;
+  d.setAttribute('aria-label', txt);
 }
 
 // ---------- selector de modelo (dinámico) ----------
@@ -808,10 +847,10 @@ export function rebuildModelSelect(options, current) {
   for (const o of options) {
     const opt = document.createElement('option');
     opt.value = o.id;
-    opt.textContent = o.label;
+    opt.textContent = etiquetaModelo(o.label);
     if (o.group) {            // cerebros «Avanzado · poco rendimiento» agrupados y avisados
       let g = groups.get(o.group);
-      if (!g) { g = document.createElement('optgroup'); g.label = o.group; groups.set(o.group, g); }
+      if (!g) { g = document.createElement('optgroup'); g.label = etiquetaModelo(o.group); groups.set(o.group, g); }
       g.appendChild(opt);
     } else {
       sel.appendChild(opt);
@@ -822,6 +861,31 @@ export function rebuildModelSelect(options, current) {
 }
 
 export function setModel(id) { $('model-select').value = id; }
+
+// Las etiquetas del selector se escriben en español (kernel.js). Fuera del
+// español se traducen sus coletillas —«por defecto», «ligero», «Básico (sin
+// modelo)»…—, que era lo que quedaba en español en todos los idiomas; los
+// nombres de modelo y los tamaños se quedan como están.
+const COLETILLAS = [
+  ['Básico (sin modelo)', 'optBasic'],
+  ['⚠ Avanzado · sin garantía de rendimiento', 'optWeakGroup'],
+  ['⚠ Avanzado', 'optAdvanced'],
+  ['se guarda: solo se baja la primera vez', 'optSavedOnce'],
+  ['se guarda', 'optSaved'],
+  ['más ligero, carga antes', 'optLighter'],
+  ['poco rendimiento', 'optWeak'],
+  ['por defecto', 'optDefault'],
+  ['— ligero', 'optLight'],
+  ['— texto', 'optText'],
+  ['— lento', 'optSlow'],
+  [' · nube', 'optCloud'],
+];
+function etiquetaModelo(label) {
+  if (uiLang() === 'es') return label;
+  let out = String(label);
+  for (const [es, k] of COLETILLAS) if (out.includes(es)) out = out.split(es).join(tr(k));
+  return out;
+}
 
 
 // Consumo en vivo: qué está gastando Elffuss ahora mismo y cómo soltarlo.
@@ -849,6 +913,14 @@ function usageCard() {
     vDisk.textContent = `${gb(usage + comp.usage)}${quota ? ' / ' + gb(quota) : ''} ${persisted ? '· ✓' : '· ⚠'}` + (comp.ok ? '' : ' · ?');
     const sel = $('model-select');
     vBrain.textContent = sel ? (sel.options[sel.selectedIndex]?.textContent || '—').slice(0, 34) : '—';
+    if (fichaModelo) {             // la ficha del modelo, también aquí
+      const a = document.createElement('a');
+      a.href = fichaModelo.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = ' ⓘ';
+      a.title = tr('modelCardL', { name: fichaModelo.nombre });
+      a.setAttribute('aria-label', a.title);
+      vBrain.appendChild(a);
+    }
     freeBtn.style.display = (sel && sel.value !== 'rules') ? '' : 'none';
     // refrescar solo mientras se está viendo
     clearTimeout(timer);
@@ -1386,6 +1458,9 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   });
   $('btn-perms').addEventListener('click', () => { selectTab('permisos', { push: true }); if (isMobile()) flipTo('viz'); });
   $('model-select').addEventListener('change', e => onModelChange(e.target.value));
+  // El selector tenía por nombre un icono: ahora se llama «Cerebro (modelo de IA)».
+  $('model-select').setAttribute('aria-label', tr('modelSelectL'));
+  modelStatus($('model-status').className.replace('dot', '').trim() || 'off');
   $('btn-flip').addEventListener('click', () =>
     flipTo(document.body.classList.contains('show-viz') ? 'chat' : 'viz'));
   pintarFlip();

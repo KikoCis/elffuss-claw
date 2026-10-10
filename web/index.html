@@ -34,10 +34,11 @@
     <span class="claim">las apps no existen: se crean</span><span class="claim" id="build">__BUILD__</span>
   </div>
   <div class="controls">
-    <label class="model-pick"><span id="model-ico" class="icon-inline"></span>
+    <label class="model-pick"><span id="model-ico" class="icon-inline" aria-hidden="true"></span>
       <select id="model-select"><!-- lo rellena kernel.js (locales + externos activados) --></select>
     </label>
-    <span id="model-status" class="dot off" title="estado del modelo"></span>
+    <a id="model-card" class="model-card" target="_blank" rel="noopener noreferrer" hidden>ⓘ</a>
+    <span id="model-status" class="dot off" role="img" title="estado del modelo"></span>
     <button id="btn-clear" class="ghost icon-btn" title="Nueva conversación"></button>
     <button id="btn-mind" class="ghost icon-btn" title="Mente de Elffuss — cerebro autónomo">🧠</button>
     <button id="disk-chip" class="ghost" hidden></button>
@@ -118,7 +119,7 @@
 <button id="btn-flip" title="cambiar entre chat y vista">Vista</button>
 <div id="toasts" role="status" aria-live="polite" aria-relevant="additions"></div>
 <div id="model-progress" hidden>
-  <div class="track"><div id="model-bar"></div></div>
+  <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-labelledby="model-progress-text"><div id="model-bar"></div></div>
   <span id="model-progress-text"></span>
 </div>
 

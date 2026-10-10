@@ -58,6 +58,10 @@ header {
 .model-pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .model-pick select { max-width: min(30vw, 380px); text-overflow: ellipsis; }
 #disk-chip { white-space: nowrap; flex: none; padding: 4px 10px; font-size: .78rem; border-radius: 999px; }
+.model-card { color: var(--muted); text-decoration: none; font-size: .9rem; flex: none; }
+.model-card:hover { color: var(--fg); }
+.model-card[hidden] { display: none; }
+#model-select:disabled { opacity: .6; cursor: progress; }
 select {
   background: var(--bg3);
   color: var(--fg);
@@ -472,7 +476,7 @@ dialog p { margin: 6px 0; font-size: .9rem; }
      390 px, «Elffu» asomaba por detrás de la caja del selector. Al tocarlo se
      abre el selector nativo del sistema, que sí enseña los nombres enteros. */
   .brand { flex: none; }
-  .brand b, #model-ico { display: none; }
+  .brand b, #model-ico, .model-card { display: none; }
   #btn-clear, #btn-perms { padding: 7px 9px; font-size: .78rem; }
 
   #log { padding: 10px; }

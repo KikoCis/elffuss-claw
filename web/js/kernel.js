@@ -718,12 +718,28 @@ function montarVelocimetro(mod) {
   import('./velocimetro.js').then(vm => vm.montar(mod?.alMedir ? mod : null)).catch(() => { /* sin velocímetro la app funciona igual */ });
 }
 
-async function changeModel(id) {
+// Ficha pública de cada cerebro local (ⓘ junto al selector). Sin ficha pública
+// —el 27B— no hay ⓘ: nunca se enlazan los ficheros de pesos.
+const FICHAS = {
+  'litert:gemma-e4b': 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm',
+  'litert:gemma-e2b': 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm',
+  'onnx:qwen3.5-0.8b': 'https://huggingface.co/onnx-community/Qwen3.5-0.8B-ONNX',
+  'webllm:minicpm5-2b': 'https://huggingface.co/fatih-can/MiniCPM5-2B-MLC',
+  'engine:qwen35-0.8b': 'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF',
+};
+const etiquetaDe = id => modelOptions().find(o => o.id === id)?.label?.split(' · ')[0] || id;
+function pintarFicha(id) { ui.setFichaModelo(FICHAS[id] || null, etiquetaDe(id)); }
+
+// `volviendo`: es la vuelta al cerebro que funcionaba tras un fallo (no se
+// intenta volver otra vez si también falla).
+async function changeModel(id, { volviendo = false } = {}) {
+  const previo = activeModel;         // el que estaba funcionando
   if (id === 'rules') { // modo básico
     agent.setProvider(rules);
     activeModel = 'rules';
     activeMod = null;
     montarVelocimetro(null);
+    pintarFicha(null);
     ui.modelStatus('off');
     localStorage.setItem('elffuss.model', 'rules');
     ui.setModel('rules');
@@ -736,6 +752,7 @@ async function changeModel(id) {
   // avisaría al salir para siempre, hasta que el usuario aprendiera a ignorar
   // el aviso. Un aviso que miente es peor que no tenerlo.
   cargandoModelo = true;
+  ui.modeloCargando(true);            // sin cargas en paralelo: el selector espera
   try {
     const mod = await resolveProvider(id);
     ui.modelProgress('Preparando modelo…');
@@ -745,6 +762,7 @@ async function changeModel(id) {
     activeModel = id;
     activeMod = mod;
     montarVelocimetro(mod);
+    pintarFicha(id);
     localStorage.setItem('elffuss.model', id);
     ui.setModel(id);
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
@@ -760,14 +778,26 @@ async function changeModel(id) {
       _fellBack = true;
       sessionStorage.setItem('elffuss.skipGemma', '1'); // no reintentar el pesado esta sesión
       ui.toast('Ese Gemma no cargó aquí (memoria/GPU) — uso Qwen3.5-0.8B (ligero).');
-      const ok = await changeModel('onnx:qwen3.5-0.8b');
+      // (sin volver desde dentro: si el ligero tampoco carga, la vuelta al que
+      // funcionaba la hace esta misma llamada, una sola vez)
+      const ok = await changeModel('onnx:qwen3.5-0.8b', { volviendo: true });
       _fellBack = false;
       if (ok) return true;
+    }
+    // Si había un cerebro funcionando, se VUELVE a él en vez de caer a Básico
+    // (antes, probar un modelo que no cargaba te dejaba sin el que tenías). Se
+    // vuelve a cargar porque el intento fallido puede haber reconfigurado su
+    // módulo (los proveedores externos comparten api.js).
+    if (!volviendo && previo && previo !== 'rules' && previo !== id) {
+      ui.toast(t('modelFailedBack', { id: etiquetaDe(id), err: e?.message || String(e), prev: etiquetaDe(previo) }));
+      await changeModel(previo, { volviendo: true });
+      return false;
     }
     ui.modelStatus('off');
     agent.setProvider(rules);
     activeModel = 'rules';
     montarVelocimetro(null);
+    pintarFicha(null);
     ui.setModel('rules');
     ui.toast('⚠️ No se pudo cargar ' + id + ': ' + (e?.message || String(e)));
     return false;
@@ -775,6 +805,7 @@ async function changeModel(id) {
     // Pase lo que pase —éxito, fallo, o el respaldo que vuelve a entrar aquí—
     // la carga ha dejado de estar en curso.
     cargandoModelo = false;
+    ui.modeloCargando(false);
   }
 }
 let _fellBack = false;
