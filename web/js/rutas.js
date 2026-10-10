@@ -6,7 +6,8 @@
 //
 //   #/vista · #/apps · #/apps/<nombre> · #/tareas · #/tareas/<id>
 //   #/tareas/automatizaciones · #/vault · #/skills · #/skills/<nombre>
-//   #/permisos · #/ajustes · #/ajustes/acerca · #/mente · #/mente/<ruta>
+//   #/permisos · #/ajustes · #/ajustes/acerca · #/memoria · #/memoria/<id>
+//   #/mente · #/mente/<ruta>
 //   #/modelo  → no es un sitio, es una acción: enfoca el selector de modelo.
 //
 // Lo que NUNCA va en una URL: nombres de secretos ni hechos de la memoria. Un
@@ -16,7 +17,7 @@
 // El detalle es relativo y corto (un nombre de app, un id de tarea, una ruta
 // DENTRO de la carpeta autorizada): ninguna ruta de disco completa llega aquí,
 // porque el navegador solo nos da el nombre de la carpeta, no dónde está.
-export const SECCIONES = ['vista', 'apps', 'tareas', 'vault', 'skills', 'permisos', 'ajustes', 'mente', 'modelo'];
+export const SECCIONES = ['vista', 'apps', 'tareas', 'vault', 'skills', 'permisos', 'ajustes', 'memoria', 'mente', 'modelo'];
 
 export function leer(hash = location.hash) {
   const m = /^#\/([a-z]+)(?:\/(.*))?$/.exec(hash || '');
