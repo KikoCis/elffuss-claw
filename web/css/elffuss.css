@@ -52,6 +52,8 @@ header {
 .brand b, .beta { white-space: nowrap; flex: none; }
 .claim { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #build { flex: none; }
+#build a { color: inherit; text-decoration: none; }
+#build a:hover { text-decoration: underline; }
 .controls { flex: none; }
 .model-pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .model-pick select { max-width: min(30vw, 380px); text-overflow: ellipsis; }
@@ -311,6 +313,8 @@ main {
 /* Skills: enlaces a repos y SKILL.md, la lista de un repo dentro de su tarjeta y
    el texto que se le da al modelo */
 .repo-link { color: var(--accent2); font-size: .74rem; text-decoration: none; white-space: nowrap; }
+.prov-name { font-weight: 700; flex: 1; cursor: pointer; }
+.panel .card a { color: var(--accent2); }
 .repo-link:hover { text-decoration: underline; }
 .repo-skills { display: flex; flex-direction: column; gap: 6px; }
 .repo-skills[hidden] { display: none; }

@@ -884,10 +884,14 @@ export function refreshSettings() {
   for (const [id, c] of Object.entries(cfgs)) {
     const wrap = el('div', 'card col');
     const head = el('div', 'row between');
-    const title = el('b', null, c.label);
+    // La casilla con nombre: era una casilla suelta sin etiqueta.
     const toggle = el('input');
     toggle.type = 'checkbox';
+    toggle.id = 'prov-' + id;
     toggle.checked = c.enabled;
+    const title = el('label', 'prov-name', c.label);
+    title.htmlFor = toggle.id;
+    toggle.setAttribute('aria-label', tr('provEnableL', { label: c.label }));
     head.append(title, toggle);
     wrap.appendChild(head);
     wrap.appendChild(el('span', 'muted', c.help || ''));
@@ -915,7 +919,13 @@ export function refreshSettings() {
       });
       onSettingsChangedCb();
     };
-    toggle.onchange = () => { save(); toast(toggle.checked ? tr('provOn', { label: c.label }) : tr('provOff', { label: c.label })); };
+    // «Elígelo en el selector de modelo», con un botón que lleva a él (antes
+    // decía «en el selector 🧠», y 🧠 abre la Mente).
+    toggle.onchange = () => {
+      save();
+      if (toggle.checked) toast(tr('provOn', { label: c.label }), { accion: { label: tr('pickModel'), run: enfocarSelectorModelo } });
+      else toast(tr('provOff', { label: c.label }));
+    };
     wrap.appendChild(btn(tr('save'), 'primary', () => { save(); toast(tr('saved')); }));
     ext.appendChild(wrap);
   }
@@ -961,24 +971,70 @@ export function refreshSettings() {
     `<span class="muted">${tr('telPrivacy')}</span>` +
     `<label class="muted" style="font-size:.8em;margin-top:4px">${tr('telManual')}</label>` +
     `<textarea id="tel-feedback" rows="2" style="width:100%;resize:vertical" placeholder="${tr('telPh')}"></textarea>`;
+  // Dice si LLEGÓ: antes daba las gracias y vaciaba el texto aunque el envío
+  // fallara. Si falla, el texto se queda y se ofrece el sitio público de
+  // incidencias, que además deja un enlace para seguirlo.
   const telSendBtn = btn(tr('send'), 'primary', async () => {
     const ta = telCard.querySelector('#tel-feedback');
     const text = ta.value.trim();
-    if (!text) { toast(tr('writeSomething')); return; }
+    if (!text) { toast(tr('writeSomething')); ta.focus(); return; }
+    telSendBtn.disabled = true;
     const wasEnabled = telemetry.isEnabled();
     if (!wasEnabled) telemetry.setEnabled(true); // envío manual es explícito, se permite aunque el automático esté apagado
-    await telemetry.sendFeedback(text);
-    if (!wasEnabled) telemetry.setEnabled(false); // no activa el automático de fondo si no lo pidió
-    ta.value = '';
-    toast(tr('sentThanks'));
+    let llego = false;
+    try { llego = await telemetry.sendFeedback(text); }
+    finally {
+      if (!wasEnabled) telemetry.setEnabled(false); // no activa el automático de fondo si no lo pidió
+      telSendBtn.disabled = false;
+    }
+    if (llego) { ta.value = ''; toast(tr('sentThanks')); }
+    else toast(tr('sendFailed'), { accion: { label: tr('openIssues'), run: () => window.open(ISSUES_URL, '_blank', 'noopener,noreferrer') } });
   });
   telCard.appendChild(telSendBtn);
+  const alt = el('span', 'muted', tr('telIssues') + ' ');
+  alt.appendChild(enlaceFuera(ISSUES_URL, 'git.elffuss.com/elffuss/claw/issues ↗'));
+  telCard.appendChild(alt);
   panel.appendChild(telCard);
   panel.appendChild(ext);        // externos: lo último de todo
   telCard.querySelector('#tel-enabled').checked = telemetry.isEnabled();
   telCard.querySelector('#tel-enabled').onchange = e => telemetry.setEnabled(e.target.checked);
 
+  panel.appendChild(acercaDe());
   panel.appendChild(el('p', 'muted', tr('skillsTabHint')));
+}
+
+// ---------- acerca de ----------
+// Dónde está el código, dónde se cuentan los fallos y con qué licencia. No
+// estaba en ninguna parte de la interfaz.
+const REPO_URL = 'https://github.com/KikoCis/elffuss-claw';
+const COMUNIDAD_URL = 'https://git.elffuss.com/elffuss/claw';
+const ISSUES_URL = COMUNIDAD_URL + '/issues';
+function enlaceFuera(href, texto) {
+  const a = document.createElement('a');
+  a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.textContent = texto;
+  return a;
+}
+// El sello del build: un commit limpio enlaza a GitHub; «-dirty» (desplegado con
+// cambios sin commitear, ver deploy.sh) no, porque ese commit no es lo que se
+// sirve; en desarrollo no hay sello.
+export function enlaceBuild(sello) {
+  const s = String(sello || '').trim();
+  if (/^[0-9a-f]{7,40}$/.test(s)) return enlaceFuera(`${REPO_URL}/commit/${s}`, s);
+  if (/^[0-9a-f]{7,40}-dirty$/.test(s)) { const x = el('span', null, s); x.title = tr('buildDirty'); return x; }
+  return el('span', null, tr('buildDev'));
+}
+function acercaDe() {
+  const c = el('div', 'card col');
+  c.dataset.ruta = 'acerca';      // #/ajustes/acerca
+  c.appendChild(el('b', null, tr('aboutTitle')));
+  const l1 = el('span', 'muted', tr('aboutCode') + ' ');
+  l1.append(enlaceFuera(REPO_URL, 'github.com/KikoCis/elffuss-claw ↗'), ' · ' + tr('aboutCommunity') + ' ',
+    enlaceFuera(COMUNIDAD_URL, 'git.elffuss.com/elffuss/claw ↗'), ' · ', enlaceFuera(ISSUES_URL, tr('aboutIssues') + ' ↗'));
+  const l2 = el('span', 'muted', tr('aboutLicense') + ' · ' + tr('aboutBuild') + ' ');
+  l2.appendChild(enlaceBuild($('build')?.dataset.sello || $('build')?.textContent));
+  c.append(l1, l2);
+  return c;
 }
 
 // Dos secciones que se repintan solas: lo instalado (con su contador) y las
@@ -1255,6 +1311,9 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
     (($('composer')?.offsetHeight || 0) + ($('chips')?.offsetHeight || 0)) + 'px');
   try { const ro = new ResizeObserver(altoPie); ro.observe($('composer')); ro.observe($('chips')); } catch { /* sin ResizeObserver: queda el valor por defecto */ }
   altoPie();
+
+  // el sello del build enlaza al commit cuando es un commit limpio
+  { const b = $('build'); if (b) { const sello = b.textContent.trim(); b.dataset.sello = sello; b.replaceChildren(enlaceBuild(sello)); } }
 
   // iconos vectoriales (sin emojis)
   $('model-ico').innerHTML = UI.code;
