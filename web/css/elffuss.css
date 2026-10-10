@@ -536,7 +536,10 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 #mind-overlay { position: fixed; inset: 0; z-index: 300; background: radial-gradient(1200px 800px at 50% 45%, #1a0a2e, #05030c 78%); overflow: hidden; }
 #mind-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #mind-title { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; font-size: 1.1rem; font-weight: 800; letter-spacing: .18em; color: #fff; text-shadow: 0 0 22px #ff4d8d; pointer-events: none; }
-#mind-title span { display: block; font-size: .66rem; font-weight: 500; letter-spacing: .06em; color: #b9a7ff; margin-top: 4px; text-shadow: none; }
+#mind-title span { display: block; font-size: .66rem; font-weight: 500; letter-spacing: .06em; color: #b9a7ff; margin: 4px auto 0; text-shadow: none; max-width: min(520px, 44vw); }
+/* en estrecho la explicación no cabe sin tapar los botones: se queda solo para
+   el lector de pantalla (aria-describedby la sigue leyendo) */
+@media (max-width: 900px) { #mind-title span { display: none; } }
 #mind-close { position: absolute; top: 14px; right: 16px; z-index: 6; background: rgba(255,77,141,.14); border: 1px solid #ff4d8d; color: #ffd7e6; border-radius: 999px; padding: 7px 14px; font-size: .8rem; cursor: pointer; backdrop-filter: blur(6px); }
 #mind-close:hover { background: rgba(255,77,141,.28); }
 #mind-history { position: absolute; top: 14px; right: 182px; z-index: 6; background: rgba(73,232,221,.14); border: 1px solid #49e8ff; color: #bfeef6; border-radius: 999px; padding: 7px 12px; font-size: .78rem; cursor: pointer; backdrop-filter: blur(6px); }
@@ -549,12 +552,23 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 #mind-config:hover { background: rgba(124,92,255,.3); }
 /* leyenda de perfiles: fija, no flota (siempre legible) */
 #mind-legend { position: absolute; top: 60px; left: 14px; z-index: 5; display: flex; flex-direction: column; gap: 5px; background: rgba(8,5,18,.5); border: 1px solid rgba(124,92,255,.3); border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(6px); pointer-events: auto; }
-.ml-item { font-size: .68rem; color: #cfe8f0; display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
-.ml-item:hover { background: rgba(255,255,255,.08); }
+.ml-item { font: inherit; font-size: .68rem; color: #cfe8f0; display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 2px 4px; border-radius: 5px; background: none; border: none; text-align: left; }
+.ml-item:hover, .ml-item:focus-visible { background: rgba(255,255,255,.08); }
 .ml-sw { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 6px currentColor; flex: none; }
 /* solo etiquetas de propuestas forjadas flotan ancladas al mundo */
 #mind-anchors { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.mind-node-label { position: absolute; font-size: .6rem; color: #ffd7e6; background: rgba(255,77,141,.18); border: 1px solid rgba(255,77,141,.5); border-radius: 6px; padding: 1px 6px; pointer-events: none; white-space: nowrap; text-shadow: 0 0 8px #ff4d8d; }
+/* la capa no recibe clics (deja girar el mundo), pero cada etiqueta SÍ: es un
+   botón y su clic abre la propuesta. Antes heredaba pointer-events:none y solo
+   funcionaba atinar a la malla 3D que hubiera debajo. */
+.mind-node-label { position: absolute; font: inherit; font-size: .6rem; color: #ffd7e6; background: rgba(255,77,141,.18); border: 1px solid rgba(255,77,141,.5); border-radius: 6px; padding: 1px 6px; pointer-events: auto; cursor: pointer; white-space: nowrap; text-shadow: 0 0 8px #ff4d8d; }
+.mind-node-label:hover, .mind-node-label:focus-visible { background: rgba(255,77,141,.34); outline: 1px solid #ffd7e6; }
+#mind-overlay button:focus-visible { outline: 2px solid #ffd7e6; outline-offset: 2px; }
+.ml-open { margin-left: 6px; background: none; border: 1px solid rgba(73,232,221,.45); color: #bfeef6; border-radius: 5px; padding: 0 6px; font-size: .62rem; cursor: pointer; }
+.cfg-status { font-size: .72rem; color: #bfeef6; min-height: 1em; }
+.cfg-status:empty { display: none; }
+.mind-music-btn { position: absolute; bottom: 14px; right: 14px; z-index: 6; background: rgba(255,77,141,.14); border: 1px solid rgba(255,77,141,.5); color: #ffd7e6; border-radius: 999px; padding: 6px 12px; font-size: .74rem; cursor: pointer; backdrop-filter: blur(6px); }
+.mind-music-btn:hover { background: rgba(255,77,141,.28); }
+.mind-music-cap a { color: #ffd7e6; }
 /* historial completo: TODO lo que ha llegado, sin recortar */
 #mind-log { position: absolute; top: 0; right: -380px; width: 360px; height: 100%; z-index: 8; display: flex; flex-direction: column; background: rgba(6,4,14,.92); border-left: 1px solid rgba(73,232,221,.35); backdrop-filter: blur(10px); transition: right .25s ease; }
 #mind-log.show { right: 0; }
@@ -597,7 +611,7 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 .cfg-ghost { flex: 1; background: rgba(73,232,221,.14); border: 1px solid #49e8ff; color: #bfeef6; border-radius: 8px; padding: 9px; cursor: pointer; font-size: .78rem; }
 .cfg-save { flex: 1; margin-top: 0; background: linear-gradient(135deg, #ff4d8d, #7c5cff); border: none; color: #fff; border-radius: 8px; padding: 9px; cursor: pointer; font-size: .8rem; font-weight: 600; }
 .cfg-note { font-size: .64rem; color: #8a7bb8; margin-top: 4px; }
-.mind-music { position: absolute; bottom: 14px; right: 14px; z-index: 5; width: 300px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,77,141,.4); box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.mind-music { position: absolute; bottom: 52px; right: 14px; z-index: 5; width: 300px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,77,141,.4); box-shadow: 0 8px 30px rgba(0,0,0,.5); }
 .mind-music-cap { font-size: .62rem; color: #ffd7e6; background: rgba(10,6,24,.8); padding: 4px 8px; text-align: center; }
 .proposal-exec-btn { display: block; margin-top: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: .78rem; font-weight: 600; cursor: pointer; }
 .proposal-exec-btn:hover { filter: brightness(1.1); }

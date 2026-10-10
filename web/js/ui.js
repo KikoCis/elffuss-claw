@@ -350,6 +350,7 @@ export function renderApp(name, html, { ruta = false } = {}) {
 }
 
 // móvil: una sola columna, chat ↔ visualizador conmutables
+export function mostrarChat() { if (isMobile()) flipTo('chat'); }
 function flipTo(side) {
   document.body.classList.toggle('show-viz', side === 'viz');
   $('btn-flip').textContent = side === 'viz' ? tr('flipChat') : tr('flipView');

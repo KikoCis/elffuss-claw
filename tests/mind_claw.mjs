@@ -1,13 +1,15 @@
 // Cerebro CEO + Mente de Elffuss en Claw (core compartido con Elffuss Code):
 // perfiles propios de Claw, adaptador sobre fs.js (multi-carpeta), tool-calling
-// REAL (fs.read de verdad) y play/stop persistente vía el botón 🧠.
+// REAL (fs.read de verdad) y play/stop persistente vía el botón ▶/⏸ de la Mente (abrirla no lo enciende).
 import { chromium } from 'playwright';
 const OUT = (process.env.SCRATCH || '/tmp/elffuss-test');
 const BASE = process.env.BASE || 'http://localhost:8798';
 let fails = 0; const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
 
 const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
-const ctx = await b.newContext();
+// En español: la Mente sigue el idioma del navegador (antes estaba siempre en
+// español) y esta prueba lee sus textos.
+const ctx = await b.newContext({ locale: 'es-ES' });
 await ctx.addInitScript(() => {
   try {
     localStorage.setItem('elffuss.model', 'rules');
@@ -35,7 +37,9 @@ await p.evaluate(async (mark) => {
 }, MARK);
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' }); await p.waitForTimeout(1500);
 
-await p.click('#btn-mind'); await p.waitForTimeout(1200);
+await p.click('#btn-mind');
+// La Mente (y three.js) se carga al abrirla: se espera a que esté montada.
+await p.waitForFunction(() => !!document.querySelector('#mind-legend .ml-item'), null, { timeout: 30000 }).catch(() => {});
 ok('overlay + mundo montado', await p.locator('#mind-overlay').count() > 0);
 
 // leyenda con los 3 perfiles de Claw + CEO
@@ -87,7 +91,12 @@ ok('la propuesta llegó como mensaje real al chat/cola', /Implementa esta propue
 // play/stop: pausar desde la Mente y comprobar que sobrevive a recargar
 await p.click('#btn-mind'); await p.waitForTimeout(600);
 const enBefore = await p.evaluate(async () => (await import('/js/ceo.js')).isEnabled());
-ok('el cerebro queda activo tras el primer uso', enBefore);
+// Abrir la Mente ya no enciende el cerebro (lo hacía la primera vez, para
+// siempre y sin decirlo): se enciende con ▶, que explica qué hace.
+ok('abrir la Mente NO enciende el cerebro', !enBefore);
+await p.click('#mind-playstop'); await p.waitForTimeout(200);
+ok('▶ lo enciende y el botón pasa a "pausar"', /pausar/.test(await p.locator('#mind-playstop').innerText())
+  && await p.evaluate(async () => (await import('/js/ceo.js')).isEnabled()));
 await p.click('#mind-playstop'); await p.waitForTimeout(200);
 ok('tras pulsar, el botón pasa a "reanudar"', /reanudar/.test(await p.locator('#mind-playstop').innerText()));
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' }); await p.waitForTimeout(1200);

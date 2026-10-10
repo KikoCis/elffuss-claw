@@ -11,8 +11,9 @@ import { tasks, watch, fs, apps } from './tools/index.js';
 import { hardWork, gatherFolder, deepCreate } from './rlm.js';
 import * as workspace from './workspace.js';
 import * as ceo from './ceo.js';
-import * as mind from './mind.js';
-import { ceoWorkspace, CEO_DEFAULT_PROFILES } from './ceo-adapter.js';
+import * as mindLog from './mind-log.js';
+import { ceoWorkspace, CEO_DEFAULT_PROFILES, propuestasGuardadas, carpetaDelAlma } from './ceo-adapter.js';
+import * as perms from './permissions.js';
 import * as telemetry from './telemetry.js';
 import * as gram from './copilot-grammar.js';
 import * as rutas from './rutas.js';
@@ -338,6 +339,7 @@ let turnCtl = null;
 // Época del histórico: 🧹 la sube, y un turno que empezó en una época anterior
 // no guarda el histórico al terminar (ver el botón 🧹).
 let epocaHistorial = 0;
+let limpiando = false;          // 🧹 en curso: nada vuelve a guardar el histórico
 let pumpFin = Promise.resolve();
 // La burbuja de «pensando» del turno en marcha (para que diga «Parando…») y
 // cuántos mensajes de la cola canceló la parada (para decirlo al terminar).
@@ -597,6 +599,8 @@ async function restoreHistory() {
       } else if (!m.content.startsWith('[…')) {
         ui.addMsg('user', m.content);
       }
+    } else if (m.propuesta) {
+      pintarPropuesta(m);          // aviso del cerebro: vuelve con su botón «Ejecutar»
     } else {
       const call = parseToolCall(m.content);
       if (call) ui.addTool(call);
@@ -617,6 +621,7 @@ document.getElementById('btn-clear').addEventListener('click', async e => {
   // pregunta antes de salir y le dices que no): los turnos nuevos tienen que
   // seguir guardando.
   epocaHistorial++;
+  limpiando = true;
   stopCurrent();
   // Y que se note YA que el clic ha llegado: hasta que el turno soltaba el
   // modelo (o vencía el tope) no cambiaba nada —ni el botón, ni un aviso— y la
@@ -740,52 +745,115 @@ if (rutas.leer()) ui.navegar(rutas.leer());
 // Cuando NO le pides nada, Elffuss trabaja por su cuenta: revisa tus carpetas
 // autorizadas, tareas, apps y memoria, y propone mejoras (sin tocar nada por
 // su cuenta — la propuesta se ejecuta con el mismo camino real que el chat).
-// «Abrir en el editor» de un pensamiento no aplica aquí (no hay editor de
-// código) — en su lugar, pide en el chat el contenido de ese fichero.
-mind.setOpenFile(path => send('Muéstrame el contenido de ' + path));
-mind.setExecuteProposal(md => { mind.closeMind(); send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md); });
-mind.init({}); // sin ciudad de fondo (Claw v1): la Mente funciona igual sin ella
+//
+// La Mente (mind.js) arrastra three.js desde un CDN: se carga al ABRIRLA, no con
+// cada visita (antes cada carga de página contactaba jsdelivr, y sin red ni
+// arrancaba la app). Mientras no está, el historial lo lleva mind-log.js.
+let mente = null, menteCargando = null;
+function cargarMente() {
+  return (menteCargando ||= import('./mind.js').then(m => {
+    m.init({
+      // sin ciudad de fondo (Claw v1): la Mente funciona igual sin ella. Lo que
+      // sí carga son las propuestas ya guardadas, para que sobrevivan a recargar.
+      loadThoughts: () => propuestasGuardadas(ceo.getSoulDir()),
+      etiquetaAlma: async () => {
+        const f = await carpetaDelAlma();
+        return f ? t('mindSoulIn', { folder: f }) : t('mindSoulNoFolder');
+      },
+      motivoNoPensar: async () => (activeModel === 'rules' ? t('mindNeedsModel')
+        : !(await carpetaDelAlma()) ? t('mindNeedsFolder') : null),
+    });
+    // Claw no tiene editor: «Ver el fichero» cierra la Mente y lo lee en el chat
+    // (antes mandaba «Muéstrame el contenido de…» al modelo, que contestaba
+    // detrás de la Mente abierta, y en Básico con el texto de ayuda).
+    m.setOpenFile(verFicheroDeLaMente, { etiqueta: t('mindViewFile') });
+    m.setExecuteProposal(md => { m.closeMind(); executeProposal(md); });
+    return (mente = m);
+  }).catch(e => { menteCargando = null; throw e; }));
+}
+// #/mente, #/mente/<ruta de la propuesta>, el botón 🧠 y las notificaciones.
+async function abrirMente(ruta = null) {
+  try {
+    const m = await cargarMente();
+    await m.openMind();
+    if (ruta && !m.mostrarPropuesta(ruta)) ui.toast(t('mindNoProposal'));
+  } catch (e) { ui.toast(t('mindLoadFail', { err: e?.message || String(e) })); }
+}
+async function verFicheroDeLaMente(path) {
+  mente?.closeMind();
+  ui.mostrarChat();
+  try {
+    const texto = await fs.read({ path });
+    ui.addMsg('assistant', `📄 \`${path}\`\n\n${texto}`);
+  } catch (e) { ui.toast('⚠️ ' + (e?.message || e)); }
+}
 const WEAK_RE = /^(no (encontr|hay|se me ocurre)|nada que|sin cambios|todo (está|esta) bien|no aplica)/i;
 function isNoteworthy(ev) {
   const solid = (ev.proposals || []).filter(p => p.text && p.text.trim().length >= 60 && !WEAK_RE.test(p.text.trim()));
   return solid.length >= 2; // al menos 2 líneas de pensamiento con algo sustancioso
 }
 function executeProposal(md) { send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md); }
-// SOLO notifica si el permiso YA está concedido — nunca lo pide aquí (fuera
-// de un gesto de usuario los navegadores lo bloquean en silencio de todos
-// modos); pedirlo vive únicamente en el clic del botón 🧠.
-function notify(title, body) {
+// SOLO notifica si el permiso YA está concedido — nunca lo pide aquí; pedirlo
+// vive en el «Activar» del panel ⚙ de la Mente (antes también en el clic 🧠,
+// que lo pedía nada más abrirla).
+function notify(title, body, path) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  try { new Notification(title, { body, icon: 'img/elffuss.svg' }); } catch { /* */ }
+  try {
+    const n = new Notification(title, { body, icon: 'img/elffuss.svg' });
+    // Pulsarla te trae a Claw y a la propuesta (antes no hacía nada).
+    n.onclick = () => { try { window.focus(); } catch { /* — */ } n.close(); abrirMente(path || null); };
+  } catch { /* */ }
 }
+// El aviso en el chat se GUARDA en el historial con su propuesta: antes, tras
+// recargar, desaparecían el mensaje y su botón «Ejecutar».
 function reportImprovements(ev) {
   const props = ev.proposals || [];
   if (!props.length) return;
-  const firstLine = t => (t || '').split('\n').find(l => l.trim())?.trim().slice(0, 160) || '';
-  const body = `💡 **Mientras estabas fuera revisé tu espacio y encontré ${props.length} mejora${props.length === 1 ? '' : 's'}:**\n\n` +
+  const firstLine = x => (x || '').split('\n').find(l => l.trim())?.trim().slice(0, 160) || '';
+  const n = props.length;
+  const body = `💡 **${t(n === 1 ? 'proposalsFound1' : 'proposalsFoundN', { n })}**\n\n` +
     props.map(p => `**${p.dept}** — ${firstLine(p.text)}`).join('\n\n') +
-    (ev.path ? `\n\n_Guardado en \`${ev.path}\`. Pulsa 🧠 para verlo en la Mente._` : '');
-  const div = ui.addMsg('assistant', body);
-  const md = ev.md || body;
-  if (div) {
-    const btn = document.createElement('button');
-    btn.className = 'proposal-exec-btn';
-    btn.textContent = '▶ Ejecutar esta propuesta';
-    btn.onclick = () => { btn.disabled = true; btn.textContent = '▶ enviado a la cola…'; executeProposal(md); };
-    div.appendChild(btn);
-  }
-  if (isNoteworthy(ev)) notify(`Elffuss encontró ${props.length} mejora${props.length === 1 ? '' : 's'}`, props.map(p => p.dept).join(' · '));
+    (ev.path ? `\n\n_${t('proposalSaved', { path: ev.path })}_ [${t('proposalSeeMind')}](${rutas.href('mente', ev.path)})` : '');
+  const entrada = { role: 'assistant', content: body, ts: Date.now(), propuesta: { md: ev.md || body, path: ev.path || null } };
+  agent.history.push(entrada);
+  if (!limpiando) db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
+  pintarPropuesta(entrada);
+  if (isNoteworthy(ev)) notify(t(n === 1 ? 'proposalNotif1' : 'proposalNotifN', { n }), props.map(p => p.dept).join(' · '), ev.path);
 }
+function pintarPropuesta(m) {
+  const div = ui.addMsg('assistant', m.content);
+  if (!div || !m.propuesta?.md) return;
+  const btn = document.createElement('button');
+  btn.className = 'proposal-exec-btn';
+  btn.textContent = t('proposalRun');
+  btn.onclick = () => {
+    // En Básico, «ejecutar» mandaba el markdown al motor de reglas, que lo
+    // troceaba en órdenes sueltas (un web.fetch de una URL a medias…).
+    if (activeModel === 'rules') {
+      ui.toast(t('proposalNeedsModel'), { accion: { label: t('pickModel'), run: () => ui.enfocarSelectorModelo() } });
+      return;
+    }
+    btn.disabled = true; btn.textContent = t('proposalQueued'); executeProposal(m.propuesta.md);
+  };
+  div.appendChild(btn);
+}
+// Lo que el cerebro puede hacer mientras no miras: LEER. Escribir, crear apps,
+// programar tareas o visitar webs queda fuera, y lo de carpetas solo si el
+// permiso ya está concedido: el cerebro no saca diálogos de permisos.
+const CEO_SOLO_LECTURA = new Set(['fs.list', 'fs.read', 'fs.watch_list', 'app.list', 'tasks.list', 'memory.list', 'skill.list', 'skill.get']);
 ceo.init({
   namespace: 'elffuss',
   workspace: ceoWorkspace,
   defaultProfiles: CEO_DEFAULT_PROFILES,
   defaultMission: 'Revisar tu espacio (carpetas, apps, tareas, memoria) y proponer mejoras concretas y accionables.',
-  provider: () => agent.provider,
+  // En Básico no hay cerebro que poner a pensar: el motor de reglas contestaba
+  // con su texto de ayuda, sacaba diálogos de permiso y creaba apps «boceto».
+  provider: () => (activeModel === 'rules' ? null : agent.provider),
+  allowTool: nombre => CEO_SOLO_LECTURA.has(nombre) && (!nombre.startsWith('fs.') || perms.has('fs')),
   // el usuario tiene PRIORIDAD: si hay algo en cola o procesándose, el cerebro espera
   isBusy: () => pumping || queue.length > 0,
   onEvent: (ch, ev) => {
-    mind.pushThought(ch, ev);
+    if (mente) mente.pushThought(ch, ev); else mindLog.registrar(ch, ev);
     if (ch === 'ceo' && ev.type === 'built') reportImprovements(ev);
   },
 });
@@ -793,16 +861,15 @@ ceo.init({
 const noteAct = e => { if (!e.target.closest?.('#mind-overlay')) ceo.noteActivity(); };
 document.addEventListener('pointerdown', noteAct, true);
 document.addEventListener('keydown', noteAct, true);
-document.getElementById('btn-mind').addEventListener('click', () => {
-  // auto-activa SOLO la primera vez (nunca decidiste play/stop); si lo
-  // pausaste a propósito, abrir la Mente NO debe reactivarlo por sorpresa.
-  if (!ceo.isEnabled() && !ceo.hasDecided()) ceo.enable();
-  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* */ }
-  mind.openMind();
-});
-// #/mente y #/mente/<ruta de la propuesta>
-function abrirMente(ruta) {
-  Promise.resolve(mind.openMind()).then(() => { if (ruta) mind.mostrarPropuesta?.(ruta); });
+// Abrir la Mente es SOLO abrirla. Antes, el primer clic encendía el cerebro
+// autónomo para siempre (y en cada visita siguiente), pedía permiso de
+// notificaciones y ponía música de un tercero. Encenderlo es el botón ▶ de
+// dentro, que explica qué hace.
+{
+  const b = document.getElementById('btn-mind');
+  b.setAttribute('aria-label', t('mindOpenBtn'));
+  b.title = t('mindOpenBtn');
+  b.addEventListener('click', () => abrirMente());
 }
 // restaura tu última elección (play o stop) tal cual la dejaste. EXCEPTO en
 // modo copiloto: ahí el modelo es para soplarte argumentos en vivo, no para
