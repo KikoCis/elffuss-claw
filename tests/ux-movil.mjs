@@ -2,7 +2,8 @@
 //   · A 390 px, en la vista: la página no se desplaza de lado (las pestañas se
 //     desplazan dentro) y «💬 Chat» se ve entero para volver.
 //   · En el chat, el botón de vista no tapa la fila de chips; su texto y su
-//     nombre van en el idioma de la página.
+//     nombre van en el idioma de la página. La caja de progreso de una descarga
+//     no tapa la caja de texto.
 //   · La puerta de móvil sale en un teléfono, no en una ventana estrecha con
 //     ratón; si la descarga falla, la tarjeta se queda con el error y
 //     «Reintentar».
@@ -23,6 +24,19 @@ const solapan = (a, c) => !(a.x + a.width <= c.x || c.x + c.width <= a.x || a.y 
     && /Ver lo que crea Elffuss/.test(await flip.getAttribute('aria-label')));
   const [bf, bc] = [await flip.boundingBox(), await p.locator('#chips').boundingBox()];
   ok('…y no tapa la fila de chips', !solapan(bf, bc), JSON.stringify({ bf, bc }));
+  // Durante una descarga, la caja de progreso no tapa la caja de texto ni el botón
+  // (antes, a 390 px, se montaba encima del compositor durante toda la descarga).
+  await p.evaluate(async () => (await import('/js/ui.js')).modelProgress('Descargando el cerebro · 42 %'));
+  const cajas = await p.evaluate(() => {
+    const r = id => { const e = document.getElementById(id).getBoundingClientRect(); return { x: e.x, y: e.y, width: e.width, height: e.height }; };
+    const pr = document.getElementById('prompt').getBoundingClientRect();
+    const arriba = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+    return { progreso: r('model-progress'), prompt: r('prompt'), composer: r('composer'), flip: r('btn-flip'),
+      visible: !document.getElementById('model-progress').hidden, enElPrompt: arriba?.id || arriba?.tagName };
+  });
+  ok('con una descarga en marcha, la caja de progreso se ve y no tapa el compositor ni el botón ⇄', cajas.visible
+    && !solapan(cajas.progreso, cajas.composer) && !solapan(cajas.progreso, cajas.flip) && cajas.enElPrompt === 'prompt', JSON.stringify(cajas));
+  await p.evaluate(async () => (await import('/js/ui.js')).modelProgress(null));
   await flip.click();
   await espera(200);
   const vista = await p.evaluate(() => {

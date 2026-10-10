@@ -510,7 +510,12 @@ body:has(#splash:not([hidden])) #toasts { visibility: hidden; }
   dialog { max-width: 92vw; margin: auto; }
   #toasts { left: 12px; right: 12px; bottom: 12px; }
   .toast { max-width: none; }
-  #model-progress { left: 12px; right: 12px; width: auto; bottom: 60px; }
+  /* Encima del compositor y del botón ⇄, que ya flota sobre --alto-pie: a 390 px
+     la caja de progreso tapaba la caja de texto durante toda la descarga (el
+     camino normal tras «Descargarlo igualmente»). En la Vista no hay
+     compositor: basta con dejar sitio al botón. */
+  #model-progress { left: 12px; right: 12px; width: auto; bottom: calc(var(--alto-pie, 150px) + 56px); }
+  body.show-viz #model-progress { bottom: 60px; }
 
   #splash svg { width: 140px; height: 140px; }
   #splash h1 { font-size: 1.35rem; }
