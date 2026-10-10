@@ -340,7 +340,15 @@ export function renderApp(name, html, { ruta = false } = {}) {
 export function mostrarChat() { if (isMobile()) flipTo('chat'); }
 function flipTo(side) {
   document.body.classList.toggle('show-viz', side === 'viz');
-  $('btn-flip').textContent = side === 'viz' ? tr('flipChat') : tr('flipView');
+  pintarFlip();
+}
+// El botón dice adónde lleva, en el idioma de la página (empezaba con «Vista»
+// escrito en el HTML para todos los idiomas).
+function pintarFlip() {
+  const enViz = document.body.classList.contains('show-viz');
+  const b = $('btn-flip');
+  b.textContent = enViz ? tr('flipChat') : tr('flipView');
+  b.setAttribute('aria-label', enViz ? tr('flipToChat') : tr('flipToView'));
 }
 
 // ---------- pestañas ----------
@@ -1122,6 +1130,13 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   $('model-select').addEventListener('change', e => onModelChange(e.target.value));
   $('btn-flip').addEventListener('click', () =>
     flipTo(document.body.classList.contains('show-viz') ? 'chat' : 'viz'));
+  pintarFlip();
+  // En el teléfono el botón flota por encima de los chips y del compositor: su
+  // alto real (cambia con el idioma y el teclado) va a --alto-pie.
+  const altoPie = () => document.documentElement.style.setProperty('--alto-pie',
+    (($('composer')?.offsetHeight || 0) + ($('chips')?.offsetHeight || 0)) + 'px');
+  try { const ro = new ResizeObserver(altoPie); ro.observe($('composer')); ro.observe($('chips')); } catch { /* sin ResizeObserver: queda el valor por defecto */ }
+  altoPie();
 
   // iconos vectoriales (sin emojis)
   $('model-ico').innerHTML = UI.code;
@@ -1207,18 +1222,31 @@ export function mountDiskChip() {
 // giga de datos de alguien que no había pedido nada, y encima con muchas
 // papeletas de no llegar a funcionar (el navegador de móvil cierra la pestaña
 // bastante antes de sostener un modelo entero). Ahora se avisa y se espera.
+//
+// `onAccept()` devuelve si el cerebro cargó. Si no, la tarjeta se queda con el
+// error y un «Reintentar» (antes desaparecía al pulsar y un fallo solo dejaba un
+// aviso pasajero). Quién es un teléfono lo decide el kernel (esTelefono).
 export function mobileGate(sizeText, onAccept) {
-  const box = el('div', 'card col');
+  const box = el('div', 'card col mobile-gate');
   box.style.cssText = 'margin:14px 0;padding:14px;gap:8px';
-  box.appendChild(el('b', null, '📱 En el móvil todavía no funciona'));
-  box.appendChild(el('span', 'muted',
-    'Elffuss ejecuta el modelo dentro de tu propio navegador. En el móvil eso hoy no sale bien: ' +
-    'habría que descargar ' + sizeText + ' y el navegador suele cerrar la pestaña antes de terminar. ' +
-    'Así que no te lo descargo sin preguntar.'));
-  box.appendChild(el('span', 'muted', 'Ábrelo en un ordenador y sí funciona: ahí es donde vive.'));
-  box.appendChild(btn('Descargarlo igualmente (' + sizeText + ')', 'ghost', () => {
+  box.setAttribute('role', 'region');
+  box.setAttribute('aria-label', tr('mobTitle'));
+  box.appendChild(el('b', null, tr('mobTitle')));
+  box.appendChild(el('span', 'muted', tr('mobDesc', { size: sizeText })));
+  box.appendChild(el('span', 'muted', tr('mobDesktop')));
+  const estado = el('span', 'muted');
+  estado.setAttribute('role', 'status');
+  const boton = btn(tr('mobAnyway', { size: sizeText }), 'ghost', async () => {
     try { localStorage.setItem('elffuss.movil.ok', '1'); } catch { /* — */ }
-    box.remove(); onAccept();
-  }));
+    boton.disabled = true;
+    estado.textContent = tr('mobLoading');
+    let cargo = false;
+    try { cargo = await onAccept(); } catch { cargo = false; }
+    if (cargo) { box.remove(); return; }
+    estado.textContent = tr('mobFailed');
+    boton.textContent = tr('mobRetry');
+    boton.disabled = false;
+  });
+  box.append(estado, boton);
   (document.getElementById('log') || document.body).appendChild(box);
 }

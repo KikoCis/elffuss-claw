@@ -197,7 +197,10 @@ main {
 @media (max-width: 560px) { .cbtn.hardwork .hw-txt { display: none; } }
 
 /* ---------- visualizador ---------- */
-#viz { display: flex; flex-direction: column; min-height: 0; background: var(--bg2); }
+/* min-width: 0 para que la fila de pestañas se desplace DENTRO y no ensanche la
+   columna: en un teléfono, con 7 pestañas, #viz medía 447 px en una pantalla de
+   390 y la página entera se desplazaba de lado (y «💬 Chat» quedaba fuera). */
+#viz { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg2); }
 #tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
 #tabs button {
   background: none;
@@ -420,8 +423,12 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 
 /* ---------- móvil: una columna, chat ↔ visualizador conmutables ---------- */
 @media (max-width: 700px) {
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: minmax(0, 1fr); }
   #btn-flip { display: block; }
+  /* por encima de los chips y del compositor (su alto lo mide ui.js en
+     --alto-pie): antes tapaba la fila de chips */
+  #btn-flip { bottom: calc(var(--alto-pie, 150px) + 8px); }
+  body.show-viz #btn-flip { bottom: 14px; }
   #viz { display: none; }
   body.show-viz #viz { display: flex; }
   body.show-viz #chat { display: none; }

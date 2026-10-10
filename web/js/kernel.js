@@ -249,6 +249,10 @@ const isLocal = id => id === 'onnx' || id === 'litert' || id === 'webllm' ||
 // (El comentario decía «Móvil → Elffuss LM» y el código devolvía otra cosa
 // desde hace tiempo: era el comentario el que estaba desactualizado.)
 const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
+// Para la puerta de móvil: un teléfono o tableta de verdad (dedo y sin «hover»,
+// o el navegador lo dice), no el ancho de la ventana.
+const esTelefono = () => navigator.userAgentData?.mobile === true ||
+  (matchMedia('(pointer: coarse)').matches && matchMedia('(hover: none)').matches);
 async function gpuCapacity() {
   const mem = navigator.deviceMemory || 8;
   if (!navigator.gpu) return { gpu: false, maxBuf: 0, mem };
@@ -990,9 +994,12 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // antes de sostener el modelo, así que muchas veces se gastaban para nada.
     // Se avisa, se deja el botón por si quiere insistir, y se recuerda su
     // elección. El modo básico sigue atendiendo mientras tanto.
-    if (isMobile() && localStorage.getItem('elffuss.movil.ok') !== '1') {
-      ui.mobileGate('~600 MB', () => {
-        (async () => { for (const id of chain) if (await changeModel(id)) return; })();
+    // Un TELÉFONO, no una ventana estrecha: con ratón y 760 px de ancho también
+    // salía «En el móvil todavía no funciona… ábrelo en un ordenador».
+    if (esTelefono() && localStorage.getItem('elffuss.movil.ok') !== '1') {
+      ui.mobileGate('~600 MB', async () => {
+        for (const id of chain) if (await changeModel(id)) return true;
+        return false;
       });
       return;
     }
