@@ -46,6 +46,7 @@ ok('leyenda con 3 perfiles de Claw + CEO', legendItems.length === 4 && legendIte
 const cycleResult = await p.evaluate(async (mark) => {
   const ceo = await import('/js/ceo.js');
   const mind = await import('/js/mind.js');
+  const avisos = [];
   ceo.init({
     provider: () => ({
       chat: async (history) => {
@@ -56,12 +57,16 @@ const cycleResult = await p.evaluate(async (mark) => {
       },
     }),
     isBusy: () => false,
-    onEvent: (ch, ev) => mind.pushThought(ch, ev),
+    onEvent: (ch, ev) => { mind.pushThought(ch, ev); if (ch === 'ceo' && ev.type === 'paused') avisos.push(ev.text); },
   });
   const t0 = Date.now();
   while (!ceo.isThisTabLeader() && Date.now() - t0 < 5000) await new Promise(r => setTimeout(r, 100));
+  // forceCycle() no arranca un ciclo encima de otro: si ya hubiera uno en
+  // marcha, se espera a que acabe en vez de fallar sin decir por qué.
+  for (let i = 0; i < 200 && ceo.isRunning(); i++) await new Promise(r => setTimeout(r, 50));
+  const corriendoAntes = ceo.isRunning();
   const ran = await ceo.forceCycle();
-  return { ran, leader: ceo.isThisTabLeader() };
+  return { ran, leader: ceo.isThisTabLeader(), corriendoAntes, avisos };
 }, MARK);
 ok('forceCycle se ejecuta (semáforo líder + espacio de trabajo listo)', cycleResult.ran, JSON.stringify(cycleResult));
 await p.waitForTimeout(500);
@@ -94,8 +99,11 @@ ok('tras recargar, sigue PAUSADO (persistido bajo el namespace de Claw)', !enAft
 // generando hasta el final, la Mente decía «pausado» y «Pensar ahora» podía
 // arrancar un segundo ciclo encima. Ahora pausar ABORTA a los agentes del ciclo
 // (la señal llega al proveedor) y la Mente dice «pausando…» hasta que el ciclo
-// ha terminado de verdad. El proveedor de prueba tarda un poco en soltar tras
-// abortar, como un motor real, para que ese estado intermedio se pueda ver.
+// ha terminado de verdad. El proveedor de prueba, una vez abortado, NO suelta
+// hasta que la prueba se lo diga (como un motor que tarda en soltar): antes
+// soltaba solo al poco y, si la prueba tardaba más en mirar, el ciclo ya
+// había terminado; entonces la sonda de «Pensar ahora» arrancaba un ciclo DE
+// VERDAD con el cerebro en pausa, y la prueba fallaba o se quedaba esperándolo.
 await p.click('#btn-mind'); await p.waitForTimeout(600);
 if (/reanudar/.test(await p.locator('#mind-playstop').innerText())) { await p.click('#mind-playstop'); await p.waitForTimeout(150); }
 ok('reanudado desde la Mente para la prueba de pausa', /pausar/.test(await p.locator('#mind-playstop').innerText()));
@@ -104,6 +112,8 @@ await p.evaluate(async () => {
   const ceo = await import('/js/ceo.js');
   const mind = await import('/js/mind.js');
   const st = (window.__pausa = { llamadas: 0, abortadas: 0, terminadas: 0, built: 0, paused: 0 });
+  let soltar; const suelta = new Promise(r => { soltar = r; });
+  window.__soltarPausa = soltar;
   ceo.init({
     provider: () => ({
       // El agente pasa { signal, onPrefill } como 4º argumento de chat().
@@ -111,7 +121,7 @@ await p.evaluate(async () => {
         const signal = opts && typeof opts.aborted === 'boolean' ? opts : opts?.signal;
         st.llamadas++;
         for (let i = 0; i < 600; i++) {
-          if (signal?.aborted) { st.abortadas++; await new Promise(r => setTimeout(r, 700)); break; }
+          if (signal?.aborted) { st.abortadas++; await suelta; break; }
           cb('pensando '); await new Promise(r => setTimeout(r, 25));
         }
         st.terminadas++;
@@ -134,18 +144,27 @@ const generando = await p.evaluate(async () => {
   return window.__pausa.llamadas;
 });
 ok('el ciclo arranca: los 3 perfiles generan a la vez', generando === 3, `${generando} generando`);
-await p.click('#mind-playstop');
+// Pausar y mirar el estado en el MISMO evaluate, y la sonda de «Pensar ahora»
+// solo mientras el ciclo sigue en marcha: así nunca puede arrancar uno de verdad.
 const enPausa = await p.evaluate(async () => {
   const ceo = await import('/js/ceo.js');
-  return { texto: document.getElementById('mind-playstop').textContent, corriendo: ceo.isRunning(),
-    activo: ceo.isEnabled(), segundo: await ceo.forceCycle() };
+  const btn = document.getElementById('mind-playstop');
+  btn.click();
+  const estado = { texto: btn.textContent, corriendo: ceo.isRunning(), activo: ceo.isEnabled() };
+  estado.segundo = ceo.isRunning() ? await ceo.forceCycle() : 'sin probar: el ciclo ya había terminado';
+  // Mientras no suelte, sigue diciendo «pausando…» (se repinta solo).
+  await new Promise(r => setTimeout(r, 600));
+  estado.textoDespues = btn.textContent;
+  estado.corriendoDespues = ceo.isRunning();
+  return estado;
 });
-ok('al pausar a mitad, la Mente dice «pausando…» mientras el ciclo suelta el modelo', /pausando/.test(enPausa.texto) && enPausa.corriendo && !enPausa.activo,
-  JSON.stringify(enPausa));
-ok('mientras se pausa, «Pensar ahora» no arranca otro ciclo encima', enPausa.segundo === false);
+ok('al pausar a mitad, la Mente dice «pausando…» mientras el ciclo suelta el modelo', /pausando/.test(enPausa.texto) && enPausa.corriendo
+  && !enPausa.activo && /pausando/.test(enPausa.textoDespues) && enPausa.corriendoDespues, JSON.stringify(enPausa));
+ok('mientras se pausa, «Pensar ahora» no arranca otro ciclo encima', enPausa.segundo === false, JSON.stringify(enPausa.segundo));
 const trasPausa = await p.evaluate(async () => {
   const ceo = await import('/js/ceo.js');
   const btn = document.getElementById('mind-playstop');
+  window.__soltarPausa();                   // ahora sí: las generaciones abortadas sueltan
   for (let i = 0; i < 200 && !/reanudar/.test(btn.textContent); i++) await new Promise(r => setTimeout(r, 50));
   await window.__ciclo;
   return { texto: btn.textContent, corriendo: ceo.isRunning(), ...window.__pausa,

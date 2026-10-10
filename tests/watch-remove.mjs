@@ -10,7 +10,9 @@
 // La prueba quita la automatización JUSTO cuando el vigilante avisa de que ha
 // cogido el primer fichero (o sea, a mitad de la pasada, antes de que guarde),
 // y comprueba que no vuelve, que deja de procesar esa carpeta y que la otra
-// automatización sigue funcionando con lo que ya llevaba visto.
+// automatización sigue funcionando con lo que ya llevaba visto. Y borra una
+// tarea vencida justo entre la lectura del planificador y su escritura: no
+// resucita ni se lanza.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/watch-remove.mjs
 import { chromium } from 'playwright';
@@ -125,24 +127,53 @@ ok('db.update: 25 incrementos concurrentes no se pisan', upd.contador === 25, `c
 ok('db.update: devolver undefined no escribe (no resucita claves)', upd.nada === undefined && !upd.existe);
 
 // ── tareas: una tarea vencida se lanza una vez; una borrada no vuelve ────────
+// La tarea se borra JUSTO entre la lectura del planificador (pending(), un
+// getAll) y su escritura, que es donde está la carrera. Borrarla antes de que
+// el planificador llegue a leerla no probaba nada: pasaba igual con el
+// planificador viejo, que escribía la copia leída y resucitaba la tarea.
 await p.evaluate(async () => {
   const db = await import('/js/db.js');
   const ahora = Date.now();
+  window.__borradaEntre = false;
+  const getAll = IDBObjectStore.prototype.getAll;
+  IDBObjectStore.prototype.getAll = function (...a) {
+    const req = getAll.apply(this, a);
+    if (this.name === 'tasks' && !window.__borradaEntre) {
+      const idb = this.transaction.db;
+      // Este oyente va antes que el onsuccess del lector: la transacción de
+      // borrado se crea antes que cualquier escritura del planificador, y
+      // IndexedDB ejecuta las de escritura en el orden en que se crean.
+      req.addEventListener('success', () => {
+        if (window.__borradaEntre || !req.result?.some(t => t.id === 'tborra')) return;
+        window.__borradaEntre = true;
+        idb.transaction('tasks', 'readwrite').objectStore('tasks').delete('tborra');
+      });
+    }
+    return req;
+  };
   await db.set('tasks', 'tvence', { id: 'tvence', when: ahora - 1000, prompt: 'aviso de prueba vencido', done: false });
   await db.set('tasks', 'tborra', { id: 'tborra', when: ahora - 1000, prompt: 'esta no debe salir', done: false });
-  await db.del('tasks', 'tborra');
+});
+// Las lecturas de la prueba van por getAllKeys/get y no por getAll, para que el
+// gancho solo vea la lectura del planificador.
+const leerTareas = () => p.evaluate(async () => {
+  const db = await import('/js/db.js');
+  return Promise.all((await db.keys('tasks')).map(id => db.get('tasks', id)));
 });
 let tareas = [];
 for (let i = 0; i < 40; i++) {
-  tareas = await p.evaluate(async () => (await import('/js/db.js')).all('tasks'));
+  tareas = await leerTareas();
   if (tareas.find(t => t.id === 'tvence')?.done) break;
   await p.waitForTimeout(500);
 }
 await p.waitForTimeout(800);
+tareas = await leerTareas();
 const textoLog = await p.locator('#log').innerText();
+ok('premisa: la tarea se borró entre la lectura del planificador y su escritura', await p.evaluate(() => window.__borradaEntre));
 ok('la tarea vencida se marca hecha y se lanza una vez', tareas.find(t => t.id === 'tvence')?.done === true
   && textoLog.split('[tarea programada] aviso de prueba vencido').length - 1 === 1);
-ok('la tarea borrada no resucita ni se lanza', !tareas.some(t => t.id === 'tborra') && !textoLog.includes('esta no debe salir'));
+ok('la tarea borrada no resucita ni se lanza', !tareas.some(t => t.id === 'tborra') && !textoLog.includes('esta no debe salir'),
+  JSON.stringify(tareas.map(t => t.id)));
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 console.log(fails ? `\n❌ ${fails} FALLO(S)` : '\n✅ AUTOMATIZACIONES Y TAREAS: lo quitado no vuelve');
