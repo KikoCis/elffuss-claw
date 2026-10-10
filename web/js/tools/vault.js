@@ -9,9 +9,18 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 const AUTOLOCK_MS = 5 * 60 * 1000;
 let key = null, lockTimer = null;
 
+// Quien enseña la bóveda (el panel) se entera de que se ha cerrado. El
+// autobloqueo borraba la clave sin avisar a nadie: el panel seguía ofreciendo
+// «Bloquear ahora» y un secreto revelado se quedaba en claro en pantalla.
+const alCerrarse = new Set();
+export function alBloquear(fn) { alCerrarse.add(fn); return () => alCerrarse.delete(fn); }
+function avisarBloqueo(motivo) {
+  for (const fn of alCerrarse) { try { fn(motivo); } catch { /* un oyente roto no para a los demás */ } }
+}
+
 function armLock() {
   clearTimeout(lockTimer);
-  lockTimer = setTimeout(() => { key = null; }, AUTOLOCK_MS);
+  lockTimer = setTimeout(() => { key = null; avisarBloqueo('auto'); }, AUTOLOCK_MS);
 }
 
 async function derive(master, salt) {
@@ -35,43 +44,52 @@ async function decrypt(blob, k = key) {
 
 export async function isSetup() { return Boolean(await db.get('vault', '__salt')); }
 export function isUnlocked() { return key !== null; }
-export function lock() { key = null; clearTimeout(lockTimer); }
+export function lock() {
+  const estaba = key !== null;
+  key = null; clearTimeout(lockTimer);
+  if (estaba) avisarBloqueo('manual');
+}
 
-export async function unlock(master) {
+// `desdePanel`: lo hace el usuario con sus manos en la pestaña Bóveda. Ahí no
+// se le pide el permiso «Bóveda», que es el del AGENTE: preguntarle a quien ya
+// está desbloqueando su propia bóveda si se da permiso a sí mismo era ruido, y
+// con Enter en la contraseña la pregunta se contestaba sola con «Denegar».
+// Las herramientas del agente (vault.set/get) siguen pidiéndolo como siempre.
+export async function unlock(master, { desdePanel = false } = {}) {
   if (!master) throw new Error('Falta la contraseña maestra');
-  await requirePerm('vault');
+  if (!desdePanel) await requirePerm('vault');
   let salt = await db.get('vault', '__salt');
-  if (!salt) { // primera vez: crear el vault
+  if (!salt) { // primera vez: crear la bóveda
     salt = crypto.getRandomValues(new Uint8Array(16));
     key = await derive(master, salt);
     await db.set('vault', '__salt', salt);
     await db.set('vault', '__check', await encrypt('elffuss-ok'));
     armLock();
-    return 'Vault creado y desbloqueado. Guarda bien tu contraseña maestra: sin ella no hay recuperación.';
+    return 'Bóveda creada y desbloqueada. Guarda bien tu contraseña maestra: sin ella no hay recuperación.';
   }
   const candidate = await derive(master, salt);
   try { await decrypt(await db.get('vault', '__check'), candidate); }
   catch { throw new Error('Contraseña maestra incorrecta'); }
   key = candidate;
   armLock();
-  return 'Vault desbloqueado (se bloquea solo en 5 min).';
+  return 'Bóveda desbloqueada (se bloquea sola a los 5 min sin uso).';
 }
 
 function mustBeOpen() {
-  if (!key) throw new Error('El vault está bloqueado. Desbloquéalo en el panel Vault.');
+  if (!key) throw new Error('La bóveda está bloqueada. Desbloquéala en la pestaña Bóveda.');
 }
 
-export async function setSecret({ name, secret } = {}) {
+export async function setSecret({ name, secret } = {}, { desdePanel = false } = {}) {
   if (!name || !secret) throw new Error('Faltan name o secret');
-  await requirePerm('vault', t('pdVaultSet', { name }));
+  if (!desdePanel) await requirePerm('vault', t('pdVaultSet', { name }));
   mustBeOpen();
   await db.set('vault', 's:' + name, await encrypt(secret));
   armLock();
   return `Secreto «${name}» guardado cifrado (AES-256-GCM).`;
 }
 
-export async function getSecret({ name } = {}) {
-  await requirePerm('vault', t('pdVaultGet', { name }));
+export async function getSecret({ name } = {}, { desdePanel = false } = {}) {
+  if (!desdePanel) await requirePerm('vault', t('pdVaultGet', { name }));
   mustBeOpen();
   const blob = await db.get('vault', 's:' + name);
   if (!blob) throw new Error(`No existe el secreto «${name}»`);
@@ -79,8 +97,22 @@ export async function getSecret({ name } = {}) {
   return decrypt(blob);
 }
 
+// Borrar un secreto pide la bóveda ABIERTA, como leerlo: con ella bloqueada el
+// panel ni siquiera enseña la lista (ver alBloquear).
+export async function removeSecret({ name } = {}) {
+  if (!name) throw new Error('Falta name');
+  mustBeOpen();
+  await db.del('vault', 's:' + name);
+  armLock();
+  return `Secreto «${name}» borrado.`;
+}
+
 export async function listSecrets() {
   const ks = await db.keys('vault');
   const names = ks.filter(k => k.startsWith('s:')).map(k => k.slice(2));
-  return names.length ? 'Secretos guardados: ' + names.join(', ') : 'El vault está vacío.';
+  return names.length ? 'Secretos guardados: ' + names.join(', ') : 'La bóveda está vacía.';
+}
+
+export async function secretNames() {
+  return (await db.keys('vault')).filter(k => k.startsWith('s:')).map(k => k.slice(2));
 }
