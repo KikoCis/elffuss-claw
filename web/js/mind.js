@@ -15,7 +15,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as ceo from './ceo.js';
-import * as db from './db.js';
+import * as mindLog from './mind-log.js';
+import { abrirModal } from './modal.js';
 import { renderMarkdown } from './md.js';
 import { t } from './i18n.js';
 
@@ -24,47 +25,82 @@ const CEO_COLOR = '#ff4d8d';
 
 let open = false, built = false, raf = null;
 let overlay, S, widget, onOpenFile = () => {}, onExecute = () => {};
+let etiquetaAbrir = null;                      // texto del botón que abre el fichero de una propuesta
+let cerrarModal = null;                        // devuelve el foco y la página de detrás (modal.js)
+let musicaPuesta = false;                      // la música es opcional: solo suena si la pides
+let pintarPlayStop = () => {};
+let logMontado = false;
 // Ciudad de fondo (vista real del workspace) y semilla de pensamientos previos:
 // AMBOS opcionales e inyectados por la app anfitriona — Code tiene un motor
 // VibeCodeViewer sobre su proyecto único; Claw (v1) no lo ofrece y la Mente
 // funciona igual de bien sin ciudad de fondo.
 let loadThoughts = async () => [];             // () => [{path, md}]
 let buildCityFn = null;                        // (scene) => {cityWrap, cityCity, cityModel} | null
-export function init({ loadThoughts: lt, buildCity: bc } = {}) {
+// Dónde escribe el cerebro, dicho con el nombre de verdad: «dentro del proyecto»
+// es cosa de Code; en Claw es la primera carpeta autorizada. () => Promise<texto>
+let etiquetaAlma = async () => t('mindSoulDir');
+// Por qué no puede pensar ahora mismo (sin modelo, sin carpeta…), o null.
+let motivoNoPensar = async () => null;
+export function init({ loadThoughts: lt, buildCity: bc, etiquetaAlma: ea, motivoNoPensar: mn } = {}) {
   if (lt) loadThoughts = lt;
   if (bc) buildCityFn = bc;
+  if (ea) etiquetaAlma = ea;
+  if (mn) motivoNoPensar = mn;
 }
 let anchorMap = new Map();     // id de perfil (+ 'ceo') → Vector3 (anclas del mundo)
 const anchors = [];            // { el, pos } — solo etiquetas de propuestas forjadas
 let nodesGroup, thoughtNodes = [];
 let starGroup, stars = [];     // estrellas de pensamiento efímeras
-const lineBuf = new Map();     // canal → texto acumulado hasta la línea completa
-const streamed = new Map();    // canal → ¿llegaron tokens? (evita duplicar el texto final)
 let cityWrap = null, cityCity = null, cityModel = null;
 let beams = [], fileActivity = [];
 
 export function isOpen() { return open; }
-export function setOpenFile(fn) { onOpenFile = fn; }
+// `etiqueta`: cómo se llama el botón en ESTA app. «Abrir en el editor» es de
+// Code; Claw no tiene editor y lee el fichero en el chat.
+export function setOpenFile(fn, { etiqueta = null } = {}) { onOpenFile = fn; etiquetaAbrir = etiqueta; }
 export function setExecuteProposal(fn) { onExecute = fn; }
 
-const escHtml = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+const escHtml = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 const profileOf = channel => channel === 'ceo'
   ? { id: 'ceo', name: 'CEO', color: CEO_COLOR }
   : ceo.getProfiles().find(p => p.id === channel) || { id: channel, name: channel, color: '#7c5cff' };
 
-// ── música con Widget API (persistente: pausa al salir, reanuda al volver) ──
+// ── música: SOLO si la pides ────────────────────────────────────────────────
+// Antes, abrir la Mente incrustaba el reproductor de SoundCloud con autoplay y
+// cargaba su api.js: una página de un tercero contactada sin pedirlo, en una
+// app que promete que nada sale de tu máquina. Ahora hay un botón; hasta que lo
+// pulsas no se carga nada de fuera, y hay un enlace normal a la pista.
+function wireMusic(root) {
+  const btn = root.querySelector('#mind-music-btn');
+  const pintar = () => {
+    btn.textContent = musicaPuesta ? t('mindMusicOff') : t('mindMusicOn');
+    btn.setAttribute('aria-pressed', musicaPuesta ? 'true' : 'false');
+  };
+  btn.onclick = () => {
+    musicaPuesta = !musicaPuesta;
+    if (musicaPuesta) mountMusic(root); else unmountMusic(root);
+    pintar();
+  };
+  pintar();
+}
 function mountMusic(root) {
+  if (root.querySelector('.mind-music')) return;
   const wrap = document.createElement('div');
   wrap.className = 'mind-music';
   const url = 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(SOUNDCLOUD) +
     '&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&visual=false&color=%23ff4d8d';
-  wrap.innerHTML = '<iframe id="mind-sc" title="música" width="100%" height="120" frameborder="no" allow="autoplay; encrypted-media" src="' + url + '"></iframe>' +
-    '<div class="mind-music-cap">▶ Dekel · Baoba Festival — modo trance</div>';
+  wrap.innerHTML = '<iframe id="mind-sc" title="' + escHtml(t('mindMusicT')) + '" width="100%" height="120" frameborder="no" allow="autoplay; encrypted-media" src="' + url + '"></iframe>' +
+    '<div class="mind-music-cap">▶ Dekel · Baoba Festival — <a href="' + SOUNDCLOUD + '" target="_blank" rel="noopener noreferrer">SoundCloud ↗</a></div>';
   root.appendChild(wrap);
   const iframe = wrap.querySelector('#mind-sc');
   const initWidget = () => { try { widget = window.SC.Widget(iframe); } catch { /* aún no */ } };
   if (window.SC && window.SC.Widget) initWidget();
   else { const s = document.createElement('script'); s.src = 'https://w.soundcloud.com/player/api.js'; s.onload = initWidget; document.head.appendChild(s); }
+}
+function unmountMusic(root) {
+  try { widget?.pause(); } catch { /* — */ }
+  widget = null;
+  root.querySelector('.mind-music')?.remove();
 }
 
 // ══ ESTRELLAS de pensamiento: cada línea/tool-call nace, brilla y se apaga ══
@@ -111,84 +147,55 @@ function spawnStar(channel, text, kind = 'line') {
   if (stars.length > 160) { const old = stars.shift(); starGroup.remove(old.obj); old.obj.material.map.dispose(); old.obj.material.dispose(); }
 }
 
-// ── historial COMPLETO (todo lo que llega, sin recortar) — PERSISTENTE: antes
-// vivía solo en el DOM/memoria y una recarga de página lo borraba entero.
+// ── historial COMPLETO (todo lo que llega, sin recortar) ────────────────────
+// Lo lleva mind-log.js, con la Mente abierta o cerrada; aquí solo se pinta.
 const LOG_CAP = 500;
-let logHistory = [];       // [{channel, text}] — se guarda en IndexedDB
-let logSaveTimer = null;
-function saveLogSoon() {
-  clearTimeout(logSaveTimer);
-  logSaveTimer = setTimeout(() => db.set('kv', 'mindLog', logHistory).catch(() => {}), 400);
-}
-function renderLogRow(channel, text) {
+function renderLogRow({ channel, text, path }) {
   const body = document.getElementById('mind-log-body');
   if (!body) return;
   const prof = profileOf(channel);
   const row = document.createElement('div');
   row.className = 'ml-row';
   row.innerHTML = `<span class="ml-dot" style="background:${prof.color}"></span><b style="color:${prof.color}">${escHtml(prof.name)}</b> <span class="ml-t">${escHtml(text)}</span>`;
+  // Una propuesta guardada se puede abrir desde su línea (antes la ruta era
+  // texto suelto).
+  if (path) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ml-open';
+    b.textContent = t('mindOpenProposal');
+    b.title = path;
+    b.onclick = () => mostrarPropuesta(path);
+    row.appendChild(b);
+  }
   body.appendChild(row);
   while (body.children.length > LOG_CAP) body.removeChild(body.firstChild);
   body.scrollTop = body.scrollHeight;
 }
-function logLine(channel, text) {
-  logHistory.push({ channel, text });
-  if (logHistory.length > LOG_CAP) logHistory = logHistory.slice(-LOG_CAP);
-  saveLogSoon();
-  renderLogRow(channel, text);
-}
-async function loadPersistedLog() {
-  try {
-    const saved = await db.get('kv', 'mindLog');
-    if (!Array.isArray(saved) || !saved.length) return;
-    logHistory = saved;
-    for (const { channel, text } of saved) renderLogRow(channel, text);
-  } catch { /* aún no hay historial guardado */ }
-}
+mindLog.suscribir(l => {
+  if (logMontado) renderLogRow(l);
+  if (open && l.estrella) spawnStar(l.channel, l.estrella[1], l.estrella[0]);
+});
 
-function flushLine(channel, force = false) {
-  const buf = (lineBuf.get(channel) || '').trim();
-  if (!buf && !force) return;
-  if (buf) { spawnStar(channel, buf, 'line'); logLine(channel, buf); }
-  lineBuf.set(channel, '');
-}
+// Último «no puedo» del cerebro (sin modelo, otra pestaña lo lleva…): el panel
+// ⚙ lo enseña cuando «Pensar ahora» no arranca, en vez de cerrarse sin más.
+let ultimoAviso = '';
 
-// alimenta estrellas + historial + haces sobre la ciudad (ceo.js → aquí)
+// ceo.js → aquí. El historial se apunta SIEMPRE (mind-log.js); lo que solo se
+// dibuja —nodos, haces, perfiles— necesita el mundo montado.
 export function pushThought(channel, ev) {
-  if (!open) return;
-  if (channel === 'sys') { logLine('ceo', ev.text); return; }
+  if (!ev) return;
+  mindLog.registrar(channel, ev);
+  if (channel === 'sys') { pintarPlayStop(); return; }
+  if (channel === 'ceo' && ev.type === 'paused') ultimoAviso = ev.text || '';
+  if (channel === 'ceo' && ev.type === 'built') forjadaAhora = true;
+  if (!built) return;
   if (channel === 'ceo') {
-    if (ev.type === 'cycle') { logLine('ceo', '● ' + ev.text); spawnStar('ceo', ev.text, 'event'); }
-    else if (ev.type === 'survey') { logLine('ceo', ev.text); }
-    else if (ev.type === 'reprogram') { logLine('ceo', '⚙ ' + ev.text); spawnStar('ceo', ev.text, 'event'); if (ev.profiles) rebuildWorld(); }
-    else if (ev.type === 'paused') { logLine('ceo', ev.text); spawnStar('ceo', ev.text, 'event'); }
-    else if (ev.type === 'built') { logLine('ceo', '✦ ' + ev.text); spawnStar('ceo', ev.text, 'built'); addThoughtNode(ev); }
-    else logLine('ceo', ev.text || '');
+    if (ev.type === 'reprogram' && ev.profiles) rebuildWorld();
+    else if (ev.type === 'built') addThoughtNode(ev);
     return;
   }
-  if (ev.type === 'open') { lineBuf.set(channel, ''); streamed.set(channel, false); }
-  else if (ev.type === 'token') {
-    streamed.set(channel, true);
-    lineBuf.set(channel, (lineBuf.get(channel) || '') + ev.text);
-    const buf = lineBuf.get(channel);
-    if (/\n/.test(ev.text) || buf.length > 90) flushLine(channel);
-  } else if (ev.type === 'tool') {
-    flushLine(channel);
-    spawnStar(channel, ev.text, 'tool');
-    logLine(channel, '⟐ ' + ev.text);
-    if (ev.path) fileBeam(ev.path, /escrib/i.test(ev.text) ? 'write' : 'read');
-  } else if (ev.type === 'tool_result') {
-    // el RESULTADO real de la tool (lo que de verdad se leyó/escribió/ejecutó),
-    // enlazado justo debajo de su tool-call — no solo el nombre de la acción.
-    const t = '→ ' + (ev.text || '(sin salida)');
-    spawnStar(channel, t, 'line');
-    logLine(channel, t);
-  } else if (ev.type === 'done') {
-    flushLine(channel, true);
-    // el proveedor puede devolver el texto final SIN pasar por tokens (sin
-    // streaming) → si no vimos ningún token, esto es lo único que lo muestra.
-    if (ev.text && !streamed.get(channel)) { spawnStar(channel, ev.text, 'line'); logLine(channel, ev.text); }
-  }
+  if (open && ev.type === 'tool' && ev.path) fileBeam(ev.path, /escrib/i.test(ev.text) ? 'write' : 'read');
 }
 
 // ── nodos de pensamiento clicables (cada .md forjado = un punto brillante) ──
@@ -204,11 +211,14 @@ function addThoughtNode({ path, md, text }) {
   mesh.userData = { path, md, text };
   nodesGroup.add(mesh);
   thoughtNodes.push(mesh);
-  const lab = document.createElement('div');
+  // Un <button>: se alcanza con el teclado y es clicable ENTERO. Antes era un
+  // div con pointer-events:none (heredado de su capa): su clic no llegaba nunca
+  // y solo funcionaba atinar a la malla 3D que hubiera debajo.
+  const lab = document.createElement('button');
+  lab.type = 'button';
   lab.className = 'mind-node-label';
-  lab.textContent = (path || 'pensamiento').split('/').pop();
-  // clicable ella misma — antes SOLO el raycast contra la diminuta malla 3D
-  // abría el panel, fácil de fallar; la etiqueta es el blanco visible real.
+  lab.textContent = (path || t('mindThought')).split('/').pop();
+  lab.title = path || '';
   lab.addEventListener('click', () => selectThoughtNode(mesh));
   document.getElementById('mind-anchors').appendChild(lab);
   anchors.push({ el: lab, pos: mesh.position });
@@ -222,21 +232,37 @@ async function loadExistingThoughts() {
 // selección de un nodo de propuesta — desde la malla 3D (raycast) o su etiqueta
 function selectThoughtNode(mesh) { showThoughtPanel(mesh); focusOn(mesh.position, 26); }
 
+// Abrir una propuesta por su ruta (#/mente/<ruta>, una notificación, el
+// historial). Si su nodo no está —se guardó con la Mente sin montar y no estaba
+// en la carpeta al abrirla—, se enseña lo que se sepa de ella.
+export function mostrarPropuesta(path) {
+  if (!built || !path) return false;
+  const node = thoughtNodes.find(n => n.userData.path === path);
+  if (node) { selectThoughtNode(node); return true; }
+  return false;
+}
+
 function showThoughtPanel(node) {
   const root = document.getElementById('mind-panel');
   const md = node.userData.md || node.userData.text || '(sin contenido)';
-  const path = node.userData.path || 'pensamiento';
-  root.innerHTML = `<div class="mp-head">${escHtml(path)}<button id="mp-x">✕</button></div>` +
+  const path = node.userData.path || t('mindThought');
+  root.innerHTML = `<div class="mp-head"><span class="mp-path"></span><button id="mp-x" type="button">✕</button></div>` +
     `<div class="mp-body">${renderMarkdown(md)}</div>` +
     `<div class="mp-actions">` +
-    `<button id="mp-exec" class="mp-exec">▶ Ejecutar esta propuesta</button>` +
-    (node.userData.path ? `<button id="mp-open" class="mp-open">Abrir en el editor</button>` : '') +
+    `<button id="mp-exec" type="button" class="mp-exec">${escHtml(t('mindRunProposal'))}</button>` +
+    (node.userData.path ? `<button id="mp-open" type="button" class="mp-open">${escHtml(etiquetaAbrir || t('mindOpenEditor'))}</button>` : '') +
     `</div>`;
+  root.querySelector('.mp-path').textContent = path;
+  root.setAttribute('role', 'region');
+  root.setAttribute('aria-label', path);
   root.classList.add('show');
-  root.querySelector('#mp-x').onclick = () => root.classList.remove('show');
+  const x = root.querySelector('#mp-x');
+  x.setAttribute('aria-label', t('close'));
+  x.onclick = () => root.classList.remove('show');
   root.querySelector('#mp-exec').onclick = () => { onExecute(md); root.classList.remove('show'); };
   const openBtn = root.querySelector('#mp-open');
   if (openBtn) openBtn.onclick = () => { onOpenFile(node.userData.path); root.classList.remove('show'); };
+  root.querySelector('#mp-exec').focus({ preventScroll: true });
 }
 
 // ══ perfiles: anclas 3D + leyenda (recalculadas al abrir o al reprogramar) ══
@@ -255,9 +281,12 @@ function renderLegend() {
   const el = document.getElementById('mind-legend');
   if (!el) return;
   const profs = ceo.getProfiles();
-  el.innerHTML = `<div class="ml-item" data-id="ceo"><span class="ml-sw" style="background:${CEO_COLOR}"></span>CEO</div>` +
-    profs.map(p => `<div class="ml-item" data-id="${p.id}"><span class="ml-sw" style="background:${p.color}"></span>${escHtml(p.name)}</div>`).join('');
+  // Botones (antes divs sin rol ni foco): con el teclado también se vuela a un perfil.
+  el.innerHTML = `<button type="button" class="ml-item" data-id="ceo"><span class="ml-sw" style="background:${CEO_COLOR}"></span>CEO</button>` +
+    profs.map(p => `<button type="button" class="ml-item" data-id="${escHtml(p.id)}"><span class="ml-sw" style="background:${escHtml(p.color)}"></span>${escHtml(p.name)}</button>`).join('');
+  el.setAttribute('aria-label', t('mindProfiles'));
   el.querySelectorAll('.ml-item').forEach(row => {
+    row.title = t('mindFlyTo', { name: row.textContent });
     row.onclick = () => { const pos = anchorMap.get(row.dataset.id); if (pos) focusOn(pos, 46); };
   });
 }
@@ -274,41 +303,76 @@ const easeInOut = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
 function rebuildWorld() { anchorMap = computeAnchors(); renderLegend(); }
 
 // ── panel ⚙: reprograma misión, carpeta-alma y PERFILES (editables) ──────
+// «Pensar ahora» puede tardar minutos con un modelo de verdad: su estado vive
+// fuera del panel, que se redibuja cada vez que se abre.
+let pensando = false, estadoPensar = '', forjadaAhora = false;
 function wireConfig(root) {
   const btn = root.querySelector('#mind-config');
   const cfg = root.querySelector('#mind-cfg');
-  const profRowHtml = p => `<div class="cfg-prof" data-id="${escHtml(p.id || '')}">
-      <input type="color" class="cp-color" value="${p.color || '#7c5cff'}">
-      <input type="text" class="cp-name" value="${escHtml(p.name || '')}" placeholder="Nombre">
-      <input type="text" class="cp-focus" value="${escHtml(p.focus || '')}" placeholder="En qué se centra">
-      <button class="cp-del" title="quitar">✕</button></div>`;
-  const notifState = () => (!('Notification' in window)) ? { txt: 'no soportadas por este navegador', can: false }
-    : Notification.permission === 'granted' ? { txt: '✓ concedidas — avisaré cuando encuentre algo bueno', can: false }
-    : Notification.permission === 'denied' ? { txt: '✕ bloqueadas — actívalas en los ajustes del sitio del navegador', can: false }
-    : { txt: 'aún no pedidas', can: true };
+  const profRowHtml = p => {
+    const n = escHtml(p.name || t('mindNewProfile'));
+    return `<div class="cfg-prof" data-id="${escHtml(p.id || '')}">
+      <input type="color" class="cp-color" value="${escHtml(p.color || '#7c5cff')}" aria-label="${escHtml(t('mindProfColor', { name: p.name || t('mindNewProfile') }))}">
+      <input type="text" class="cp-name" value="${escHtml(p.name || '')}" placeholder="${escHtml(t('mindProfName'))}" aria-label="${escHtml(t('mindProfName'))}">
+      <input type="text" class="cp-focus" value="${escHtml(p.focus || '')}" placeholder="${escHtml(t('mindProfFocus'))}" aria-label="${escHtml(t('mindProfFocusL', { name: n }))}">
+      <button type="button" class="cp-del" title="${escHtml(t('mindProfDel'))}" aria-label="${escHtml(t('mindProfDel'))}">✕</button></div>`;
+  };
+  const notifState = () => (!('Notification' in window)) ? { txt: t('mindNotifNo'), can: false }
+    : Notification.permission === 'granted' ? { txt: t('mindNotifOk'), can: false }
+    : Notification.permission === 'denied' ? { txt: t('mindNotifBlocked'), can: false }
+    : { txt: t('mindNotifAsk'), can: true };
   const draw = () => {
     const profs = ceo.getProfiles();
     const ns = notifState();
+    cfg.setAttribute('role', 'region');
+    cfg.setAttribute('aria-label', t('mindCfgTitle'));
     cfg.innerHTML =
-      '<div class="cfg-head">⚙ Reprogramar el cerebro<button id="cfg-x">✕</button></div>' +
-      '<div class="cfg-notif">🔔 Notificaciones del navegador: ' + escHtml(ns.txt) + (ns.can ? ' <button id="cfg-notif-ask" class="cfg-notif-btn">Activar</button>' : '') + '</div>' +
-      '<label>Misión (qué quieres que haga por su cuenta)</label>' +
+      '<div class="cfg-head">' + escHtml(t('mindCfgTitle')) + '<button id="cfg-x" type="button">✕</button></div>' +
+      '<div class="cfg-notif">' + escHtml(t('mindNotif')) + ' ' + escHtml(ns.txt) + (ns.can ? ' <button id="cfg-notif-ask" type="button" class="cfg-notif-btn">' + escHtml(t('mindNotifBtn')) + '</button>' : '') + '</div>' +
+      '<label for="cfg-mission">' + escHtml(t('mindMission')) + '</label>' +
       '<textarea id="cfg-mission" rows="3">' + escHtml(ceo.getMission()) + '</textarea>' +
-      '<label>Carpeta-alma (dentro del proyecto)</label>' +
+      '<label for="cfg-dir" id="cfg-dir-label">' + escHtml(t('mindSoulDir')) + '</label>' +
       '<input id="cfg-dir" value="' + escHtml(ceo.getSoulDir()) + '">' +
-      '<label>Perfiles — cada uno piensa en paralelo, con el color de su estrella</label>' +
+      '<label>' + escHtml(t('mindProfilesL')) + '</label>' +
       '<div id="cfg-profiles">' + profs.map(profRowHtml).join('') + '</div>' +
-      '<button id="cfg-add-prof" class="cfg-add">+ nuevo perfil</button>' +
-      '<div class="cfg-actions"><button id="cfg-think-now" class="cfg-ghost">Pensar ahora</button>' +
-      '<button id="cfg-save" class="cfg-save">Reprogramar</button></div>' +
-      '<div class="cfg-note">La elfa trabajará según esto cuando estés ocioso y volcará todo en esa carpeta.</div>';
-    cfg.querySelector('#cfg-x').onclick = () => cfg.classList.remove('show');
+      '<button id="cfg-add-prof" type="button" class="cfg-add">' + escHtml(t('mindAddProfile')) + '</button>' +
+      '<div class="cfg-actions"><button id="cfg-think-now" type="button" class="cfg-ghost">' + escHtml(t('mindThinkNow')) + '</button>' +
+      '<button id="cfg-save" type="button" class="cfg-save">' + escHtml(t('mindReprogram')) + '</button></div>' +
+      '<div id="cfg-status" class="cfg-status" role="status" aria-live="polite"></div>' +
+      '<div class="cfg-note">' + escHtml(t('mindCfgNote')) + '</div>';
+    const x = cfg.querySelector('#cfg-x');
+    x.setAttribute('aria-label', t('close'));
+    x.onclick = () => cfg.classList.remove('show');
+    // Dónde escribe de verdad (en Claw, la primera carpeta autorizada).
+    Promise.resolve().then(() => etiquetaAlma()).then(txt => {
+      const l = cfg.querySelector('#cfg-dir-label'); if (l && txt) l.textContent = txt;
+    }).catch(() => {});
     cfg.querySelector('#cfg-notif-ask')?.addEventListener('click', () => { Notification.requestPermission().then(draw); });
     cfg.querySelector('#cfg-add-prof').onclick = () => {
       cfg.querySelector('#cfg-profiles').insertAdjacentHTML('beforeend', profRowHtml({ color: '#ff9f45', name: '', focus: '' }));
       wireRows();
+      cfg.querySelector('#cfg-profiles .cfg-prof:last-child .cp-name')?.focus();
     };
-    cfg.querySelector('#cfg-think-now').onclick = () => { ceo.forceCycle(); cfg.classList.remove('show'); };
+    const estado = cfg.querySelector('#cfg-status');
+    estado.textContent = estadoPensar;
+    const think = cfg.querySelector('#cfg-think-now');
+    think.disabled = pensando;
+    // «Pensar ahora» ya no cierra el panel a ciegas: dice si no puede (sin
+    // modelo, sin carpeta) y, si puede, que está pensando y cómo acaba.
+    think.onclick = async () => {
+      const motivo = await motivoNoPensar();
+      const st = () => cfg.querySelector('#cfg-status');
+      if (motivo) { estadoPensar = motivo; if (st()) st().textContent = motivo; return; }
+      pensando = true; think.disabled = true; forjadaAhora = false; ultimoAviso = '';
+      estadoPensar = t('mindThinking');
+      if (st()) st().textContent = estadoPensar;
+      let ok = false;
+      try { ok = await ceo.forceCycle(); } catch { ok = false; }
+      pensando = false;
+      estadoPensar = ok && forjadaAhora ? t('mindThoughtDone') : (ultimoAviso || t('mindCantThink'));
+      if (st()) st().textContent = estadoPensar;
+      const b = cfg.querySelector('#cfg-think-now'); if (b) b.disabled = false;
+    };
     cfg.querySelector('#cfg-save').onclick = () => {
       // preserva el id original de cada perfil (si no, cada guardado los
       // regeneraría desde el nombre y los ciclos en curso perderían el hilo)
@@ -321,18 +385,33 @@ function wireConfig(root) {
       ceo.setMission(cfg.querySelector('#cfg-mission').value);
       ceo.setSoulDir(cfg.querySelector('#cfg-dir').value);
       ceo.setProfiles(rows);
-      if (!ceo.isEnabled()) ceo.enable();
+      // Reprogramar NO enciende el cerebro: antes reactivaba en silencio uno
+      // que habías pausado, y el botón seguía diciendo «reanudar».
+      pintarPlayStop();
       cfg.classList.remove('show');
+      root.querySelector('#mind-config')?.focus();
     };
     wireRows();
     function wireRows() { cfg.querySelectorAll('.cp-del').forEach(b => { b.onclick = () => b.closest('.cfg-prof').remove(); }); }
   };
-  btn.onclick = () => { if (cfg.classList.contains('show')) cfg.classList.remove('show'); else { draw(); cfg.classList.add('show'); } };
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'mind-cfg');
+  const abrir = () => { draw(); cfg.classList.add('show'); btn.setAttribute('aria-expanded', 'true'); cfg.querySelector('#cfg-mission')?.focus(); };
+  const cerrar = () => { cfg.classList.remove('show'); btn.setAttribute('aria-expanded', 'false'); };
+  btn.onclick = () => (cfg.classList.contains('show') ? cerrar() : abrir());
+  new MutationObserver(() => btn.setAttribute('aria-expanded', cfg.classList.contains('show') ? 'true' : 'false'))
+    .observe(cfg, { attributes: true, attributeFilter: ['class'] });
 }
 function wireHistory(root) {
   const btn = root.querySelector('#mind-history'), panel = root.querySelector('#mind-log');
-  btn.onclick = () => panel.classList.toggle('show');
-  panel.querySelector('#ml-x').onclick = () => panel.classList.remove('show');
+  btn.setAttribute('aria-controls', 'mind-log');
+  const sync = () => btn.setAttribute('aria-expanded', panel.classList.contains('show') ? 'true' : 'false');
+  btn.onclick = () => { panel.classList.toggle('show'); sync(); };
+  const x = panel.querySelector('#ml-x');
+  x.setAttribute('aria-label', t('close'));
+  x.onclick = () => { panel.classList.remove('show'); sync(); btn.focus(); };
+  new MutationObserver(sync).observe(panel, { attributes: true, attributeFilter: ['class'] });
+  sync();
 }
 
 // play/stop del cerebro, visible dentro de la Mente. La elección la persiste
@@ -342,19 +421,28 @@ function wireHistory(root) {
 // que soltar el modelo. Mientras tanto se dice «pausando…» y no «pausado»
 // —decir lo segundo con el modelo aún ocupado era mentir— y se repinta solo
 // hasta que el ciclo ha terminado de verdad (ceo.isRunning() en false).
+//
+// Es EL interruptor del cerebro autónomo: abrir la Mente ya no lo enciende (lo
+// hacía la primera vez, para siempre, sin decirlo). Se repinta con cada cambio
+// de estado que anuncie ceo.js (pushThought 'sys') y al volver a abrir la
+// Mente: antes solo con su propio clic, y tras «Reprogramar» decía lo contrario
+// de lo que pasaba.
 function wirePlayStop(root) {
   const btn = root.querySelector('#mind-playstop');
   let repinta = null;
   const paint = () => {
     const on = ceo.isEnabled();
     const pausando = !on && ceo.isRunning();
-    btn.textContent = on ? '⏸ pausar cerebro' : pausando ? '⏳ pausando…' : '▶ reanudar cerebro';
+    btn.textContent = on ? t('mindPause') : pausando ? t('mindPausing')
+      : (ceo.hasDecided?.() ? t('mindResume') : t('mindStart'));
+    btn.title = t('mindBrainExplain');
     btn.classList.toggle('paused', !on);
     btn.classList.toggle('pausing', pausando);
     clearTimeout(repinta);
     if (pausando) repinta = setTimeout(paint, 250);
   };
   btn.onclick = () => { if (ceo.isEnabled()) ceo.disable(); else ceo.enable(); paint(); };
+  pintarPlayStop = paint;
   paint();
 }
 
@@ -452,34 +540,52 @@ function buildScene(canvas, W, H) {
   return { renderer, scene, camera, controls, composer, bloom, mat, galaxy, core, rings };
 }
 
+// La Mente es una capa MODAL: lo de detrás queda inerte mientras está abierta
+// (modal.js), el foco entra en ella y al salir vuelve a donde estaba (el botón
+// 🧠). Antes Tab recorría la página tapada y el foco se quedaba detrás.
 export async function openMind() {
   if (open) return;
   open = true;
-  if (built) { overlay.style.display = ''; try { widget?.play(); } catch {} startLoop(); return; }
+  if (built) {
+    overlay.style.display = '';
+    if (musicaPuesta) { try { widget?.play(); } catch { /* — */ } }
+    cerrarModal = abrirModal(overlay, { foco: '#mind-close' });
+    pintarPlayStop();
+    startLoop();
+    return;
+  }
 
   overlay = document.createElement('div');
   overlay.id = 'mind-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', t('mindAria'));
+  overlay.setAttribute('aria-describedby', 'mind-explica');
   overlay.innerHTML =
-    '<canvas id="mind-canvas"></canvas>' +
-    `<div id="mind-title">${t('mindTitle')}</div>` +
-    '<div id="mind-legend"></div>' +
-    '<button id="mind-playstop" title="pausar/reanudar el cerebro"></button>' +
-    '<button id="mind-config" title="reprogramar el cerebro">⚙ cerebro</button>' +
-    '<button id="mind-history" title="ver todo lo que ha llegado">≡ historial</button>' +
-    '<button id="mind-close" title="salir">✕ salir</button>' +
+    '<canvas id="mind-canvas" aria-hidden="true"></canvas>' +
+    `<div id="mind-title">${escHtml(t('mindTitle'))}<span id="mind-explica">${escHtml(t('mindExplain'))}</span></div>` +
+    '<div id="mind-legend" role="group"></div>' +
+    '<button id="mind-playstop" type="button"></button>' +
+    `<button id="mind-config" type="button" title="${escHtml(t('mindCfgTitle'))}">${escHtml(t('mindCfgBtn'))}</button>` +
+    `<button id="mind-history" type="button" title="${escHtml(t('mindHistoryT'))}">${escHtml(t('mindHistoryBtn'))}</button>` +
+    `<button id="mind-close" type="button" title="${escHtml(t('mindCloseT'))}">${escHtml(t('mindCloseBtn'))}</button>` +
+    '<button id="mind-music-btn" type="button" class="mind-music-btn"></button>' +
     '<div id="mind-anchors"></div><div id="mind-panel"></div><div id="mind-cfg"></div>' +
-    '<div id="mind-log"><div class="ml-head">Historial completo<button id="ml-x">✕</button></div><div id="mind-log-body"></div></div>';
+    `<div id="mind-log" role="region" aria-label="${escHtml(t('mindHistoryTitle'))}"><div class="ml-head">${escHtml(t('mindHistoryTitle'))}<button id="ml-x" type="button">✕</button></div><div id="mind-log-body" role="log"></div></div>`;
   document.body.appendChild(overlay);
-  wireConfig(overlay); wireHistory(overlay); wirePlayStop(overlay);
-  mountMusic(overlay);
-  anchors.length = 0; thoughtNodes = []; stars = []; lineBuf.clear();
+  cerrarModal = abrirModal(overlay, { foco: '#mind-close' });
+  wireConfig(overlay); wireHistory(overlay); wirePlayStop(overlay); wireMusic(overlay);
+  anchors.length = 0; thoughtNodes = []; stars = [];
   rebuildWorld();
 
   const canvas = overlay.querySelector('#mind-canvas');
   S = buildScene(canvas, window.innerWidth, window.innerHeight);
   buildBackgroundCity(S.scene);
   await loadExistingThoughts();
-  await loadPersistedLog(); // el historial de «≡ historial» sobrevive a recargas
+  // El historial: lo guardado más lo que llegó con la Mente cerrada (mind-log.js).
+  await mindLog.cargar();
+  for (const l of mindLog.todas()) renderLogRow(l);
+  logMontado = true;
 
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
   let downXY = null;
@@ -500,7 +606,15 @@ export async function openMind() {
   };
   window.addEventListener('resize', onResize); S.onResize = onResize;
   overlay.querySelector('#mind-close').addEventListener('click', closeMind);
-  S.onKey = e => { if (e.key === 'Escape') closeMind(); };
+  // Escape cierra lo de más arriba: un panel abierto antes que la Mente entera.
+  // Con un permiso pendiente (un <dialog>), Escape es suyo.
+  S.onKey = e => {
+    if (e.key !== 'Escape' || !open) return;
+    if (document.querySelector('dialog[open]')) return;
+    const capa = ['#mind-cfg', '#mind-panel', '#mind-log'].map(s => overlay.querySelector(s)).find(el => el?.classList.contains('show'));
+    if (capa) { capa.classList.remove('show'); overlay.querySelector('#mind-close')?.focus(); return; }
+    closeMind();
+  };
   document.addEventListener('keydown', S.onKey);
   built = true;
   startLoop();
@@ -606,6 +720,8 @@ export function closeMind() {
   lastMs = 0;
   try { widget?.pause(); } catch {}
   if (overlay) overlay.style.display = 'none';
+  cerrarModal?.();
+  cerrarModal = null;
 }
 
 // para tests/depuración

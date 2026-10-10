@@ -37,6 +37,11 @@ let ws = null;                // { isReady, tree, write, read, list, remove }
 let getProvider = () => null;
 let isBusy = () => false;     // ¿el usuario tiene trabajo en cola/procesándose? → prioridad
 let defaultProfiles = GENERIC_PROFILES;
+// Qué herramientas puede usar el cerebro: (nombre) => bool, o null = todas. El
+// cerebro trabaja SOLO mientras no miras y promete no cambiar nada; la app
+// anfitriona le pasa una lista de solo lectura para que esa promesa no dependa
+// de que el modelo obedezca (Claw: ver kernel.js). Sin la opción, todo como antes.
+let allowTool = null;
 const K = suffix => NS + '.' + suffix;
 
 function loadProfiles() {
@@ -121,7 +126,7 @@ function emit(channel, ev) {
   try { bc && bc.postMessage({ kind: 'thought', channel, ev }); } catch { /* ev no serializable */ }
 }
 
-// init({ workspace, provider, onEvent, isBusy, namespace, defaultProfiles, defaultMission, defaultSoulDir })
+// init({ workspace, provider, onEvent, isBusy, namespace, defaultProfiles, defaultMission, defaultSoulDir, allowTool })
 export function init(opts = {}) {
   if (opts.workspace) ws = opts.workspace;
   if (opts.provider) getProvider = opts.provider;
@@ -131,6 +136,7 @@ export function init(opts = {}) {
   if (opts.defaultProfiles) defaultProfiles = opts.defaultProfiles;
   if (opts.defaultMission) DEFAULT_MISSION = opts.defaultMission;
   if (opts.defaultSoulDir) DEFAULT_SOUL = opts.defaultSoulDir;
+  if (opts.allowTool) allowTool = opts.allowTool;
   initCrossTab();
 }
 export function isThisTabLeader() { return isLeader; }
@@ -212,7 +218,7 @@ async function think(channel, task, signal = null) {
       else if (ev.type === 'tool') emit(channel, { type: 'tool', text: humanizeTool(ev.call.tool, ev.call.args), tool: ev.call.tool, path: ev.call.args?.path || null });
       else if (ev.type === 'tool_result') emit(channel, { type: 'tool_result', tool: ev.tool, text: String(ev.result || '').replace(/\s+/g, ' ').trim().slice(0, 100) });
       else if (ev.type === 'text') { out = ev.text; }
-    }, { signal });
+    }, { signal, permitir: allowTool });
   } finally { signal?.removeEventListener('abort', stop); }
   if (signal?.aborted) throw new Error('interrumpido');
   return out;

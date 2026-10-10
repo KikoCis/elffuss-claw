@@ -4,8 +4,44 @@
 // carpeta autorizada (la que fs.root()/fs.write() usan por defecto si no se
 // indica `folder`), tratándola como su espacio de trabajo principal.
 import * as fs from './tools/fs.js';
+import * as db from './db.js';
+import * as perms from './permissions.js';
 
 const IGNORE = new Set(['node_modules', '.git', 'dist', 'build', 'target', '__pycache__', '.next', 'venv', '.venv', '.DS_Store']);
+
+// La carpeta donde escribe el cerebro: la primera autorizada (o null).
+export async function carpetaDelAlma() {
+  try { return (await fs.folders())[0] || null; } catch { return null; }
+}
+
+// Las propuestas ya guardadas en la carpeta-alma, para que la Mente las enseñe
+// después de recargar (antes Claw llamaba a mind.init sin esto y, tras una
+// recarga, la Mente no tenía ni una etiqueta). NUNCA pide nada: sin el permiso
+// «Archivos» concedido, o si el navegador no da ya acceso a la carpeta, no
+// lista — abrir la Mente no puede sacar un diálogo de permisos.
+export async function propuestasGuardadas(soulDir, { max = 40 } = {}) {
+  try {
+    if (!perms.has('fs')) return [];
+    const nombre = await carpetaDelAlma();
+    if (!nombre) return [];
+    const raiz = await db.get('fs', nombre);
+    if (!raiz) return [];
+    if (raiz.queryPermission && await raiz.queryPermission({ mode: 'read' }) !== 'granted') return [];
+    let dir = raiz;
+    for (const p of String(soulDir || '').split('/').filter(Boolean)) {
+      try { dir = await dir.getDirectoryHandle(p); } catch { return []; }
+    }
+    const ficheros = [];
+    for await (const e of dir.values()) {
+      if (e.kind === 'file' && e.name.endsWith('.md') && e.name !== 'archivo.md') ficheros.push(e);
+    }
+    ficheros.sort((a, b) => a.name.localeCompare(b.name));   // empiezan por fecha
+    return await Promise.all(ficheros.slice(-max).map(async e => ({
+      path: `${String(soulDir).replace(/^\/+|\/+$/g, '')}/${e.name}`,
+      md: await (await e.getFile()).text(),
+    })));
+  } catch { return []; }
+}
 
 async function dirHandle(dirPath, { create = false } = {}) {
   let dir = await fs.root();
