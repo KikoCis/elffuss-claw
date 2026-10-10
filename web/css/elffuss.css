@@ -141,15 +141,18 @@ main {
 
 #chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; }
 .chip {
+  font: inherit;
   font-size: .78rem;
   color: var(--muted);
+  background: none;
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 12px;
   cursor: pointer;
   transition: all .15s;
 }
-.chip:hover { color: var(--fg); border-color: var(--accent); }
+.chip:hover, .chip:focus-visible { color: var(--fg); border-color: var(--accent); }
+.chip:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
 
 /* El campo de texto va en SU PROPIA FILA y los botones debajo.
    Antes compartía fila con ellos, y como los botones se inyectan desde el JS la
@@ -550,7 +553,14 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 }
 #cmd-menu[hidden] { display: none; }
 .cmd-item { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; background: none; border: none; color: var(--fg); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: .86rem; }
-.cmd-item:hover { background: #ffffff10; }
+.cmd-item:hover, .cmd-item.activo, .cmd-item:focus-visible { background: #ffffff14; outline: none; }
+.cmd-item.activo { box-shadow: inset 2px 0 0 var(--accent2); }
+.cmd-vacio { padding: 8px 12px; color: var(--muted); font-size: .82rem; }
+/* atajos de teclado («?» o /atajos) */
+dl.atajos { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 8px 0 4px; font-size: .88rem; }
+dl.atajos dt { text-align: right; }
+dl.atajos dd { margin: 0; color: var(--muted); }
+kbd { font-family: ui-monospace, monospace; font-size: .8rem; background: var(--bg3); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; }
 .cmd-item b { font-family: ui-monospace, monospace; font-weight: 600; }
 .cmd-item span { color: var(--muted); font-size: .76rem; }
 #chat { position: relative; }

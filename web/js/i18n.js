@@ -5,7 +5,11 @@ const L = {
   es: {
     welcome: 'Un sistema operativo con alma que vive en tu navegador. Aquí las apps no se instalan: se crean cuando las pides y aparecen a la derecha. Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados, programar tareas y navegar por ti. Todo se queda en tu máquina.',
     hi: 'Hola, soy Elffuss.',
-    chips: ['Hazme un reloj', 'Crea una app de notas', 'Autoriza una carpeta', 'Recuérdame en 1 minuto que estire', 'Abre https://example.com'],
+    // Seis, alineadas con las del HTML (la 3.ª abre el selector de carpetas, ver
+    // CHIP_ACCIONES). Eran cinco y se pisaban por posición con las seis del HTML:
+    // en español salía «Abre https://example.com» dos veces y en inglés la sexta
+    // se quedaba en español.
+    chips: ['Hazme un reloj', 'Crea una app de notas', 'Autoriza una carpeta', 'Créame una skill para organizar mis descargas', 'Busca fotos de auroras boreales', 'Abre https://example.com'],
     tabs: { vista: 'Vista', apps: 'Apps', tareas: 'Tareas', vault: 'Bóveda', skills: 'Skills', permisos: 'Permisos', ajustes: 'Ajustes' },
     ph: 'Pídeme lo que necesites…  (/ para comandos)',
     perms: 'Permisos', empty: 'Aquí aparece lo que Elffuss crea.', tryit: 'Prueba: «hazme un reloj»',
@@ -53,7 +57,7 @@ const L = {
     writeSomething: 'escribe algo primero', sentThanks: '¡enviado, gracias!',
     flipChat: '💬 Chat', flipView: '✳ Vista',
     cmClock: 'crear un reloj', cmFolder: 'autorizar una carpeta', cmSkills: 'gestionar skills y plugins',
-    cmModel: 'modelo y API keys', cmTasks: 'ver tareas programadas', cmVault: 'secretos cifrados', cmClear: 'nueva conversación',
+    cmModel: 'elegir el modelo (arriba)', cmTasks: 'ver tareas programadas', cmVault: 'secretos cifrados', cmClear: 'nueva conversación',
     pClock: 'hazme un reloj', pFolder: 'autoriza una carpeta',
     // permisos (modal + panel + detalles por tool)
     permWord: 'Permiso', permDeny: 'Denegar', permAllow: 'Permitir',
@@ -179,11 +183,16 @@ const L = {
     folderRemoveSoulNext: 'La Mente escribe en esta carpeta; pasará a escribir en «{next}».',
     folderRemoveSoulNone: 'La Mente escribe en esta carpeta; sin carpetas no podrá guardar propuestas.',
     folderRemoved: 'Carpeta «{name}» quitada', folderRemovedWatches: '{n} automatización(es) quitada(s)',
+    chipsL: 'Sugerencias', cmdMenuL: 'Comandos y skills', cmSettings: 'modelos externos y API keys', cmKeys: 'atajos de teclado',
+    cmNone: 'Ningún comando empieza así', keysTitle: 'Atajos de teclado',
+    keyEnter: 'Enviar (si estoy trabajando, va a la cola)', keyHist: 'Recuperar lo que enviaste antes',
+    keySlash: 'Comandos: escribe para filtrar, ↑/↓ y Enter para elegir', keyEsc: 'Cerrar lo que esté abierto: menú, panel, la Mente, un diálogo',
+    keyHelp: 'Esta ayuda (fuera de la caja de texto)',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
     hi: 'Hi, I’m Elffuss.',
-    chips: ['Make me a clock', 'Create a notes app', 'Authorize a folder', 'Remind me in 1 minute to stretch', 'Open https://example.com'],
+    chips: ['Make me a clock', 'Create a notes app', 'Authorize a folder', 'Create a skill to organize my downloads', 'Find photos of the northern lights', 'Open https://example.com'],
     tabs: { vista: 'View', apps: 'Apps', tareas: 'Tasks', vault: 'Vault', skills: 'Skills', permisos: 'Permissions', ajustes: 'Settings' },
     ph: 'Ask me anything…  (/ for commands)',
     perms: 'Permissions', empty: 'Whatever Elffuss creates shows up here.', tryit: 'Try: “make me a clock”',
@@ -229,7 +238,7 @@ const L = {
     writeSomething: 'write something first', sentThanks: 'sent, thank you!',
     flipChat: '💬 Chat', flipView: '✳ View',
     cmClock: 'make a clock', cmFolder: 'authorize a folder', cmSkills: 'manage skills & plugins',
-    cmModel: 'model & API keys', cmTasks: 'see scheduled tasks', cmVault: 'encrypted secrets', cmClear: 'new conversation',
+    cmModel: 'pick the model (at the top)', cmTasks: 'see scheduled tasks', cmVault: 'encrypted secrets', cmClear: 'new conversation',
     pClock: 'make me a clock', pFolder: 'authorize a folder',
     permWord: 'Permission', permDeny: 'Deny', permAllow: 'Allow',
     permDenied: 'Permission “{label}” denied by the user',
@@ -354,11 +363,16 @@ const L = {
     folderRemoveSoulNext: 'The Mind writes in this folder; it will write in “{next}” instead.',
     folderRemoveSoulNone: 'The Mind writes in this folder; with no folders it cannot save proposals.',
     folderRemoved: 'Folder “{name}” removed', folderRemovedWatches: '{n} automation(s) removed',
+    chipsL: 'Suggestions', cmdMenuL: 'Commands and skills', cmSettings: 'external models and API keys', cmKeys: 'keyboard shortcuts',
+    cmNone: 'No command starts like that', keysTitle: 'Keyboard shortcuts',
+    keyEnter: 'Send (while I am working, it is queued)', keyHist: 'Recall what you sent before',
+    keySlash: 'Commands: type to filter, ↑/↓ and Enter to choose', keyEsc: 'Close whatever is open: menu, panel, the Mind, a dialog',
+    keyHelp: 'This help (outside the text box)',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
     hi: "Привіт, я Elffuss.",
-    chips: ["Зроби мені годинник", "Створи застосунок нотаток", "Дозволь теку", "Нагадай за 1 хв розім’ятися", "Відкрий https://example.com"],
+    chips: ["Зроби мені годинник", "Створи застосунок нотаток", "Дозволь теку", "Створи навичку, щоб упорядкувати мої завантаження", "Знайди фото північного сяйва", "Відкрий https://example.com"],
     tabs: {
       vista: "Вигляд",
       apps: "Застосунки",
@@ -432,7 +446,7 @@ const L = {
   fr: {
     welcome: "Un système d’exploitation avec une âme qui vit dans ton navigateur. Ici les apps ne s’installent pas : elles se créent quand tu les demandes, à droite. Je peux utiliser tes dossiers (avec permission), garder des secrets chiffrés, planifier des tâches et naviguer pour toi. Tout reste sur ta machine.",
     hi: "Salut, je suis Elffuss.",
-    chips: ["Fais-moi une horloge", "Crée une app de notes", "Autorise un dossier", "Rappelle-moi dans 1 min de m’étirer", "Ouvre https://example.com"],
+    chips: ["Fais-moi une horloge", "Crée une app de notes", "Autorise un dossier", "Crée-moi une skill pour ranger mes téléchargements", "Cherche des photos d’aurores boréales", "Ouvre https://example.com"],
     tabs: {
       vista: "Vue",
       apps: "Apps",
@@ -506,7 +520,7 @@ const L = {
   de: {
     welcome: "Ein Betriebssystem mit Seele, das in deinem Browser lebt. Apps werden hier nicht installiert – sie entstehen, wenn du fragst, und erscheinen rechts. Ich kann deine Ordner nutzen (mit Erlaubnis), verschlüsselte Geheimnisse speichern, Aufgaben planen und für dich surfen. Alles bleibt auf deinem Gerät.",
     hi: "Hallo, ich bin Elffuss.",
-    chips: ["Bau mir eine Uhr", "Erstelle eine Notiz-App", "Ordner freigeben", "Erinnere mich in 1 Min ans Strecken", "Öffne https://example.com"],
+    chips: ["Bau mir eine Uhr", "Erstelle eine Notiz-App", "Ordner freigeben", "Erstelle mir einen Skill, der meine Downloads ordnet", "Such Fotos von Polarlichtern", "Öffne https://example.com"],
     tabs: {
       vista: "Ansicht",
       apps: "Apps",
@@ -580,7 +594,7 @@ const L = {
   pt: {
     welcome: "Um sistema operativo com alma que vive no teu navegador. Aqui as apps não se instalam: criam-se quando pedes e aparecem à direita. Posso usar as tuas pastas (com permissão), guardar segredos cifrados, agendar tarefas e navegar por ti. Tudo fica na tua máquina.",
     hi: "Olá, sou a Elffuss.",
-    chips: ["Faz-me um relógio", "Cria uma app de notas", "Autoriza uma pasta", "Lembra-me em 1 min de me esticar", "Abre https://example.com"],
+    chips: ["Faz-me um relógio", "Cria uma app de notas", "Autoriza uma pasta", "Cria-me uma skill para organizar as minhas transferências", "Procura fotos de auroras boreais", "Abre https://example.com"],
     tabs: {
       vista: "Vista",
       apps: "Apps",
@@ -667,6 +681,8 @@ export function t(key, vars) {
   return vars ? s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '')) : s;
 }
 
+const CHIP_ACCIONES = [null, null, 'carpeta', null, null, null];
+
 export function applyI18n() {
   const code = uiLang();
   const t = L[code] || L.en;
@@ -687,7 +703,18 @@ export function applyI18n() {
     b.textContent = t.hi;
     sys.append(b, ' ' + t.welcome);
   }
-  document.querySelectorAll('#chips .chip').forEach((c, i) => { if (t.chips[i]) c.textContent = t.chips[i]; });
+  // Los chips salen del idioma, enteros (antes se sobrescribían por posición y
+  // sobraban o faltaban). La acción va por posición: la 3.ª abre el selector.
+  const chips = $('#chips');
+  if (chips && Array.isArray(t.chips)) {
+    chips.replaceChildren(...t.chips.map((txt, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = txt;
+      if (CHIP_ACCIONES[i]) b.dataset.accion = CHIP_ACCIONES[i];
+      return b;
+    }));
+    chips.setAttribute('aria-label', t.chipsL || L.en.chipsL);
+  }
   document.querySelectorAll('#tabs button').forEach(b => { const k = b.dataset.tab; if (t.tabs[k]) b.textContent = t.tabs[k]; });
   $('#tabs')?.setAttribute('aria-label', t.tabsLabel || L.en.tabsLabel);
   const ph = $('#prompt'); if (ph) ph.placeholder = t.ph;

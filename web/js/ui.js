@@ -1311,7 +1311,7 @@ export function setStopping() {
 }
 
 // ---------- arranque ----------
-export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChanged }) {
+export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChanged, onPickFolder = () => onSend(tr('pFolder')) }) {
   perms.setAsker(askPermission);
   apps.setRenderer((name, html) => renderApp(name, html, { ruta: true }));
   apps.setOnRemoved(vaciarVisor);
@@ -1351,7 +1351,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
     // va a la cola como siempre, y sin texto no hace nada —un segundo Enter
     // dado por inercia no debe tirar el trabajo en curso—. Parar es el ■.
     const text = $('prompt').value.trim();
-    if (!text) return;
+    if (!text || text === '/') return;     // un «/» suelto es abrir el menú, no un mensaje
     $('prompt').value = '';
     if (hist[hist.length - 1] !== text) hist.push(text);
     if (hist.length > 100) hist = hist.slice(-100);
@@ -1359,8 +1359,15 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
     hIdx = -1; draft = '';
     onSend(text);
   });
-  document.querySelectorAll('#chips .chip').forEach(c =>
-    c.addEventListener('click', () => onSend(c.textContent)));
+  // Chips: botones (antes <span> sin foco). «Autoriza una carpeta» abre el
+  // selector de carpetas EN el clic: pasándoselo al modelo, el selector nativo
+  // llegaba después de su turno y el navegador ya no lo dejaba abrir.
+  $('chips').addEventListener('click', e => {
+    const c = e.target.closest('.chip');
+    if (!c) return;
+    if (c.dataset.accion === 'carpeta') onPickFolder();
+    else onSend(c.textContent.trim());
+  });
   document.querySelectorAll('#tabs button').forEach(b =>
     b.addEventListener('click', () => selectTab(b.dataset.tab, { push: true })));
   // Flechas, Inicio y Fin entre pestañas (patrón de tablist): solo la activa
@@ -1398,33 +1405,148 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   setWorking(working);   // icono, título y aria del botón enviar/parar
   $('btn-slash').innerHTML = UI.slash;
 
-  // menú de comandos (/) en el chat, estilo plugin de Claude Code
+  // menú de comandos (/) en el chat, estilo plugin de Claude Code.
+  // Un menú de verdad: role=menu, ↑/↓/Inicio/Fin, Enter, Escape, y el foco
+  // vuelve a donde toca. Escribiendo «/» filtra por prefijo («/sk» → /skills) y
+  // Enter ejecuta el marcado; un «/» suelto nunca se manda al modelo. Después
+  // de ejecutar, la caja queda limpia y con el foco.
+  const verPanel = tab => { selectTab(tab, { push: true }); if (isMobile()) flipTo('viz'); };
   const cmds = [
     { label: '/reloj', hint: tr('cmClock'), run: () => onSend(tr('pClock')) },
-    { label: '/carpeta', hint: tr('cmFolder'), run: () => onSend(tr('pFolder')) },
-    { label: '/skills', hint: tr('cmSkills'), run: () => { selectTab('skills'); if (isMobile()) flipTo('viz'); } },
-    { label: '/modelo', hint: tr('cmModel'), run: () => { selectTab('ajustes'); if (isMobile()) flipTo('viz'); } },
-    { label: '/tareas', hint: tr('cmTasks'), run: () => { selectTab('tareas'); if (isMobile()) flipTo('viz'); } },
-    { label: '/vault', hint: tr('cmVault'), run: () => { selectTab('vault'); if (isMobile()) flipTo('viz'); } },
+    { label: '/carpeta', hint: tr('cmFolder'), run: () => onPickFolder() },     // el selector nativo se abre en el gesto
+    { label: '/skills', hint: tr('cmSkills'), run: () => verPanel('skills') },
+    { label: '/modelo', hint: tr('cmModel'), run: () => enfocarSelectorModelo(), foco: false },
+    { label: '/ajustes', hint: tr('cmSettings'), run: () => verPanel('ajustes') },
+    { label: '/tareas', hint: tr('cmTasks'), run: () => verPanel('tareas') },
+    { label: '/vault', hint: tr('cmVault'), run: () => verPanel('vault') },
     { label: '/limpiar', hint: tr('cmClear'), run: () => $('btn-clear').click() },
+    { label: '/atajos', hint: tr('cmKeys'), run: () => mostrarAtajos(), foco: false },
   ];
   const cmdMenu = $('cmd-menu');
-  const openCmd = () => {
-    cmdMenu.replaceChildren();
-    for (const c of cmds) {
-      const row = document.createElement('button');
-      row.className = 'cmd-item';
-      row.innerHTML = `<b>${c.label}</b><span>${c.hint}</span>`;
-      row.onclick = () => { cmdMenu.hidden = true; c.run(); };
-      cmdMenu.appendChild(row);
-    }
-    cmdMenu.hidden = false;
+  const slash = $('btn-slash');
+  const caja = $('prompt');
+  cmdMenu.setAttribute('role', 'menu');
+  cmdMenu.setAttribute('aria-label', tr('cmdMenuL'));
+  slash.setAttribute('aria-haspopup', 'menu');
+  slash.setAttribute('aria-controls', 'cmd-menu');
+  slash.setAttribute('aria-expanded', 'false');
+  slash.title = tr('cmdMenuL');
+  slash.setAttribute('aria-label', tr('cmdMenuL'));
+  const sinTilde = x => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  let visibles = [], activo = -1;
+  const filas = () => [...cmdMenu.querySelectorAll('.cmd-item')];
+  const marcar = i => {
+    const fs = filas();
+    activo = fs.length ? (i + fs.length) % fs.length : -1;
+    fs.forEach((f, j) => f.classList.toggle('activo', j === activo));
+    if (activo >= 0) { caja.setAttribute('aria-activedescendant', fs[activo].id); fs[activo].scrollIntoView({ block: 'nearest' }); }
+    else caja.removeAttribute('aria-activedescendant');
   };
-  $('btn-slash').addEventListener('click', () => cmdMenu.hidden ? openCmd() : (cmdMenu.hidden = true));
-  $('prompt').addEventListener('input', e => {
-    if (e.target.value === '/') openCmd(); else if (cmdMenu && !cmdMenu.hidden && !e.target.value.startsWith('/')) cmdMenu.hidden = true;
+  const pintarMenu = (filtro = '/') => {
+    const f = sinTilde(filtro);
+    visibles = cmds.filter(c => sinTilde(c.label).startsWith(f));
+    cmdMenu.replaceChildren();
+    visibles.forEach((c, i) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'cmd-item';
+      row.id = 'cmd-' + i;
+      row.setAttribute('role', 'menuitem');
+      row.tabIndex = -1;
+      const b = document.createElement('b'); b.textContent = c.label;
+      const h = document.createElement('span'); h.textContent = c.hint;
+      row.append(b, h);
+      row.onclick = () => ejecutar(c);
+      cmdMenu.appendChild(row);
+    });
+    if (!visibles.length) cmdMenu.appendChild(el('div', 'cmd-vacio', tr('cmNone')));
+    marcar(0);
+  };
+  const abrirMenu = (filtro = '/') => {
+    pintarMenu(filtro);
+    cmdMenu.hidden = false;
+    slash.setAttribute('aria-expanded', 'true');
+  };
+  const cerrarMenu = ({ foco = null } = {}) => {
+    if (cmdMenu.hidden) return;
+    cmdMenu.hidden = true;
+    slash.setAttribute('aria-expanded', 'false');
+    caja.removeAttribute('aria-activedescendant');
+    activo = -1;
+    foco?.focus();
+  };
+  const ejecutar = c => {
+    cerrarMenu();
+    if (caja.value.trim().startsWith('/')) caja.value = '';
+    c.run();
+    if (c.foco !== false) caja.focus();
+  };
+  slash.addEventListener('click', () => {
+    if (!cmdMenu.hidden) { cerrarMenu({ foco: slash }); return; }
+    abrirMenu('/');
+    filas()[0]?.focus();
   });
-  document.addEventListener('click', e => { if (!e.target.closest('#cmd-menu, #btn-slash, #prompt')) cmdMenu.hidden = true; });
+  // Dentro del menú (abierto con el botón): flechas, Inicio/Fin, Escape.
+  cmdMenu.addEventListener('keydown', e => {
+    const fs = filas();
+    const i = fs.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      const j = e.key === 'Home' ? 0 : e.key === 'End' ? fs.length - 1 : i + (e.key === 'ArrowDown' ? 1 : -1);
+      marcar(j); fs[activo]?.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      cerrarMenu({ foco: slash });
+    } else if (e.key === 'Tab') {
+      cerrarMenu();
+    }
+  });
+  // Escribiendo «/…» en la caja: filtra, ↑/↓ marcan, Enter ejecuta, Escape cierra.
+  caja.addEventListener('input', () => {
+    const v = caja.value;
+    if (/^\/\S*$/.test(v)) abrirMenu(v);
+    else cerrarMenu();
+  });
+  caja.addEventListener('keydown', e => {
+    if (cmdMenu.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); marcar(activo + (e.key === 'ArrowDown' ? 1 : -1)); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cerrarMenu(); }
+    else if (e.key === 'Enter' && activo >= 0 && visibles[activo]) { e.preventDefault(); ejecutar(visibles[activo]); }
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('#cmd-menu, #btn-slash, #prompt')) cerrarMenu(); });
+
+  // Atajos globales fuera de un campo de texto: «/» va a la caja con el menú
+  // abierto y «?» enseña la lista de atajos.
+  document.addEventListener('keydown', e => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t?.closest?.('input, textarea, select, [contenteditable], dialog, #mind-overlay')) return;
+    if (e.key === '/') { e.preventDefault(); if (isMobile()) flipTo('chat'); caja.focus(); caja.value = '/'; abrirMenu('/'); }
+    else if (e.key === '?') { e.preventDefault(); mostrarAtajos(); }
+  });
+}
+
+// La lista de atajos (antes no había ayuda de teclado en ninguna parte).
+function mostrarAtajos() {
+  let d = $('atajos');
+  if (!d) {
+    d = document.createElement('dialog');
+    d.id = 'atajos';
+    d.setAttribute('aria-labelledby', 'atajos-t');
+    const h = el('h3', null, tr('keysTitle'));
+    h.id = 'atajos-t';
+    const dl = document.createElement('dl');
+    dl.className = 'atajos';
+    for (const [k, v] of [['Enter', 'keyEnter'], ['↑ / ↓', 'keyHist'], ['/', 'keySlash'], ['Esc', 'keyEsc'], ['?', 'keyHelp']]) {
+      const dt = el('dt'); dt.appendChild(el('kbd', null, k));
+      dl.append(dt, el('dd', null, tr(v)));
+    }
+    const cerrar = btn(tr('close'), 'primary', () => d.close());
+    const fila = el('div', 'row right'); fila.appendChild(cerrar);
+    d.append(h, dl, fila);
+    document.body.appendChild(d);
+  }
+  if (!d.open) d.showModal();
 }
 
 

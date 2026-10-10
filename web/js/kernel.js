@@ -790,7 +790,20 @@ if (!localStorage.getItem('elffuss.welcomed')) {
 }
 
 skills.initSkills();
-ui.init({ onSend: send, onStop: stopCurrent, onModelChange: changeModel, onSettingsChanged: refreshModelOptions });
+// «Autoriza una carpeta» (el chip y /carpeta): el selector nativo se abre AQUÍ,
+// en el clic. Mandándoselo al modelo se abría al final de su turno, cuando el
+// navegador ya no lo permitía (pide un gesto reciente del usuario).
+async function autorizarCarpeta() {
+  try {
+    const r = await fs.pickFolder();
+    ui.addMsg('assistant', r);
+    agent.history.push({ role: 'user', content: t('pFolder'), ts: Date.now() }, { role: 'assistant', content: r, ts: Date.now() });
+    db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
+  } catch (e) {
+    if (e?.name !== 'AbortError') ui.toast('⚠️ ' + (e?.message || e));   // cancelar el selector no es un error
+  }
+}
+ui.init({ onSend: send, onStop: stopCurrent, onModelChange: changeModel, onSettingsChanged: refreshModelOptions, onPickFolder: autorizarCarpeta });
 ui.mountDiskChip();   // cuánto ocupan los modelos en este navegador, y cómo vaciarlo
 // Botón «liberar el modelo» del panel de consumo: suelta la RAM sin recargar.
 ui.setOnFreeModel(async () => {

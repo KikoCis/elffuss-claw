@@ -59,13 +59,13 @@
         Puedo usar tus carpetas (si me das permiso), guardar secretos cifrados,
         programar tareas y navegar por ti. Todo se queda en tu máquina.</div>
     </div>
-    <div id="chips">
-      <span class="chip">Hazme un reloj</span>
-      <span class="chip">Crea una app de notas</span>
-      <span class="chip">Autoriza una carpeta</span>
-      <span class="chip">Créame una skill para organizar mis descargas</span>
-      <span class="chip">Busca fotos de auroras boreales</span>
-      <span class="chip">Abre https://example.com</span>
+    <div id="chips" role="group" aria-label="Sugerencias">
+      <button type="button" class="chip">Hazme un reloj</button>
+      <button type="button" class="chip">Crea una app de notas</button>
+      <button type="button" class="chip" data-accion="carpeta">Autoriza una carpeta</button>
+      <button type="button" class="chip">Créame una skill para organizar mis descargas</button>
+      <button type="button" class="chip">Busca fotos de auroras boreales</button>
+      <button type="button" class="chip">Abre https://example.com</button>
     </div>
     <div id="cmd-menu" hidden></div>
     <form id="composer">
