@@ -39,6 +39,8 @@ export function folderIcon() {
 const ico = (p, sw = 1.6) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 export const UI = {
   clear: ico('<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>'),
+  // nueva conversación: un bocadillo con un +, no una papelera (que se lee «borrar»)
+  newChat: ico('<path d="M4 5h16v11H9l-5 4z"/><path d="M12 8v5M9.5 10.5h5"/>'),
   gear: ico('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>'),
   send: ico('<path d="M4 12l16-8-6 16-3.5-6.5L4 12z"/>'),
   add: ico('<path d="M12 5v14M5 12h14"/>', 1.8),
