@@ -99,6 +99,8 @@ const L = {
     useNoRam: "no medible en este navegador",
     extTitle: "Modelos externos (avanzado)",
     extDesc: "Elffuss corre en TU máquina y nada sale de ella. Estas opciones son la excepción: mandan tus mensajes a un servidor de fuera. Solo si tú lo activas a mano. Las claves se guardan en este navegador y las llamadas van directas al proveedor.",
+    // ── arreglos de UX (ronda 20261010) ──
+    close: 'Cerrar', undo: 'Deshacer',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -194,6 +196,8 @@ const L = {
     useNoRam: "not measurable in this browser",
     extTitle: "External models (advanced)",
     extDesc: "Elffuss runs on YOUR machine and nothing leaves it. These options are the exception: they send your messages to an outside server. Only if you turn them on yourself. Keys stay in this browser and calls go straight to the provider.",
+    // ── UX fixes (round 20261010) ──
+    close: 'Close', undo: 'Undo',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",

@@ -52,7 +52,7 @@
 
 <main>
   <section id="chat">
-    <div id="log">
+    <div id="log" role="log" aria-live="polite" aria-relevant="additions">
       <div class="msg sys"><img class="avatar" src="img/elffuss.svg" alt=""><b>Hola, soy Elffuss.</b>
         Un sistema operativo con alma que vive en tu navegador.
         Aquí las apps no se instalan: <i>se crean</i> cuando las pides y aparecen a la derecha.
@@ -105,7 +105,7 @@
   </section>
 </main>
 
-<dialog id="perm-dialog">
+<dialog id="perm-dialog" aria-labelledby="perm-title" aria-describedby="perm-desc perm-detail">
   <h3 id="perm-title"></h3>
   <p id="perm-desc"></p>
   <p id="perm-detail" class="muted"></p>
@@ -116,7 +116,7 @@
 </dialog>
 
 <button id="btn-flip" title="cambiar entre chat y vista">Vista</button>
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite" aria-relevant="additions"></div>
 <div id="model-progress" hidden>
   <div class="track"><div id="model-bar"></div></div>
   <span id="model-progress-text"></span>

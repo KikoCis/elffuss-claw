@@ -88,6 +88,11 @@ export function thinkingBubble() {
   const gen = document.createElement('div');
   gen.className = 'gen';
   div.append(img, label, dots, gen);
+  // #log es una región viva (role=log en index.html). La burbuja se oculta a los
+  // lectores de pantalla: cambia de texto con cada token y se leería sin parar.
+  // Mientras trabaja, el log queda «ocupado» y lo que llegue se anuncia al final.
+  div.setAttribute('aria-hidden', 'true');
+  $('log').setAttribute('aria-busy', 'true');
   $('log').appendChild(div);
   $('log').scrollTop = $('log').scrollHeight;
   // Barra del PREFILL. El prefill es la espera larga —leer el prompt antes de
@@ -152,7 +157,7 @@ export function thinkingBubble() {
     // Lo que llegó a escribir, si era texto para el usuario (no una herramienta
     // a medias, que se enseña como «creando app…»): lo que se conserva al parar.
     partial() { return humanizeStreamPreview(buf) ? '' : buf.trim(); },
-    remove() { div.remove(); },
+    remove() { div.remove(); if (!document.querySelector('#log .msg.thinking')) $('log').removeAttribute('aria-busy'); },
   };
 }
 
@@ -187,49 +192,113 @@ export function clearLog() {
   for (const el of [...$('log').children]) if (!el.classList.contains('sys')) el.remove();
 }
 
-export function toast(text, ms = 4500) {
+// Avisos. Antes se iban a los 4,5 s pasara lo que pasara: uno de 184 caracteres
+// (el de Hard Work) no daba tiempo a leerlo, no había forma de quitarlos ni de
+// pararlos, y ninguno llevaba a ningún sitio. Ahora:
+//   · duran según lo que hay que leer, y se paran con el ratón o el foco encima;
+//   · se cierran con ✕;
+//   · pueden llevar UNA acción («Deshacer», «Ver tarea», «Elegir ahora»…);
+//   · #toasts es una región viva (index.html): un lector de pantalla los anuncia.
+// `opts` admite un número (ms), como antes, o { ms, accion: { label, run } }.
+export function toast(text, opts = {}) {
+  if (typeof opts === 'number') opts = { ms: opts };
+  const { accion = null, ms = null } = opts || {};
   const t = document.createElement('div');
   t.className = 'toast';
-  t.textContent = text;
+  const txt = document.createElement('span');
+  txt.className = 'toast-txt';
+  txt.textContent = text;
+  t.appendChild(txt);
+  let timer = null, restante = 0, desde = 0, parado = false;
+  const quitar = () => { clearTimeout(timer); t.remove(); };
+  if (accion?.label && typeof accion.run === 'function') {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toast-accion';
+    b.textContent = accion.label;
+    b.onclick = () => { quitar(); try { accion.run(); } catch (e) { console.warn('[elffuss] acción del aviso:', e); } };
+    t.appendChild(b);
+  }
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'toast-x';
+  x.textContent = '✕';
+  x.title = tr('close');
+  x.setAttribute('aria-label', tr('close'));
+  x.onclick = quitar;
+  t.appendChild(x);
   $('toasts').appendChild(t);
-  setTimeout(() => t.remove(), ms);
+  // ~50 ms por carácter, entre 4 y 12 s; con acción, unos segundos más para
+  // que dé tiempo a decidir.
+  restante = ms ?? (Math.min(12000, Math.max(4000, 1500 + String(text).length * 50)) + (accion ? 4000 : 0));
+  const arrancar = () => { desde = Date.now(); clearTimeout(timer); timer = setTimeout(quitar, restante); };
+  const pausar = () => { if (parado) return; parado = true; clearTimeout(timer); restante = Math.max(1500, restante - (Date.now() - desde)); };
+  const seguir = () => { if (!parado || t.matches(':hover') || t.contains(document.activeElement)) return; parado = false; arrancar(); };
+  t.addEventListener('mouseenter', pausar);
+  t.addEventListener('mouseleave', seguir);
+  t.addEventListener('focusin', pausar);
+  t.addEventListener('focusout', () => setTimeout(seguir, 0));
+  arrancar();
+  return t;
 }
 
 // ---------- modal de permisos ----------
-// Contesta SIEMPRE, también si el diálogo se cierra sin pulsar nada (Escape):
-// cerrar es «no». Antes Escape lo cerraba sin contestar, y la herramienta que
-// lo pidió esperaba para siempre —y con ella el turno, la cola de detrás y el
-// cerebro CEO, que no arrancaba otro ciclo—.
-// Las peticiones llegan de una en una (permissions.js las pone en fila). Si
-// aun así entrara otra con el diálogo abierto, la que se estaba enseñando se
-// da por denegada en vez de quedarse sin respuesta: los botones son unos.
-let permEnCurso = null;   // done() de la petición que enseña el diálogo
+// Tres cosas que fallaban, las tres con el teclado:
+//   · Escape cerraba el diálogo SIN contestar: la promesa no se resolvía nunca,
+//     el turno se quedaba colgado en «Elffuss está usando…» y todo lo que
+//     escribieras después esperaba en la cola hasta recargar —y con ella el
+//     cerebro CEO, que no arrancaba otro ciclo—. Ahora Escape (y cualquier otro
+//     cierre) es «Denegar».
+//   · Dos peticiones a la vez se pisaban los botones: la segunda reasignaba los
+//     onclick de la primera, que ya no se podía contestar. Ahora van en cola,
+//     una detrás de otra (permissions.js ya las pone en fila por ámbito; esta
+//     cola cubre además a quien llame aquí directamente).
+//   · Si la petición nacía de un Enter (p. ej. en la contraseña de la Bóveda),
+//     el diálogo se abría DENTRO de ese mismo evento, el foco caía en «Denegar»
+//     y la misma pulsación lo activaba: denegado sin haberlo visto. Ahora se
+//     abre en la tarea siguiente, cuando esa tecla ya ha terminado.
+let colaPermisos = Promise.resolve();
 export function askPermission(scope, meta, detail) {
+  const turno = colaPermisos.then(() => mostrarPermiso(scope, meta, detail));
+  colaPermisos = turno.catch(() => {});
+  return turno;
+}
+
+function mostrarPermiso(scope, meta, detail) {
   return new Promise(resolve => {
     const dlg = $('perm-dialog');
-    permEnCurso?.(false);
-    let contestada = false;
-    const done = ok => {
-      if (contestada) return;
-      contestada = true;
-      if (permEnCurso === done) permEnCurso = null;
-      dlg.removeEventListener('close', alCerrar);
-      if (dlg.open) dlg.close();
-      refreshPerms();
-      resolve(ok);
-    };
-    // El evento «close» llega DESPUÉS de cerrarse, ya en otra tarea: si para
-    // entonces el diálogo vuelve a estar abierto, es el cierre de la petición
-    // anterior y no va con esta.
-    const alCerrar = () => { if (!dlg.open) done(false); };
-    permEnCurso = done;
     $('perm-title').textContent = `${meta?.icon || '❓'} ${tr('permWord')}: ${meta?.label || scope}`;
     $('perm-desc').textContent = meta?.desc || '';
     $('perm-detail').textContent = detail || '';
+    const previo = document.activeElement;
+    let hecho = false, mostrado = false;
+    const done = ok => {
+      if (hecho) return;
+      hecho = true;
+      $('perm-allow').onclick = null;
+      $('perm-deny').onclick = null;
+      dlg.removeEventListener('cancel', alCancelar);
+      dlg.removeEventListener('close', alCerrar);
+      if (dlg.open) dlg.close();
+      refreshPerms();
+      if (previo && previo !== document.body && document.contains(previo)) {
+        try { previo.focus({ preventScroll: true }); } catch { /* — */ }
+      }
+      resolve(ok);
+    };
+    const alCancelar = e => { e.preventDefault(); done(false); };   // Escape = Denegar
+    // Cualquier otro cierre, también. Pero solo el de ESTE diálogo: el evento
+    // «close» de la petición anterior llega en una tarea aparte, cuando esta ya
+    // ha empezado a escuchar, y sin la guarda la denegaba antes de enseñarla.
+    const alCerrar = () => { if (mostrado && !dlg.open) done(false); };
     $('perm-allow').onclick = () => done(true);
     $('perm-deny').onclick = () => done(false);
+    dlg.addEventListener('cancel', alCancelar);
     dlg.addEventListener('close', alCerrar);
-    if (!dlg.open) dlg.showModal();
+    setTimeout(() => {
+      if (hecho) return;
+      try { dlg.showModal(); mostrado = true; } catch { done(false); }
+    }, 0);
   });
 }
 

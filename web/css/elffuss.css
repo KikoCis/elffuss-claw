@@ -351,8 +351,21 @@ dialog p { margin: 6px 0; font-size: .9rem; }
   max-width: 340px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, .5);
   animation: slidein .2s ease-out;
+  display: flex; align-items: flex-start; gap: 8px;
 }
 @keyframes slidein { from { transform: translateX(20px); opacity: 0; } }
+.toast .toast-txt { flex: 1; min-width: 0; }
+.toast .toast-accion {
+  flex: none; background: none; border: 1px solid var(--accent); color: var(--fg);
+  border-radius: 6px; padding: 2px 8px; font-size: .8rem; cursor: pointer; white-space: nowrap;
+}
+.toast .toast-accion:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.toast .toast-x {
+  flex: none; background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: .8rem; padding: 0 2px; line-height: 1.4;
+}
+.toast .toast-x:hover { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 #model-progress {
   position: fixed; bottom: 18px; left: 18px; z-index: 50;
   background: var(--bg3); border: 1px solid var(--line); border-radius: 10px;
