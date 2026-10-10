@@ -1,6 +1,7 @@
 // Selector de modelo.
 //   · Nombre accesible propio y estado del punto con palabras.
-//   · Si el cerebro elegido no carga, se vuelve al que FUNCIONABA (no a Básico).
+//   · Si el cerebro elegido no carga, se vuelve al que FUNCIONABA (no a Básico),
+//     también si es un Gemma (su respaldo ligero es solo para cuando no había otro).
 //   · Mientras carga, el selector está desactivado (sin cargas en paralelo).
 //   · Cambiar de cerebro no te saca de la pestaña en la que estás.
 //   · Barra de progreso accesible; ⓘ a la ficha del modelo; etiquetas en inglés.
@@ -51,6 +52,38 @@ ok('…y no te sacó de Ajustes para enseñar la descarga', await p.evaluate(() 
 await escribir(p, 'hola');
 ok('el cerebro que funcionaba sigue contestando', await hasta(async () => /respuesta de ollama/.test(await p.locator('#log').innerText())));
 await reposo(p);
+
+// ── un Gemma que no carga, con otro cerebro funcionando: se vuelve a ESE ─────
+// (antes el respaldo de Gemma iba primero y te dejaba en Qwen3.5-0.8B, otra
+// descarga de ~600 MB, aunque Ollama funcionaba). Gemma y Qwen son dobles: el
+// Gemma falla al cargar y el Qwen cargaría bien, para que se note a cuál va.
+await p.route('**/js/providers/litert.js', r => r.fulfill({ contentType: 'text/javascript',
+  body: 'export function configure(){} export async function load(){ throw new Error("sin memoria (prueba)"); } export async function chat(){ return ""; }' }));
+await p.route('**/js/providers/onnx.js', r => r.fulfill({ contentType: 'text/javascript',
+  body: 'window.__qwen = 0; export function configure(){} export async function load(){ window.__qwen++; } export async function chat(h, s, cb){ cb && cb("respuesta de qwen"); return "respuesta de qwen"; }' }));
+const elegir = id => p.evaluate(id => {
+  const s = document.getElementById('model-select');
+  if (![...s.options].some(o => o.value === id)) { const o = document.createElement('option'); o.value = id; o.textContent = id; s.appendChild(o); }
+  s.value = id;
+  s.dispatchEvent(new Event('change'));
+}, id);
+await elegir('litert:gemma-e4b');
+ok('un Gemma que no carga, con Ollama funcionando: vuelve a Ollama', await hasta(async () =>
+  (await avisos(p)).some(t => /No se pudo cargar .*gemma.*Sigo con Ollama/i.test(t)) && await listo()), (await avisos(p)).join(' | '));
+ok('…sin pasar por el ligero (Qwen no se carga)', await p.evaluate(() => !window.__qwen && localStorage.getItem('elffuss.model') === 'ext:ollama'));
+await escribir(p, 'sigues ahí');
+ok('…y contesta Ollama', await hasta(async () => /respuesta de ollama[\s\S]*respuesta de ollama/.test(await p.locator('#log').innerText())));
+await reposo(p);
+// Sin otro cerebro (desde Básico), el respaldo ligero sigue existiendo.
+await elegir('rules');
+await hasta(() => p.evaluate(() => document.getElementById('model-select').value === 'rules' && !document.getElementById('model-select').disabled));
+await elegir('litert:gemma-e4b');
+ok('desde Básico, un Gemma que no carga cae al ligero', await hasta(() => p.evaluate(() =>
+  window.__qwen === 1 && document.getElementById('model-select').value === 'onnx:qwen3.5-0.8b')), (await avisos(p)).join(' | '));
+await elegir('ext:ollama');
+await hasta(listo);
+await p.unroute('**/js/providers/litert.js');
+await p.unroute('**/js/providers/onnx.js');
 
 // ── barra de progreso y ficha del modelo ────────────────────────────────────
 const prog = await p.evaluate(async () => {

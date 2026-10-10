@@ -826,25 +826,29 @@ async function changeModel(id, { volviendo = false } = {}) {
   } catch (e) {
     ui.modelProgress(null);
     console.error('[elffuss] fallo cargando modelo', e);
-    // Si un Gemma (LiteRT) no cabe/ falla, cae a LFM2.5 en vez de dejar sin cerebro.
-    if (id.startsWith('litert') && !_fellBack) {
-      _fellBack = true;
-      sessionStorage.setItem('elffuss.skipGemma', '1'); // no reintentar el pesado esta sesión
-      ui.toast('Ese Gemma no cargó aquí (memoria/GPU) — uso Qwen3.5-0.8B (ligero).');
-      // (sin volver desde dentro: si el ligero tampoco carga, la vuelta al que
-      // funcionaba la hace esta misma llamada, una sola vez)
-      const ok = await changeModel('onnx:qwen3.5-0.8b', { volviendo: true });
-      _fellBack = false;
-      if (ok) return true;
-    }
+    // Un Gemma (LiteRT) que no cabe no se reintenta solo en esta sesión: el
+    // arranque elegiría el ligero en su lugar (ver skipGemma).
+    if (id.startsWith('litert')) { try { sessionStorage.setItem('elffuss.skipGemma', '1'); } catch { /* — */ } }
     // Si había un cerebro funcionando, se VUELVE a él en vez de caer a Básico
     // (antes, probar un modelo que no cargaba te dejaba sin el que tenías). Se
     // vuelve a cargar porque el intento fallido puede haber reconfigurado su
     // módulo (los proveedores externos comparten api.js).
+    // Va ANTES que el respaldo ligero de Gemma: probar un Gemma con otro cerebro
+    // funcionando te dejaba en Qwen3.5-0.8B (otra descarga de ~600 MB) en vez de
+    // en el que tenías.
     if (!volviendo && previo && previo !== 'rules' && previo !== id) {
       ui.toast(t('modelFailedBack', { id: etiquetaDe(id), err: e?.message || String(e), prev: etiquetaDe(previo) }));
       await changeModel(previo, { volviendo: true });
       return false;
+    }
+    // Sin otro cerebro (el arranque, o venías de Básico): si un Gemma no cabe o
+    // falla, cae al ligero en vez de dejarte sin cerebro.
+    if (id.startsWith('litert') && !_fellBack) {
+      _fellBack = true;
+      ui.toast(t('gemmaFallback'));
+      const ok = await changeModel('onnx:qwen3.5-0.8b', { volviendo: true });
+      _fellBack = false;
+      if (ok) return true;
     }
     ui.modelStatus('off');
     agent.setProvider(rules);
