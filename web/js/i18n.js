@@ -206,7 +206,7 @@ const L = {
     optWeak: 'poco rendimiento', optDefault: 'por defecto', optLight: '— ligero', optText: '— texto', optSlow: '— lento', optCloud: ' · nube',
     memTitle: '🧠 Memoria', memDesc: 'Lo que Elffuss recuerda de ti entre conversaciones. Solo vive en este navegador.',
     memEmpty: 'Nada todavía. Dile «recuerda que…» y lo guarda.', memForgotten: 'Olvidado', memForgetL: 'Olvidar «{fact}»',
-    claim: 'las apps no existen: se crean',
+    claim: 'las apps no existen: se crean', promptL: 'Mensaje para Elffuss',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -405,7 +405,7 @@ const L = {
     optWeak: 'low performance', optDefault: 'default', optLight: '— light', optText: '— text', optSlow: '— slow', optCloud: ' · cloud',
     memTitle: '🧠 Memory', memDesc: 'What Elffuss remembers about you between conversations. It only lives in this browser.',
     memEmpty: 'Nothing yet. Tell it “remember that…” and it keeps it.', memForgotten: 'Forgotten', memForgetL: 'Forget “{fact}”',
-    claim: 'apps don’t exist: they get created',
+    claim: 'apps don’t exist: they get created', promptL: 'Message to Elffuss',
 },
   uk: {
     claim: "застосунків не існує: їх створюють",
@@ -766,6 +766,7 @@ export function applyI18n() {
   // era el title en español en todos los idiomas).
   const nombre = (sel, key) => { const e = $(sel); const v = t[key] || L.en[key]; if (e && v) { e.title = v; e.setAttribute('aria-label', v); } };
   nombre('#btn-clear', 'newChat');
+  $('#prompt')?.setAttribute('aria-label', t.promptL || L.en.promptL);   // la caja tenía por nombre solo el placeholder
   set('#vista-empty p', t.empty); // simplifica: solo la 1ª línea
   const emptyP = $('#vista-empty p'); if (emptyP) emptyP.innerHTML = `${t.empty}<br><i>${t.tryit}</i>`;
   set('#splash .l1', t.s1); set('#splash .l2', t.s2); set('#splash .l3', t.s3);

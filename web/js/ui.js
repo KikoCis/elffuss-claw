@@ -367,7 +367,8 @@ function pintarFlip() {
   const enViz = document.body.classList.contains('show-viz');
   const b = $('btn-flip');
   b.textContent = enViz ? tr('flipChat') : tr('flipView');
-  b.setAttribute('aria-label', enViz ? tr('flipToChat') : tr('flipToView'));
+  b.title = enViz ? tr('flipToChat') : tr('flipToView');
+  b.setAttribute('aria-label', b.title);
 }
 
 // ---------- pestañas ----------
@@ -446,8 +447,7 @@ function resaltar(seccion, detalle) {
 export function enfocarSelectorModelo() {
   const sel = $('model-select');
   if (!sel) return;
-  if (isMobile()) flipTo('chat');
-  sel.focus();
+  sel.focus();                       // está en la cabecera: a la vista en los dos lados del móvil
   try { sel.showPicker?.(); } catch { /* sin gesto de usuario no se despliega: queda enfocado */ }
 }
 
@@ -1122,7 +1122,7 @@ export function refreshSettings() {
     `<span>${tr('telAuto')}</span>` +
     `</label>` +
     `<span class="muted">${tr('telPrivacy')}</span>` +
-    `<label class="muted" style="font-size:.8em;margin-top:4px">${tr('telManual')}</label>` +
+    `<label class="muted" for="tel-feedback" style="font-size:.8em;margin-top:4px">${tr('telManual')}</label>` +
     `<textarea id="tel-feedback" rows="2" style="width:100%;resize:vertical" placeholder="${tr('telPh')}"></textarea>`;
   // Dice si LLEGÓ: antes daba las gracias y vaciaba el texto aunque el envío
   // fallara. Si falla, el texto se queda y se ofrece el sitio público de
