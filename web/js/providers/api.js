@@ -16,14 +16,35 @@ export async function load() {
     throw new Error('falta la clave de API (config avanzada)');
 }
 
-export async function chat(history, system, onToken = () => {}) {
+// El 4º argumento de chat() puede ser la señal misma o un objeto que la lleva
+// dentro, { signal, onPrefill }, que es lo que pasa el agente (rlm.js pasa la
+// señal sola). Se aceptan las dos formas, como en el motor propio: se reconoce
+// por la forma y no por la clase, igual que allí.
+const senalDe = x => (x && typeof x.aborted === 'boolean') ? x
+  : (x && x.signal && typeof x.signal.aborted === 'boolean') ? x.signal : null;
+
+// `signal` corta la petición de verdad: fetch la aborta y la conexión se cierra,
+// así que el proveedor deja de generar (y de cobrar) en cuanto se pulsa parar.
+// Antes chat() la recibía pero no la pasaba: openaiChat usaba un `signal` que no
+// existía en su ámbito y CADA llamada a un proveedor OpenAI-compatible
+// reventaba con «signal is not defined».
+export async function chat(history, system, onToken = () => {}, signal = null) {
+  signal = senalDe(signal);   // pasarle a fetch el objeto { signal, … } lanzaba TypeError
   return cfg.kind === 'anthropic'
-    ? anthropicChat(history, system, onToken)
-    : openaiChat(history, system, onToken);
+    ? anthropicChat(history, system, onToken, signal)
+    : openaiChat(history, system, onToken, signal);
+}
+
+// Parado a media respuesta: AbortError, como el de fetch, con lo generado hasta
+// ese punto en `partial` por si alguien lo quiere.
+function abortado(partial) {
+  const e = new DOMException('Parado', 'AbortError');
+  try { e.partial = partial; } catch { /* sin expandos: da igual */ }
+  return e;
 }
 
 // ---- OpenAI-compatible ----
-async function openaiChat(history, system, onToken) {
+async function openaiChat(history, system, onToken, signal) {
   const headers = { 'Content-Type': 'application/json' };
   if (cfg.apiKey) headers.Authorization = 'Bearer ' + cfg.apiKey;
   // packHistoryAsync: el empaquetado puede tener que codificar embeddings, así
@@ -41,24 +62,31 @@ async function openaiChat(history, system, onToken) {
   if (cfg.thinking != null) body.chat_template_kwargs = { enable_thinking: cfg.thinking };
 
   const res = await fetch(cfg.baseURL.replace(/\/$/, '') + '/chat/completions', {
+    signal,
     method: 'POST', headers, body: JSON.stringify(body),
   });
   if (!res.ok || !res.body) throw new Error('HTTP ' + res.status + ' ' + (await res.text().catch(() => '')).slice(0, 120));
 
   let out = '';
-  await readSSE(res.body, payload => {
-    if (payload === '[DONE]') return;
-    const d = JSON.parse(payload).choices?.[0]?.delta || {};
-    if (d.reasoning_content) onToken(d.reasoning_content);
-    if (d.content) { out += d.content; onToken(d.content); }
-  });
+  try {
+    await readSSE(res.body, payload => {
+      if (payload === '[DONE]') return;
+      const d = JSON.parse(payload).choices?.[0]?.delta || {};
+      if (d.reasoning_content) onToken(d.reasoning_content);
+      if (d.content) { out += d.content; onToken(d.content); }
+    }, signal);
+  } catch (e) {
+    if (signal?.aborted) throw abortado(out.trim());
+    throw e;
+  }
   return out.trim();
 }
 
 // ---- Anthropic Messages ----
-async function anthropicChat(history, system, onToken) {
+async function anthropicChat(history, system, onToken, signal) {
   const packed = await packHistoryAsync(history, 3000);
   const res = await fetch(cfg.baseURL.replace(/\/$/, '') + '/v1/messages', {
+    signal,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -77,12 +105,17 @@ async function anthropicChat(history, system, onToken) {
   if (!res.ok || !res.body) throw new Error('HTTP ' + res.status + ' ' + (await res.text().catch(() => '')).slice(0, 120));
 
   let out = '';
-  await readSSE(res.body, payload => {
-    const evt = JSON.parse(payload);
-    if (evt.type === 'content_block_delta' && evt.delta?.text) {
-      out += evt.delta.text; onToken(evt.delta.text);
-    }
-  });
+  try {
+    await readSSE(res.body, payload => {
+      const evt = JSON.parse(payload);
+      if (evt.type === 'content_block_delta' && evt.delta?.text) {
+        out += evt.delta.text; onToken(evt.delta.text);
+      }
+    }, signal);
+  } catch (e) {
+    if (signal?.aborted) throw abortado(out.trim());
+    throw e;
+  }
   return out.trim();
 }
 
@@ -99,17 +132,27 @@ function forAnthropic(msgs) {
   return merged;
 }
 
-// Lector SSE común: invoca fn con el texto tras cada 'data:'.
-async function readSSE(stream, fn) {
+// Lector SSE común: invoca fn con el texto tras cada 'data:'. Con la señal
+// abortada no entrega ni un evento más, aunque ya estén en el búfer: un mismo
+// trozo de red puede traer varios, y sin esto saldrían tokens después de
+// pulsar parar.
+async function readSSE(stream, fn, signal = null) {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  const corta = () => {
+    if (!signal?.aborted) return;
+    reader.cancel().catch(() => {});
+    throw new DOMException('Parado', 'AbortError');
+  };
   for (;;) {
+    corta();
     const { done, value } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
+      corta();
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line.startsWith('data:')) continue;

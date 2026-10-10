@@ -53,20 +53,52 @@ export async function unload() {
   motor = null; cargadoKey = null;
 }
 
-export async function chat(history, system, onToken = () => {}) {
+// Solo para tests/stop.mjs: probar chat() con un motor de mentira que imita el
+// cerrojo y la interrupción de MLC, sin GPU.
+export function __usarMotor(m) { motor = m; cargadoKey = actual.key; }
+
+// El 4º argumento de chat() puede ser la señal misma o un objeto que la lleva
+// dentro, { signal, onPrefill }, que es lo que pasa el agente (rlm.js pasa la
+// señal sola). Se aceptan las dos formas, como en el motor propio: se reconoce
+// por la forma y no por la clase, igual que allí.
+const senalDe = x => (x && typeof x.aborted === 'boolean') ? x
+  : (x && x.signal && typeof x.signal.aborted === 'boolean') ? x.signal : null;
+
+// `signal` (opcional): parar el turno con `interruptGenerate()` del motor de
+// MLC (comprobado en la versión fijada arriba, 0.2.85: existe y marca una
+// bandera que el bucle de decodificación mira en cada paso).
+//
+// Dos detalles de esa versión que obligan a hacerlo así:
+//   · el cerrojo del modelo se coge al CREAR la petición y se suelta al acabar
+//     el generador (no en un finally): salir del bucle con break, o no leerlo,
+//     lo dejaba cogido y la petición siguiente esperaba para siempre. Así que
+//     el flujo se lee hasta el final; tras interrumpir quedan muy pocos trozos
+//     y no se emiten;
+//   · el generador pone la bandera a false al ARRANCAR, así que una parada
+//     anterior a su primer trozo se perdería: se vuelve a pedir en cada trozo.
+export async function chat(history, system, onToken = () => {}, signal = null) {
+  signal = senalDe(signal);
   if (!motor) throw new Error('Modelo no cargado');
+  if (signal?.aborted) return '';
   const messages = [{ role: 'system', content: system }, ...(await packHistoryAsync(history, 2500))];
+  if (signal?.aborted) return '';
   // Sin el bloque de razonamiento: es un modelo híbrido y el <think> se come el
   // presupuesto de tokens sin aportar nada a lo que el usuario lee.
   const flujo = await motor.chat.completions.create({
     messages, stream: true, temperature: 0, max_tokens: 1024,
     extra_body: { enable_thinking: false },
   });
+  const m = motor;
+  const alAbortar = () => { try { m.interruptGenerate?.(); } catch { /* ya no genera */ } };
+  signal?.addEventListener?.('abort', alAbortar, { once: true });
   let txt = '';
-  for await (const trozo of flujo) {
-    const t = trozo.choices?.[0]?.delta?.content || '';
-    if (t) { txt += t; onToken(t); }
-  }
+  try {
+    for await (const trozo of flujo) {
+      if (signal?.aborted) { alAbortar(); continue; }
+      const t = trozo.choices?.[0]?.delta?.content || '';
+      if (t) { txt += t; onToken(t); }
+    }
+  } finally { signal?.removeEventListener?.('abort', alAbortar); }
   // Por si aun así abre <think> (el tope de tokens puede dejarlo sin cerrar).
   if (txt.includes('<think>')) {
     txt = txt.replace(/<think>[\s\S]*?<\/think>/g, '');
