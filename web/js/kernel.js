@@ -892,11 +892,15 @@ restoreHistory().then(restoreQueue).then(() => {
   }
 });
 
-// Direcciones (#/apps/reloj, #/tareas/t1…, ver rutas.js): la que trae la página
-// al abrirse, y las que lleguen después con «Atrás», un enlace o a mano.
+// Direcciones (#/apps/reloj, #/tareas/t1…, ver rutas.js): las que lleguen con
+// «Atrás», un enlace o a mano. Ir a otra sección con la Mente abierta la cierra
+// («Atrás» desde #/mente/… se quedaba con la Mente tapando la página). La
+// dirección con la que se ABRE la página se sigue al final de este módulo.
 ui.setOnMente(detalle => abrirMente(detalle));
-rutas.alCambiar(r => ui.navegar(r));
-if (rutas.leer()) ui.navegar(rutas.leer());
+rutas.alCambiar(r => {
+  if (r.seccion !== 'mente' && mente?.isOpen()) mente.closeMind();
+  ui.navegar(r);
+});
 
 // ── Cerebro CEO autónomo + Mente de Elffuss ───────────────────────────────
 // Cuando NO le pides nada, Elffuss trabaja por su cuenta: revisa tus carpetas
@@ -924,7 +928,21 @@ function cargarMente() {
     // (antes mandaba «Muéstrame el contenido de…» al modelo, que contestaba
     // detrás de la Mente abierta, y en Básico con el texto de ayuda).
     m.setOpenFile(verFicheroDeLaMente, { etiqueta: t('mindViewFile') });
-    m.setExecuteProposal(md => { m.closeMind(); executeProposal(md); });
+    // «▶ Ejecutar esta propuesta» de la Mente pasa por la MISMA puerta que el
+    // botón del chat: en Básico no ejecuta (ver executeProposal) y la Mente sigue
+    // abierta, con el aviso encima.
+    m.setExecuteProposal(md => {
+      if (!executeProposal(md)) return false;
+      m.closeMind();
+      return true;
+    });
+    // Cerrar la Mente devuelve la URL a la pestaña de debajo: antes se quedaba
+    // #/mente/<ruta>, y volver a pulsar el mismo enlace no era un cambio de
+    // dirección (no abría nada) y cada recarga reabría la Mente.
+    m.alCerrar(() => {
+      if (rutas.leer()?.seccion !== 'mente') return;
+      rutas.reflejar(document.querySelector('#tabs button.active')?.dataset.tab || 'vista');
+    });
     return (mente = m);
   }).catch(e => { menteCargando = null; throw e; }));
 }
@@ -949,7 +967,18 @@ function isNoteworthy(ev) {
   const solid = (ev.proposals || []).filter(p => p.text && p.text.trim().length >= 60 && !WEAK_RE.test(p.text.trim()));
   return solid.length >= 2; // al menos 2 líneas de pensamiento con algo sustancioso
 }
-function executeProposal(md) { send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md); }
+// Ejecutar una propuesta: el botón del aviso en el chat y «▶ Ejecutar» de la
+// Mente. En Básico NO: el motor de reglas troceaba el markdown en órdenes sueltas
+// y ejecutaba lo que encontrara (creaba una app «reloj» de una propuesta que lo
+// mencionaba). Antes solo el botón del chat lo comprobaba. Devuelve si la mandó.
+function executeProposal(md) {
+  if (activeModel === 'rules') {
+    ui.toast(t('proposalNeedsModel'), { accion: { label: t('pickModel'), run: () => { mente?.closeMind(); ui.enfocarSelectorModelo(); } } });
+    return false;
+  }
+  send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md);
+  return true;
+}
 // SOLO notifica si el permiso YA está concedido — nunca lo pide aquí; pedirlo
 // vive en el «Activar» del panel ⚙ de la Mente (antes también en el clic 🧠,
 // que lo pedía nada más abrirla).
@@ -984,13 +1013,9 @@ function pintarPropuesta(m) {
   btn.className = 'proposal-exec-btn';
   btn.textContent = t('proposalRun');
   btn.onclick = () => {
-    // En Básico, «ejecutar» mandaba el markdown al motor de reglas, que lo
-    // troceaba en órdenes sueltas (un web.fetch de una URL a medias…).
-    if (activeModel === 'rules') {
-      ui.toast(t('proposalNeedsModel'), { accion: { label: t('pickModel'), run: () => ui.enfocarSelectorModelo() } });
-      return;
-    }
-    btn.disabled = true; btn.textContent = t('proposalQueued'); executeProposal(m.propuesta.md);
+    // En Básico executeProposal explica que hace falta un modelo y no manda nada.
+    if (!executeProposal(m.propuesta.md)) return;
+    btn.disabled = true; btn.textContent = t('proposalQueued');
   };
   div.appendChild(btn);
 }
@@ -1561,3 +1586,13 @@ Si no hay nada útil que decir: CONSEJO: —`;
   // al que coincide con el destino y descarta el otro.
   if (window.opener) for (const o of ALLOWED) { try { window.opener.postMessage({ kind: 'copilot-ready' }, o); } catch { /* */ } }
 })();
+
+// La dirección con la que se abrió la página (#/apps/reloj, #/mente/<ruta>…).
+// Va AQUÍ, al final del módulo, y no junto a rutas.alCambiar: seguirla allí
+// abría la Mente antes de que existiera su estado (`menteCargando` se declara
+// después), y cargar #/mente/… enseñaba «Cannot access 'menteCargando' before
+// initialization» en vez de la Mente. Al final, todo lo del módulo ya existe.
+{
+  const r = rutas.leer();
+  if (r) ui.navegar(r);
+}

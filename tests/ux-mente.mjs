@@ -10,7 +10,11 @@
 //   · la propuesta llega al chat, se guarda con su botón, sobrevive a recargar,
 //     su enlace abre la Mente en ella; en Básico «Ejecutar» no ejecuta;
 //   · las etiquetas son botones clicables enteros y vuelven tras recargar;
-//   · «Ver el fichero» lo lee en el chat; la notificación lleva a la propuesta.
+//   · «Ver el fichero» lo lee en el chat; la notificación lleva a la propuesta;
+//   · «▶ Ejecutar» de la Mente tampoco ejecuta en Básico, y su aviso se ve y se
+//     pulsa con la Mente abierta (los avisos van encima y no quedan inertes);
+//   · cerrar la Mente limpia #/mente/… de la URL (el mismo enlace vuelve a abrir)
+//     y «Atrás» la cierra; cargar la página en #/mente o #/mente/<ruta> la abre.
 //
 //   BASE=http://localhost:8743 node tests/ux-mente.mjs
 import { navegador, contexto, pagina, ok, hasta, espera, avisos, fin, kv, BASE, OUT } from './ux-comun.mjs';
@@ -28,6 +32,14 @@ const notifStub = () => {
 };
 const { ctx, fuera } = await contexto(b, { grants: ['fs'] });
 await ctx.addInitScript(notifStub);
+// Todos los avisos que salen, aunque se vayan solos antes de mirarlos.
+// (se observa desde antes de que corra la app: un aviso del arranque llega antes de DOMContentLoaded)
+await ctx.addInitScript(() => {
+  window.__avisos = [];
+  new MutationObserver(ms => {
+    for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && n.classList.contains('toast')) window.__avisos.push(n.textContent);
+  }).observe(document, { childList: true, subtree: true });
+});
 const { p, errores } = await pagina(ctx);
 
 // carpeta autorizada de prueba (OPFS registrada como carpeta, sin picker)
@@ -179,6 +191,76 @@ await enlace.click();
 ok('el enlace abre la Mente en esa propuesta (la etiqueta volvió de la carpeta)', await hasta(() => p.evaluate(() =>
   document.getElementById('mind-panel')?.classList.contains('show') && document.querySelectorAll('.mind-node-label').length > 0), { veces: 300 }));
 if (OUT) await p.screenshot({ path: OUT + '/ux-mente.png' });
+
+// ── «▶ Ejecutar» DENTRO de la Mente, en Básico: tampoco ejecuta ─────────────
+// (antes solo el botón del chat lo comprobaba; el de la Mente mandaba la
+// propuesta al motor de reglas, que creaba apps con lo que encontrara)
+const usuariosAntes = await p.locator('#log .msg.user').count();
+const appsAntes = await p.evaluate(async () => (await (await import('/js/db.js')).all('apps')).length);
+await p.click('#mp-exec');
+const aviso = p.locator('#toasts .toast', { hasText: 'modelo cargado' }).last();
+ok('en Básico «▶ Ejecutar» de la Mente explica que hace falta un modelo y no manda nada', await hasta(async () => await aviso.count() > 0)
+  && await p.locator('#log .msg.user').count() === usuariosAntes
+  && await p.evaluate(async () => (await (await import('/js/db.js')).all('apps')).length) === appsAntes);
+ok('…y la Mente y la propuesta siguen abiertas', await p.evaluate(() =>
+  document.getElementById('mind-overlay').style.display !== 'none' && document.getElementById('mind-panel').classList.contains('show')));
+// Los avisos se ven y se pulsan con la Mente abierta (antes quedaban detrás e inertes).
+const visible = !(await aviso.count()) ? { encima: false, falta: true } : await aviso.evaluate(el => {
+  const r = el.getBoundingClientRect();
+  const arriba = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return { encima: el.contains(arriba), inerte: document.getElementById('toasts').inert };
+});
+ok('el aviso se ve ENCIMA de la Mente y no está inerte', visible.encima && !visible.inerte, JSON.stringify(visible));
+await aviso.locator('.toast-accion').click({ timeout: 5000 }).catch(() => {});
+ok('su acción «Elegir modelo» se puede pulsar: cierra la Mente y enfoca el selector', await hasta(() => p.evaluate(() =>
+  document.getElementById('mind-overlay').style.display === 'none' && document.activeElement?.id === 'model-select')));
+
+// ── cerrar la Mente devuelve la URL a la pestaña; el mismo enlace vuelve a abrir ─
+ok('cerrar la Mente quita #/mente/… de la URL', await hasta(() => p.evaluate(() => !location.hash.startsWith('#/mente'))),
+  await p.evaluate(() => location.hash));
+await p.keyboard.press('Escape');   // por si la Mente siguiera abierta
+await enlace.click({ timeout: 5000 }).catch(() => {});
+ok('pulsar OTRA VEZ el mismo enlace vuelve a abrir la Mente', await hasta(() => p.evaluate(() =>
+  document.getElementById('mind-overlay').style.display !== 'none' && document.getElementById('mind-panel').classList.contains('show')), { veces: 300 }));
+await p.keyboard.press('Escape');   // primero el panel de la propuesta
+await p.keyboard.press('Escape');   // luego la Mente
+ok('…y Escape la cierra con la URL limpia', await hasta(() => p.evaluate(() =>
+  document.getElementById('mind-overlay').style.display === 'none' && !location.hash.startsWith('#/mente'))));
+await p.click('#tabs button[data-tab="apps"]', { timeout: 5000 }).catch(() => {});
+await enlace.click({ timeout: 5000 }).catch(() => {});
+await hasta(() => p.evaluate(() => document.getElementById('mind-overlay').style.display !== 'none'));
+await p.goBack();
+ok('«Atrás» con la Mente abierta la cierra y vuelve a Apps', await hasta(() => p.evaluate(() =>
+  document.getElementById('mind-overlay').style.display === 'none' && location.hash === '#/apps')));
+
+// ── abrir la PÁGINA en #/mente/<ruta> abre la Mente (antes: error de TDZ) ───
+const ruta = await enlace.getAttribute('href');
+const erroresAntes = errores.length;
+// Carga de verdad (desde otra página): un goto que solo cambia el fragmento no recarga.
+const cargarEn = async h => {
+  await p.goto('about:blank');
+  await p.goto(BASE + '/' + h, { waitUntil: 'domcontentloaded' });
+  await p.waitForFunction(() => !!window.elffuss?.agent);
+};
+await cargarEn(ruta);
+ok('cargar la página en #/mente/<ruta> abre la Mente en esa propuesta', await hasta(() => p.evaluate(() =>
+  !!document.getElementById('mind-overlay') && document.getElementById('mind-overlay').style.display !== 'none'
+  && document.getElementById('mind-panel').classList.contains('show')), { veces: 300 }));
+const avisosCarga = await p.evaluate(() => window.__avisos);
+ok('…sin el aviso «No he podido abrir la Mente»', !avisosCarga.some(t => /No he podido abrir la Mente|before initialization/.test(t)),
+  JSON.stringify(avisosCarga));
+await cargarEn('#/mente/' + encodeURIComponent('.elffuss/soul/no-existe.md'));
+ok('una propuesta que no existe abre la Mente y lo dice en un aviso visible', await hasta(async () =>
+  await p.evaluate(() => !!document.getElementById('mind-overlay') && document.getElementById('mind-overlay').style.display !== 'none')
+  && (await avisos(p)).some(t => /No encuentro esa propuesta/.test(t)), { veces: 300 }));
+const x = p.locator('#toasts .toast', { hasText: 'No encuentro esa propuesta' }).locator('.toast-x');
+await x.click({ timeout: 5000 }).catch(() => {});
+ok('…y su ✕ se puede pulsar con la Mente abierta', await hasta(async () =>
+  !(await avisos(p)).some(t => /No encuentro esa propuesta/.test(t))));
+await cargarEn('#/mente');
+ok('cargar la página en #/mente abre la Mente', await hasta(() => p.evaluate(() =>
+  !!document.getElementById('mind-overlay') && document.getElementById('mind-overlay').style.display !== 'none'), { veces: 300 }));
+ok('ninguna carga en #/mente dejó errores de página', errores.length === erroresAntes, errores.slice(erroresAntes).join(' | '));
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 await fin(b, 'MENTE: abrir no enciende, modal, historial completo, solo lectura, propuestas que se guardan y se enlazan');

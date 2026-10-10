@@ -12,12 +12,19 @@
 const FOCABLES = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), ' +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function abrirModal(capa, { foco = null } = {}) {
+//
+// `dejar`: ids de hijos de <body> que siguen vivos encima de la capa. La Mente
+// deja los avisos (#toasts): es una región viva, y lo que avisa mientras está
+// abierta —«no encuentro esa propuesta», una tarea que salta con su «Ver», la
+// bóveda que se cierra sola— no se veía, no se anunciaba y sus botones no se
+// podían pulsar (estaban detrás y además inertes). El CSS los pone por encima.
+export function abrirModal(capa, { foco = null, dejar = [] } = {}) {
   const previo = document.activeElement;
   const marcados = [];
   for (const el of document.body.children) {
     if (el === capa || el.contains(capa) || el.inert) continue;
     if (el.tagName === 'SCRIPT' || el.tagName === 'DIALOG' || el.tagName === 'TEMPLATE') continue;
+    if (el.id && dejar.includes(el.id)) continue;
     el.inert = true;
     marcados.push(el);
   }

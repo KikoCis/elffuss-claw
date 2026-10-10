@@ -58,7 +58,13 @@ export function isOpen() { return open; }
 // `etiqueta`: cómo se llama el botón en ESTA app. «Abrir en el editor» es de
 // Code; Claw no tiene editor y lee el fichero en el chat.
 export function setOpenFile(fn, { etiqueta = null } = {}) { onOpenFile = fn; etiquetaAbrir = etiqueta; }
+// `fn(md)` devuelve false si no la ejecutó (p. ej. sin modelo): el panel de la
+// propuesta se queda abierto en vez de cerrarse como si hubiera arrancado.
 export function setExecuteProposal(fn) { onExecute = fn; }
+// Lo que hace la app anfitriona al cerrarse la Mente (Claw devuelve la URL a la
+// pestaña de debajo: ver kernel.js).
+let onCerrar = () => {};
+export function alCerrar(fn) { onCerrar = typeof fn === 'function' ? fn : () => {}; }
 
 const escHtml = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 const profileOf = channel => channel === 'ceo'
@@ -259,7 +265,7 @@ function showThoughtPanel(node) {
   const x = root.querySelector('#mp-x');
   x.setAttribute('aria-label', t('close'));
   x.onclick = () => root.classList.remove('show');
-  root.querySelector('#mp-exec').onclick = () => { onExecute(md); root.classList.remove('show'); };
+  root.querySelector('#mp-exec').onclick = () => { if (onExecute(md) !== false) root.classList.remove('show'); };
   const openBtn = root.querySelector('#mp-open');
   if (openBtn) openBtn.onclick = () => { onOpenFile(node.userData.path); root.classList.remove('show'); };
   root.querySelector('#mp-exec').focus({ preventScroll: true });
@@ -549,7 +555,7 @@ export async function openMind() {
   if (built) {
     overlay.style.display = '';
     if (musicaPuesta) { try { widget?.play(); } catch { /* — */ } }
-    cerrarModal = abrirModal(overlay, { foco: '#mind-close' });
+    cerrarModal = abrirModal(overlay, { foco: '#mind-close', dejar: ['toasts'] });
     pintarPlayStop();
     startLoop();
     return;
@@ -573,7 +579,7 @@ export async function openMind() {
     '<div id="mind-anchors"></div><div id="mind-panel"></div><div id="mind-cfg"></div>' +
     `<div id="mind-log" role="region" aria-label="${escHtml(t('mindHistoryTitle'))}"><div class="ml-head">${escHtml(t('mindHistoryTitle'))}<button id="ml-x" type="button">✕</button></div><div id="mind-log-body" role="log"></div></div>`;
   document.body.appendChild(overlay);
-  cerrarModal = abrirModal(overlay, { foco: '#mind-close' });
+  cerrarModal = abrirModal(overlay, { foco: '#mind-close', dejar: ['toasts'] });
   wireConfig(overlay); wireHistory(overlay); wirePlayStop(overlay); wireMusic(overlay);
   anchors.length = 0; thoughtNodes = []; stars = [];
   rebuildWorld();
@@ -722,6 +728,7 @@ export function closeMind() {
   if (overlay) overlay.style.display = 'none';
   cerrarModal?.();
   cerrarModal = null;
+  try { onCerrar(); } catch { /* lo de la app anfitriona no impide cerrar */ }
 }
 
 // para tests/depuración

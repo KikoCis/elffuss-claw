@@ -372,7 +372,11 @@ dialog h3 { margin: 0 0 8px; }
 dialog p { margin: 6px 0; font-size: .9rem; }
 
 /* ---------- toasts y progreso ---------- */
-#toasts { position: fixed; bottom: 18px; right: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+/* Por ENCIMA de la Mente (z-index 300): sus avisos tienen que verse y poder
+   pulsarse con ella abierta (modal.js los deja vivos). Con el splash de
+   bienvenida delante no se enseñan (siguen inertes detrás, como antes). */
+#toasts { position: fixed; bottom: 18px; right: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 310; }
+body:has(#splash:not([hidden])) #toasts { visibility: hidden; }
 .toast {
   background: var(--bg3);
   border: 1px solid var(--line);
