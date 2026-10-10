@@ -1,5 +1,5 @@
 // «Modo básico»: cerebro determinista sin modelo — cubre las demos clave sin
-// descargar nada. Para lenguaje libre, carga un modelo en el selector 🧠.
+// descargar nada. Para lenguaje libre, carga un modelo en el selector de modelo.
 export const name = 'Básico (sin modelo)';
 export async function load() {}
 
@@ -69,7 +69,7 @@ x.fillText(String(d.label).slice(0,14),0,0);x.restore();});`);
 }
 
 const generic = desc => SHELL('Boceto',
-  `<div style="max-width:560px;text-align:center;padding:20px"><h2>✳ Boceto de app</h2><p style="color:#8b949e">Esto es un boceto del modo básico. Pediste:</p><blockquote style="background:#161b22;border-left:3px solid #ff4d8d;padding:12px;border-radius:8px;text-align:left">${desc.replace(/</g, '&lt;')}</blockquote><p style="color:#8b949e">Carga un modelo (selector 🧠 arriba) y Elffuss generará esta app de verdad, a medida.</p></div>`, '');
+  `<div style="max-width:560px;text-align:center;padding:20px"><h2>✳ Boceto de app</h2><p style="color:#8b949e">Esto es un boceto del modo básico. Pediste:</p><blockquote style="background:#161b22;border-left:3px solid #ff4d8d;padding:12px;border-radius:8px;text-align:left">${desc.replace(/</g, '&lt;')}</blockquote><p style="color:#8b949e">Carga un modelo (en el selector de modelo, arriba) y Elffuss generará esta app de verdad, a medida.</p></div>`, '');
 
 const HELP = `Estoy en modo básico (sin modelo). Entiendo órdenes directas:
 • «hazme un reloj / una app de notas / una calculadora»
@@ -77,7 +77,9 @@ const HELP = `Estoy en modo básico (sin modelo). Entiendo órdenes directas:
 • «recuérdame dentro de N minutos <algo>» · «lista las tareas»
 • «guarda el secreto <nombre>: <valor>» · «lista los secretos»
 • «abre https://…»
-Para lenguaje libre y apps a medida, carga un modelo en el selector 🧠 de arriba.`;
+Para lenguaje libre y apps a medida, carga un modelo en el [selector de modelo](#/modelo) de arriba.`;
+// (El selector de modelo es el desplegable de la cabecera; 🧠 es la Mente. El
+// enlace #/modelo lo enfoca: ver rutas.js.)
 
 export async function chat(history) {
   const last = history[history.length - 1];
