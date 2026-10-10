@@ -79,16 +79,16 @@
   </section>
 
   <section id="viz">
-    <nav id="tabs">
-      <button data-tab="vista" class="active">Vista</button>
-      <button data-tab="apps">Apps</button>
-      <button data-tab="tareas">Tareas</button>
-      <button data-tab="vault">Bóveda</button>
-      <button data-tab="skills">Skills</button>
-      <button data-tab="permisos">Permisos</button>
-      <button data-tab="ajustes">Ajustes</button>
+    <nav id="tabs" role="tablist" aria-label="Paneles">
+      <button role="tab" id="tab-vista" aria-controls="panel-vista" aria-selected="true" data-tab="vista" class="active">Vista</button>
+      <button role="tab" id="tab-apps" aria-controls="panel-apps" aria-selected="false" tabindex="-1" data-tab="apps">Apps</button>
+      <button role="tab" id="tab-tareas" aria-controls="panel-tareas" aria-selected="false" tabindex="-1" data-tab="tareas">Tareas</button>
+      <button role="tab" id="tab-vault" aria-controls="panel-vault" aria-selected="false" tabindex="-1" data-tab="vault">Bóveda</button>
+      <button role="tab" id="tab-skills" aria-controls="panel-skills" aria-selected="false" tabindex="-1" data-tab="skills">Skills</button>
+      <button role="tab" id="tab-permisos" aria-controls="panel-permisos" aria-selected="false" tabindex="-1" data-tab="permisos">Permisos</button>
+      <button role="tab" id="tab-ajustes" aria-controls="panel-ajustes" aria-selected="false" tabindex="-1" data-tab="ajustes">Ajustes</button>
     </nav>
-    <div class="panel active" id="panel-vista">
+    <div class="panel active" id="panel-vista" role="tabpanel" aria-labelledby="tab-vista">
       <div id="vista-empty">
         <img class="big" src="img/elffuss.svg" alt="Elffuss">
         <p>Aquí aparece lo que Elffuss crea.<br>Prueba: <i>«hazme un reloj»</i></p>
@@ -96,12 +96,12 @@
       <iframe id="appframe" title="app generada"
               sandbox="allow-scripts allow-forms allow-modals allow-popups" hidden></iframe>
     </div>
-    <div class="panel" id="panel-apps"></div>
-    <div class="panel" id="panel-tareas"></div>
-    <div class="panel" id="panel-vault"></div>
-    <div class="panel" id="panel-skills"></div>
-    <div class="panel" id="panel-permisos"></div>
-    <div class="panel" id="panel-ajustes"></div>
+    <div class="panel" id="panel-apps" role="tabpanel" aria-labelledby="tab-apps"></div>
+    <div class="panel" id="panel-tareas" role="tabpanel" aria-labelledby="tab-tareas"></div>
+    <div class="panel" id="panel-vault" role="tabpanel" aria-labelledby="tab-vault"></div>
+    <div class="panel" id="panel-skills" role="tabpanel" aria-labelledby="tab-skills"></div>
+    <div class="panel" id="panel-permisos" role="tabpanel" aria-labelledby="tab-permisos"></div>
+    <div class="panel" id="panel-ajustes" role="tabpanel" aria-labelledby="tab-ajustes"></div>
   </section>
 </main>
 

@@ -4,7 +4,8 @@ import * as perms from './permissions.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
 import { fs, apps, vault, tasks } from './tools/index.js';
-import { renderMarkdown } from './md.js';
+import { renderMarkdown, linkify } from './md.js';
+import * as rutas from './rutas.js';
 import { t as tr, uiLang } from './i18n.js';
 import { humanizeStreamPreview } from './humanize.js'; // alias: dentro de tick(t) el token ya se llama t
 import { UI } from './icons.js';
@@ -53,8 +54,34 @@ function shortArgs(args = {}) {
   return s ? ` (${s.slice(0, 120)})` : '';
 }
 
+// Adónde lleva cada herramienta: el «🔧 app.create …» del chat enlaza a lo que
+// ha tocado (la app, las tareas, las skills, las carpetas).
+function rutaDeHerramienta(call) {
+  const t = call.tool || '', a = call.args || {};
+  if ((t === 'app.create' || t === 'app.open') && a.name) return rutas.href('apps', a.name);
+  if (t.startsWith('app.')) return rutas.href('apps');
+  if (t === 'tasks.add' || t === 'tasks.list' || t === 'tasks.remove') return rutas.href('tareas');
+  if (t.startsWith('fs.watch')) return rutas.href('tareas', 'automatizaciones');
+  if ((t === 'skill.create' || t === 'skill.edit' || t === 'skill.get') && a.name) return rutas.href('skills', a.name);
+  if (t.startsWith('skill.')) return rutas.href('skills');
+  if (t.startsWith('fs.')) return rutas.href('permisos');
+  if (t.startsWith('vault.')) return rutas.href('vault');
+  return null;
+}
+
 export function addTool(call) {
-  addMsg('tool', `🔧 ${call.tool}${shortArgs(call.args)}`);
+  const div = addMsg('tool', `🔧 ${call.tool}${shortArgs(call.args)}`);
+  const destino = rutaDeHerramienta(call);
+  if (destino) {
+    const a = document.createElement('a');
+    a.href = destino;
+    a.className = 'tool-link';
+    a.textContent = '↗';
+    a.title = tr('toolGoTo');
+    a.setAttribute('aria-label', tr('toolGoTo'));
+    div.append(' ', a);
+  }
+  return div;
 }
 
 export function addToolResult(tool, result) {
@@ -64,7 +91,9 @@ export function addToolResult(tool, result) {
   const sum = document.createElement('summary');
   sum.textContent = (err ? '⚠️ ' : '✓ ') + result.split('\n')[0].slice(0, 110);
   const pre = document.createElement('pre');
-  pre.textContent = result.slice(0, 2000);
+  // Las URL de web.fetch / web.search se pueden abrir (http y https, pestaña
+  // nueva, sin referrer); el resto sigue siendo texto plano.
+  pre.innerHTML = linkify(result.slice(0, 2000));
   det.append(sum, pre);
   $('log').appendChild(det);
   $('log').scrollTop = $('log').scrollHeight;
@@ -305,13 +334,17 @@ function mostrarPermiso(scope, meta, detail) {
 // ---------- visualizador ----------
 const isMobile = () => matchMedia('(max-width: 700px)').matches;
 
-export function renderApp(name, html) {
+// `ruta`: es una app guardada (apps.create/open) y su dirección es #/apps/<nombre>.
+// El tablero del copiloto también se pinta aquí, pero no es una app guardada.
+export function renderApp(name, html, { ruta = false } = {}) {
   _stage?.hide?.($('vista-empty'), false);   // si estaba el escaparate de descarga, quitarlo
   $('vista-empty').hidden = true;
   const frame = $('appframe');
   frame.hidden = false;
   frame.srcdoc = html;
-  selectTab('vista');
+  frame.title = tr('appFrameT', { name });
+  selectTab('vista', { reflejar: !ruta });
+  if (ruta) rutas.reflejar('apps', name);
   refreshApps();
   if (isMobile()) flipTo('viz'); // en móvil, saltar a ver la app recién creada
 }
@@ -323,17 +356,80 @@ function flipTo(side) {
 }
 
 // ---------- pestañas ----------
-export function selectTab(name) {
-  document.querySelectorAll('#tabs button').forEach(b =>
-    b.classList.toggle('active', b.dataset.tab === name));
+// Pestañas de verdad (tablist/tab/tabpanel, aria-selected, tabindex itinerante y
+// flechas) y con dirección: cada una se refleja en la URL (#/apps, #/tareas…;
+// ver rutas.js), así que se pueden enlazar, guardar y recorrer con «Atrás».
+// `push`: un clic del usuario crea entrada de historial; lo que se abre solo
+// (la Vista al crear una app) reemplaza la actual y no ensucia el historial.
+export function selectTab(name, { push = false, reflejar = true } = {}) {
+  document.querySelectorAll('#tabs button').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+  });
   document.querySelectorAll('.panel').forEach(p =>
     p.classList.toggle('active', p.id === 'panel-' + name));
-  if (name === 'apps') refreshApps();
-  if (name === 'tareas') refreshTasks();
-  if (name === 'vault') refreshVault();
-  if (name === 'permisos') refreshPerms();
-  if (name === 'ajustes') refreshSettings();
-  if (name === 'skills') refreshSkillsPanel();
+  if (reflejar) rutas.reflejar(name, null, { push });
+  if (name === 'apps') return refreshApps();
+  if (name === 'tareas') return refreshTasks();
+  if (name === 'vault') return refreshVault();
+  if (name === 'permisos') return refreshPerms();
+  if (name === 'ajustes') return refreshSettings();
+  if (name === 'skills') return refreshSkillsPanel();
+}
+
+// Ir a donde dice una ruta (#/…). Lo usan el arranque, «Atrás»/«Adelante» y
+// los enlaces del chat. La Mente no vive en ui.js: la abre quien la registre.
+let onMenteCb = () => {};
+export function setOnMente(fn) { onMenteCb = fn; }
+export async function navegar(ruta) {
+  if (!ruta) return;
+  const { seccion, detalle } = ruta;
+  const verPanel = async (tab) => { await selectTab(tab, { reflejar: false }); if (isMobile()) flipTo('viz'); };
+  if (seccion === 'mente') return onMenteCb(detalle);
+  if (seccion === 'modelo') {
+    // No es un sitio sino una acción: se hace y la URL vuelve a decir dónde estás.
+    rutas.reflejar(tabActiva() || 'vista');
+    enfocarSelectorModelo();
+    return;
+  }
+  if (seccion === 'apps' && detalle) {
+    const app = (await apps.allApps()).find(a => a.name === detalle);
+    if (app) { await apps.open({ name: app.name }); rutas.reflejar('apps', app.name); return; }
+    toast(tr('appMissing', { name: detalle }));
+    return verPanel('apps');
+  }
+  if (!['vista', 'apps', 'tareas', 'vault', 'skills', 'permisos', 'ajustes'].includes(seccion)) return;
+  await verPanel(seccion);
+  if (detalle) resaltar(seccion, detalle);
+}
+
+// Señala un elemento dentro del panel (una tarea, una skill, la sección
+// «Acerca de»…): lo trae a la vista, lo marca y le da el foco.
+function resaltar(seccion, detalle) {
+  const panel = $('panel-' + seccion);
+  const sel = `[data-ruta="${CSS.escape(detalle)}"]`;
+  const tryIt = (n = 0) => {
+    const el = panel?.querySelector(sel);
+    if (!el) { if (n < 20) setTimeout(() => tryIt(n + 1), 50); return; }
+    panel.querySelectorAll('.resaltado').forEach(e => e.classList.remove('resaltado'));
+    el.classList.add('resaltado');
+    if (!el.hasAttribute('tabindex') && !/^(BUTTON|A|INPUT|DETAILS|SUMMARY)$/.test(el.tagName)) el.tabIndex = -1;
+    el.scrollIntoView({ block: 'nearest' });
+    try { el.focus({ preventScroll: true }); } catch { /* — */ }
+  };
+  tryIt();
+}
+
+// El selector de modelo es un <select>: se enfoca y, donde se puede, se
+// despliega. Es a donde llevan los «elige un modelo arriba» del chat.
+export function enfocarSelectorModelo() {
+  const sel = $('model-select');
+  if (!sel) return;
+  if (isMobile()) flipTo('chat');
+  sel.focus();
+  try { sel.showPicker?.(); } catch { /* sin gesto de usuario no se despliega: queda enfocado */ }
 }
 
 // Skills en su propia pestaña (visible y descubrible)
@@ -391,12 +487,14 @@ export async function refreshTasks() {
     return;
   }
   for (const t of list) {
-    panel.appendChild(card(
+    const c = card(
       el('span', null, t.done ? '✅' : '⏳'),
       el('b', null, t.prompt),
       el('span', 'muted', new Date(t.when).toLocaleString(uiLang())),
       btn('🗑', 'ghost', async () => { await tasks.removeTask({ id: t.id }); refreshTasks(); }),
-    ));
+    );
+    c.dataset.ruta = t.id;          // #/tareas/<id>
+    panel.appendChild(c);
   }
 }
 
@@ -532,10 +630,12 @@ export async function refreshPerms() {
   if (folders.length) {
     panel.appendChild(el('h3', null, tr('foldersTitle')));
     for (const f of folders) {
-      panel.appendChild(card(
+      const c = card(
         el('b', null, '📁 ' + f),
         btn(tr('remove'), 'ghost', async () => { await db.del('fs', f); refreshPerms(); }),
-      ));
+      );
+      c.dataset.ruta = f;           // #/permisos/<carpeta>
+      panel.appendChild(c);
     }
   }
 }
@@ -865,6 +965,7 @@ async function renderSkills(panel) {
   panel.appendChild(el('div', 'muted', tr('installedN', { n: inst.length })));
   for (const s of inst) {
     const c = el('div', 'card');
+    c.dataset.ruta = s.name;        // #/skills/<nombre>
     c.append(el('b', null, s.name), el('span', 'muted', s.repo || 'local'),
       btn(tr('remove'), 'ghost', async () => { await skills.remove(s.name); refreshSettings(); }));
     panel.appendChild(c);
@@ -962,7 +1063,7 @@ export function setStopping() {
 // ---------- arranque ----------
 export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChanged }) {
   perms.setAsker(askPermission);
-  apps.setRenderer(renderApp);
+  apps.setRenderer((name, html) => renderApp(name, html, { ruta: true }));
   onSettingsChangedCb = onSettingsChanged || (() => {});
   // al instalar una skill: mensaje «cómo usarla» en el chat + volver al chat en móvil
   onSkillInstalledCb = entry => {
@@ -1010,8 +1111,22 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   document.querySelectorAll('#chips .chip').forEach(c =>
     c.addEventListener('click', () => onSend(c.textContent)));
   document.querySelectorAll('#tabs button').forEach(b =>
-    b.addEventListener('click', () => selectTab(b.dataset.tab)));
-  $('btn-perms').addEventListener('click', () => { selectTab('permisos'); if (isMobile()) flipTo('viz'); });
+    b.addEventListener('click', () => selectTab(b.dataset.tab, { push: true })));
+  // Flechas, Inicio y Fin entre pestañas (patrón de tablist): solo la activa
+  // está en el orden de tabulación, y moverse con flechas la activa.
+  $('tabs').addEventListener('keydown', e => {
+    const tabs = [...document.querySelectorAll('#tabs [role="tab"]')];
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = e.key === 'ArrowRight' ? (i + 1) % tabs.length
+      : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+    if (j < 0) return;
+    e.preventDefault();
+    tabs[j].focus();
+    selectTab(tabs[j].dataset.tab);
+  });
+  $('btn-perms').addEventListener('click', () => { selectTab('permisos', { push: true }); if (isMobile()) flipTo('viz'); });
   $('model-select').addEventListener('change', e => onModelChange(e.target.value));
   $('btn-flip').addEventListener('click', () =>
     flipTo(document.body.classList.contains('show-viz') ? 'chat' : 'viz'));

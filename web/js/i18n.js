@@ -109,6 +109,8 @@ const L = {
     vaultShowL: 'Ver «{name}»', vaultShow: 'Ver «{name}»', vaultHide: 'Ocultar «{name}»',
     vaultDel: 'Borrar «{name}»', vaultDelConfirm: '¿Borrar el secreto «{name}»? No se puede recuperar.',
     vaultDeleted: 'Secreto «{name}» borrado',
+    tabsLabel: 'Paneles', appMissing: 'No hay ninguna app «{name}»', appFrameT: 'App «{name}»',
+    toolGoTo: 'Ir a lo que ha tocado esta herramienta',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -214,6 +216,8 @@ const L = {
     vaultShowL: 'Show “{name}”', vaultShow: 'Show “{name}”', vaultHide: 'Hide “{name}”',
     vaultDel: 'Delete “{name}”', vaultDelConfirm: 'Delete the secret “{name}”? It cannot be recovered.',
     vaultDeleted: 'Secret “{name}” deleted',
+    tabsLabel: 'Panels', appMissing: 'There is no app “{name}”', appFrameT: 'App “{name}”',
+    toolGoTo: 'Go to what this tool touched',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
@@ -549,6 +553,7 @@ export function applyI18n() {
   }
   document.querySelectorAll('#chips .chip').forEach((c, i) => { if (t.chips[i]) c.textContent = t.chips[i]; });
   document.querySelectorAll('#tabs button').forEach(b => { const k = b.dataset.tab; if (t.tabs[k]) b.textContent = t.tabs[k]; });
+  $('#tabs')?.setAttribute('aria-label', t.tabsLabel || L.en.tabsLabel);
   const ph = $('#prompt'); if (ph) ph.placeholder = t.ph;
   set('#btn-perms', t.perms);
   set('#vista-empty p', t.empty); // simplifica: solo la 1ª línea

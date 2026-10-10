@@ -15,6 +15,7 @@ import * as mind from './mind.js';
 import { ceoWorkspace, CEO_DEFAULT_PROFILES } from './ceo-adapter.js';
 import * as telemetry from './telemetry.js';
 import * as gram from './copilot-grammar.js';
+import * as rutas from './rutas.js';
 
 applyI18n(); // traduce el chrome al idioma del navegador antes de nada
 telemetry.init('elffuss-claw'); // opt-in, apagado por defecto — ver Ajustes
@@ -729,6 +730,12 @@ ui.setOnFreeModel(async () => {
 refreshModelOptions();
 restoreHistory().then(restoreQueue);
 
+// Direcciones (#/apps/reloj, #/tareas/t1…, ver rutas.js): la que trae la página
+// al abrirse, y las que lleguen después con «Atrás», un enlace o a mano.
+ui.setOnMente(detalle => abrirMente(detalle));
+rutas.alCambiar(r => ui.navegar(r));
+if (rutas.leer()) ui.navegar(rutas.leer());
+
 // ── Cerebro CEO autónomo + Mente de Elffuss ───────────────────────────────
 // Cuando NO le pides nada, Elffuss trabaja por su cuenta: revisa tus carpetas
 // autorizadas, tareas, apps y memoria, y propone mejoras (sin tocar nada por
@@ -793,6 +800,10 @@ document.getElementById('btn-mind').addEventListener('click', () => {
   try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* */ }
   mind.openMind();
 });
+// #/mente y #/mente/<ruta de la propuesta>
+function abrirMente(ruta) {
+  Promise.resolve(mind.openMind()).then(() => { if (ruta) mind.mostrarPropuesta?.(ruta); });
+}
 // restaura tu última elección (play o stop) tal cual la dejaste. EXCEPTO en
 // modo copiloto: ahí el modelo es para soplarte argumentos en vivo, no para
 // ponerse a inventar mejoras (y de paso robarle el visor al tablero).
