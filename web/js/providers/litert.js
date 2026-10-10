@@ -224,27 +224,45 @@ export async function chat(history, system, onToken = () => {}, signal = null) {
       `· usados ${antes} · se mandan ${text.length} caracteres (${largo} tenía) · ${charsPorToken} caracteres/token`);
   }
 
-  // PARAR: `conversation.cancel()` (existe en la versión fijada, 0.15.0) corta
-  // la generación EN EL ACTO, también durante el prefill, cuando aún no ha
-  // llegado ningún trozo con el que salir del bucle. Además se sale del bucle
-  // en el trozo siguiente (como en Elffuss Code), y lo generado hasta ahí se
-  // da por enviado: la conversación de LiteRT ya lo tiene en su caché. Parar no
-  // es un error: no se reintenta ni se lanza, se devuelve lo que hubiera.
-  const alAbortar = () => { try { conversation?.cancel?.(); } catch { /* ya no genera */ } };
+  // PARAR: `cancel()` de la conversación (existe en la versión fijada, 0.15.0)
+  // corta la generación EN EL ACTO, también durante el prefill, cuando aún no
+  // ha llegado ningún trozo con el que salir del bucle. Salir del bucle a
+  // medias también cancela: deja de leer el flujo, y el flujo llama a cancel().
+  //
+  // Pero una conversación cancelada YA NO SIRVE. El motor web es la sesión
+  // «avanzada» de LiteRT-LM, y su CancelProcess() deja la sesión envenenada (lo
+  // dice su cabecera: reutilizarla «no está soportado»): cada tarea nueva
+  // depende de la anterior y, si esa acabó cancelada, nace cancelada también
+  // («Task cancelled»). Encima la conversación saca el mensaje parado de su
+  // historial. Seguir con ella hacía fallar el primer envío del turno siguiente,
+  // y el reintento de «no cupo» la rehacía COMPACTADA, con pérdida, con otro
+  // prefill entero y con un aviso que culpaba al tamaño.
+  //
+  // Así que, parada, la conversación se TIRA —se borra en cuanto suelta el
+  // motor— y la llamada siguiente la rehace desde el historial del agente, que
+  // tampoco guarda la respuesta parada: el modelo no recuerda un texto que ya
+  // no está ni en pantalla ni en el historial. Es lo que hace Elffuss Code.
+  // Parar no es un error: no se reintenta ni se lanza, se devuelve lo generado.
+  let usada = conversation;   // la que usa ESTA llamada (el reintento la cambia)
+  let tocada = false;         // se le pidió cancelar o se dejó su flujo a medias
+  const alAbortar = () => { tocada = true; try { usada?.cancel?.(); } catch { /* ya no genera */ } };
   signal?.addEventListener?.('abort', alAbortar, { once: true });
   let out = '';
+  const parar = () => { if (tocada) olvidarConversacion(usada); return out.trim(); };
   const enviar = async t => {
-    for await (const chunk of conversation.sendMessageStreaming(t)) {
-      if (signal?.aborted) break;
-      for (const item of (chunk.content || []))
+    for await (const chunk of usada.sendMessageStreaming(t)) {
+      if (signal?.aborted) { tocada = true; break; }
+      for (const item of (chunk.content || [])) {
+        if (signal?.aborted) break;   // un trozo puede traer varios textos: tras parar, ni uno más
         if (item.type === 'text') { out += item.text; onToken(item.text); }
+      }
     }
   };
   try {
-    if (signal?.aborted) return '';
+    if (signal?.aborted) return parar();
     await enviar(text);
   } catch (e) {
-    if (signal?.aborted) { sentCount = history.length; return out.trim(); }
+    if (signal?.aborted) return parar();
     // Si falla ANTES de escribir nada, lo normal es que no cupiera (la cuenta de
     // caracteres por token se quedó corta): se rehace compactada, se recorta a la
     // mitad de lo libre y se intenta UNA vez más. Si ya había escrito algo,
@@ -253,13 +271,17 @@ export async function chat(history, system, onToken = () => {}, signal = null) {
     console.warn(`[litert] el envío falló sin respuesta (usados ${antes} · ${text.length} caracteres); ` +
       `rehago la conversación compactada y reintento una vez: ${e?.message || e}`);
     await rehacerCompactada(history, sentCount, system, nuevos);
+    usada = conversation;
     antes = await tokensUsados();
     text = ajustarAlContexto(nuevos, libreEnCaracteres(antes, 0.5));
     console.warn(`[litert] reintento: usados ${antes} · se mandan ${text.length} caracteres`);
-    if (signal?.aborted) return '';
+    if (signal?.aborted) return parar();
     try { await enviar(text); }
-    catch (e2) { if (signal?.aborted) { sentCount = history.length; return out.trim(); } throw e2; }
+    catch (e2) { if (signal?.aborted) return parar(); throw e2; }
   } finally { signal?.removeEventListener?.('abort', alAbortar); }
+  // Parado entre trozos: se salió del bucle sin error, y la conversación quedó
+  // cancelada igual.
+  if (signal?.aborted) return parar();
   // Se marca como enviado DESPUÉS de enviarlo. Antes se marcaba al principio, y
   // un envío fallido dejaba el mensaje por enviado sin haber llegado nunca.
   sentCount = history.length;
@@ -267,6 +289,16 @@ export async function chat(history, system, onToken = () => {}, signal = null) {
   if (antes != null && despues != null && despues - antes > 64)
     charsPorToken = Math.min(2, Math.max(1.2, (text.length + out.length) / (despues - antes)));
   return out.trim();
+}
+
+// Tirar una conversación cancelada: la llamada siguiente la rehace desde el
+// historial. Se borra para soltar su caché; delete() espera al mismo cerrojo
+// que la generación, así que no la pisa mientras termina de soltar el motor.
+// Solo se olvida si sigue siendo LA conversación: otra llamada pudo rehacerla
+// entre medias (Hard Work aborta así la sub-llamada que deja de esperar).
+function olvidarConversacion(conv) {
+  if (conversation === conv) { conversation = null; sentCount = 0; }
+  try { Promise.resolve(conv?.delete?.()).catch(() => {}); } catch { /* ya no estaba */ }
 }
 
 function crearConversacion(system) {
