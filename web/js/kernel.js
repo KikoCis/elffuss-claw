@@ -42,7 +42,7 @@ async function resolveProvider(id) {
     mod.configure(id.slice(7));
     return mod;
   }
-  if (id.startsWith('onnx:')) {             // ONNX concreto (Elffuss LM, Qwen3…)
+  if (id.startsWith('onnx:')) {             // ONNX concreto (Qwen3.5…)
     const mod = await import('./providers/onnx.js');
     mod.configure(id.slice(5));
     return mod;
@@ -53,6 +53,13 @@ async function resolveProvider(id) {
     // changeModel lo trata como cualquier otro fallo de carga.
     const mod = await import('./engine/provider.js');
     mod.configure(id.slice(7));
+    // El velocímetro se engancha AQUÍ y no al arrancar la app: solo el motor
+    // propio mide tok/s (`alMedir`), así que con un proveedor externo o con
+    // ONNX el chip no tiene nada que decir y se queda oculto.
+    try {
+      const vm = await import('./velocimetro.js');
+      vm.montar(mod);
+    } catch (e) { console.warn('[claw] velocímetro no disponible:', e.message); }
     return mod;
   }
   if (id.startsWith('ext:')) {
@@ -151,6 +158,24 @@ const modelo27Check = (async () => {
   } catch { return (MODEL27_READY = false); }
 })();
 
+// Mismo patrón que el 27B: nombre y tamaño salen del REGISTRO del motor, nunca
+// de un literal aquí. Un nombre duplicado es un nombre que se queda viejo.
+// ⚠️ Con HANDLE, no «fire and forget». La lista del selector se construye tras
+// esperar las sondas de disponibilidad, así que una sonda que nadie espera deja
+// su bandera en false cuando se pinta la lista y el modelo no aparece — se sirve
+// y nadie puede elegirlo, el mismo modo de fallo que escondió a Bonsai. Pasó con
+// esta misma sonda: en una app se colaba por carrera y en la otra no aparecía.
+let MINICPM_READY = false, MINICPM_LABEL = 'MiniCPM5 2B', MINICPM_GB = 0;
+const minicpmCheck = (async () => {
+  try {
+    const reg = await import('./engine/registro.js');
+    const m = reg.MODELS && reg.MODELS['minicpm5-2b'];
+    if (m) { MINICPM_LABEL = m.label || MINICPM_LABEL; MINICPM_GB = (m.bytes || 0) / 1e9; }
+    MINICPM_READY = await reg.disponible('minicpm5-2b');
+    return MINICPM_READY;
+  } catch { return (MINICPM_READY = false); }
+})();
+
 // Opciones del selector: locales siempre; externos solo si están activados.
 function modelOptions() {
   const local = [];
@@ -158,10 +183,15 @@ function modelOptions() {
   if (realGPU) local.push({ id: 'litert:gemma-e2b', label: 'Gemma-4 E2B · LiteRT-LM (~2 GB) — más ligero, carga antes' });
   local.push({ id: 'onnx:qwen3.5-0.8b', label: 'Qwen3.5-0.8B · WebGPU (~600 MB) — ligero' });
   // MiniCPM5-2B por WebLLM: OPCIÓN, no predeterminado. Pesa 1,3 GB y MLC pide
-  // ~2 GB de VRAM — el mismo orden que Gemma E2B, que ya sabemos que NO cabe en
+  // del orden de 2 GB en la tarjeta — el mismo orden que Gemma E2B, que ya
+  // sabemos que NO cabe en
   // móvil. Antes de ponerlo por defecto en ningún sitio hay que cargarlo en un
   // teléfono de verdad.
-  if (realGPU) local.push({ id: 'webllm:minicpm5-2b', label: 'MiniCPM5-2B · WebLLM (~1,3 GB) — texto', group: '⚠ Avanzado' });
+  // La entrada de MiniCPM5-2B por WebLLM se retira: no arranca. Se queda el
+  // comentario porque la alternativa —borrarlo en silencio— hace que alguien
+  // vuelva a añadirlo dentro de seis meses y repita la tarde. El mismo modelo
+  // SÍ corre por el motor propio (ver más abajo), porque su GGUF declara
+  // arquitectura `llama`, que el motor ya lee.
   // Runtime propio: solo se ofrece si el motor está desplegado (llega por rsync,
   // no por git). Ofrecerlo cuando no está sería prometer algo que falla al
   // elegirlo. Ver ENGINE_READY.
@@ -194,12 +224,20 @@ function modelOptions() {
   // formado no lo ha comprobado nadie. Prometer eso en una etiqueta es
   // exactamente el error que esta etiqueta existe para evitar.
   if (realGPU && ENGINE_READY && MODEL27_READY && !RETIRADO_27B_CUELGA_LA_MAQUINA) local.push({ id: 'engine:qwen38-27b', label: `${MODEL27_LABEL} · Elffuss Engine (${MODEL27_GB.toFixed(1)} GB, se guarda: solo se baja la primera vez) — lento`, group: '⚠ Avanzado' });
+  // MiniCPM5-2B por el motor propio. Va en «Avanzado» y sin estrella a
+  // propósito: carga y responde con texto limpio, y eso es TODO lo que está
+  // comprobado. No se ha medido contra Gemma E4B, que es el predeterminado, así
+  // que la etiqueta no promete velocidad ni calidad — prometerlo antes del duelo
+  // es el error que la etiqueta del 27B existe para no repetir.
+  if (realGPU && ENGINE_READY && MINICPM_READY) local.push({ id: 'engine:minicpm5-2b', label: `${MINICPM_LABEL} · Elffuss Engine (${MINICPM_GB.toFixed(1)} GB, se guarda)`, group: '⚠ Avanzado' });
   if (realGPU && ELFFUSS_LITERT_READY) local.push({ id: 'litert:elffuss-e4b', label: 'Local · Elffuss E4B (healed) ★' });
   local.push({ id: 'rules', label: 'Básico (sin modelo)' });
-  // Cerebros de bajo rendimiento: fuera del flujo normal, en un grupo avanzado y
-  // avisados. Elffuss LM (LFM2.5-1.2B) medía flojo en el copiloto (no rastrea).
-  const weak = [{ id: 'onnx:elffuss-lm', label: 'Elffuss LM (LFM2.5-1.2B) — poco rendimiento', group: '⚠ Avanzado · sin garantía de rendimiento' }];
-  return [...local, ...settings.enabledExternals(), ...weak];
+  // Elffuss LM (LFM2.5-1.2B) estaba aquí en un grupo «sin garantía de
+  // rendimiento», avisado con un toast. FUERA: un cerebro que no rastrea no es
+  // una opción avanzada, es una trampa — el que lo elige se lleva una mala
+  // impresión del producto y el aviso no la evita. El ligero que SÍ se ofrece
+  // es Qwen3.5-0.8B, que es el mismo que usa el respaldo de móvil.
+  return [...local, ...settings.enabledExternals()];
 }
 
 const isLocal = id => id === 'onnx' || id === 'litert' || id === 'webllm' ||
@@ -208,8 +246,10 @@ const isLocal = id => id === 'onnx' || id === 'litert' || id === 'webllm' ||
 // Por defecto: Gemma-4 grande vía LiteRT-LM (build oficial -web, VERIFICADO que
 // carga y hace tool-calls) SOLO en escritorio (E4B). En MÓVIL no: E2B pesa ~1.9 GB
 // y el navegador móvil (mata la pestaña por encima de ~1-2 GB de datos vivos) no lo
-// sostiene, así que se re-descargaba y fallaba. Móvil → Elffuss LM (onnx, ~850 MB):
+// sostiene, así que se re-descargaba y fallaba. Móvil → Qwen3.5-0.8B (onnx):
 // entra y funciona. E2B/E4B siguen elegibles a mano para quien tenga músculo.
+// (El comentario decía «Móvil → Elffuss LM» y el código devolvía otra cosa
+// desde hace tiempo: era el comentario el que estaba desactualizado.)
 const isMobile = () => matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches;
 async function gpuCapacity() {
   const mem = navigator.deviceMemory || 8;
@@ -232,6 +272,25 @@ const defaultBrain = () => (!realGPU || isMobile()) ? 'onnx:qwen3.5-0.8b' : 'lit
 
 const agent = new Agent(rules);
 let busy = false;
+
+// AVISAR ANTES DE SALIR si hay un turno en marcha. El historial se guarda, pero
+// la respuesta a medio generar no: refrescar ahora la tira, y volver a empezar
+// obliga a subir el modelo a la GPU y releer la conversación entera.
+//
+// El navegador ignora cualquier texto propio y enseña el suyo, así que esto solo
+// consigue que PREGUNTE — que ya es la diferencia entre perderlo sin enterarte y
+// poder decir que no. Y solo salta si hay algo vivo: un aviso que sale siempre
+// se aprende a ignorar y deja de avisar.
+// `cargandoModelo` va APARTE de `busy`: `busy` es un turno de chat, y lo más
+// caro de perder no es eso — es irse a mitad de subir el modelo a la GPU, que
+// con el grande son minutos y hay que rehacerlo entero.
+let cargandoModelo = false;
+export const hayTrabajoVivo = () => busy || cargandoModelo;
+addEventListener('beforeunload', (e) => {
+  if (!hayTrabajoVivo()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 let hardMode = false;   // Hard Work (RLM): la próxima petición se procesa por partes
 let activeModel = 'rules';   // qué proveedor está cargado (para el vigilante de RAM)
 let activeMod = null;
@@ -246,8 +305,15 @@ let pumping = false;
 let bootReady;
 const bootPromise = new Promise(r => { bootReady = r; });
 
+// Se guarda {text, intentos} y no solo el texto. El contador es lo que impide
+// el bucle de cuelgue: si un turno se lleva la pestaña por delante —pasa con el
+// modelo grande y poca memoria— al reabrir se reanuda y la vuelve a tumbar, y
+// no hay forma de salir ni cerrando, porque el mensaje sigue en la cola.
+// Las colas guardadas por la versión anterior son de strings sueltos;
+// restoreQueue las sigue aceptando.
 const persistQueue = () =>
-  db.set('kv', 'queue', queue.map(q => q.text)).catch(() => {});
+  db.set('kv', 'queue', queue.map(q => ({ text: q.text, intentos: q.intentos || 0 }))).catch(() => {});
+const MAX_INTENTOS = 2;
 
 function send(text) {
   const el = ui.addMsg('user queued', text);
@@ -264,6 +330,19 @@ async function pump() {
   while (queue.length) {
     const item = queue[0];
     item.el?.classList.remove('queued');
+    // El intento se cuenta y se GUARDA antes de procesar: si el turno mata la
+    // pestaña, esto es lo único que queda para saber que ya se intentó —
+    // guardarlo después no serviría, porque no habría después.
+    item.intentos = (item.intentos || 0) + 1;
+    await persistQueue();
+    if (item.intentos > MAX_INTENTOS) {
+      item.el?.remove();
+      ui.addMsg('sys', `⚠️ «${String(item.text).slice(0, 60)}…» se quedó a medias dos veces y no lo reintento solo: ` +
+        `puede estar agotando la memoria. Vuelve a enviarlo si quieres insistir.`);
+      queue.shift();
+      await persistQueue();
+      continue;
+    }
     await process(item.text);
     // Orden anti-pérdida: el histórico ya está COMMITEADO dentro de process()
     // (incluye este turno como lastDone). Solo entonces sacamos de la cola.
@@ -279,15 +358,34 @@ async function process(text) {
   if (hardMode) return processHardWork(text);
   busy = true;
   const thinking = ui.thinkingBubble();
+  // Tasa de resolución y tiempo por tarea: se miden AQUÍ, envolviendo la
+  // llamada, y no dentro de `agent.handle`. El motor no sabe qué es una tarea
+  // —solo ve turnos— y el bucle del agente es delicado, así que la frontera se
+  // pone en el único sitio donde una tarea empieza y acaba de verdad.
+  //
+  // «Resuelta» = el agente terminó sin lanzar Y sin emitir un evento de error.
+  // Contar solo las excepciones daría un 100 % permanente: el fallo típico no
+  // es una excepción, es una respuesta que llega como `error` al usuario.
+  const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let huboError = false;
   try {
     await agent.handle(text, ev => {
-      if (ev.type === 'token') thinking.tick(ev.text);
+      if (ev.type === 'prefill') thinking.prefill?.(ev.hechos, ev.total);
+      else if (ev.type === 'token') thinking.tick(ev.text);
       if (ev.type === 'text') { ui.addMsg('assistant', ev.text); if (window.__copilotOpener) { try { window.__copilotEmit(ev.text); } catch { /* */ } } }
       if (ev.type === 'tool') { thinking.tool(ev.call.tool); ui.addTool(ev.call); }
       if (ev.type === 'tool_result') ui.addToolResult(ev.tool, ev.result);
-      if (ev.type === 'error') ui.addMsg('assistant err', ev.text);
+      if (ev.type === 'error') { huboError = true; ui.addMsg('assistant err', ev.text); }
     });
+  } catch (e) {
+    huboError = true;
+    throw e;
   } finally {
+    try {
+      const vm = await import('./velocimetro.js');
+      const ahora = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      vm.tarea({ ok: !huboError, ms: ahora - t0 });
+    } catch { /* sin velocímetro la app funciona igual */ }
     thinking.remove();
     busy = false;
     // Histórico persistente COMMITEADO (await) antes de vaciar la cola: al
@@ -359,12 +457,14 @@ async function processHardWork(question) {
 async function restoreQueue() {
   let pending = await db.get('kv', 'queue').catch(() => null);
   if (!pending?.length) return;
+  // Compatibilidad: lo guardado por la versión anterior son strings sueltos.
+  pending = pending.map(x => (typeof x === 'string' ? { text: x, intentos: 0 } : x));
   const lastDone = await db.get('kv', 'lastDone').catch(() => null);
-  if (lastDone && pending[0] === lastDone) pending = pending.slice(1); // ya se procesó
+  if (lastDone && pending[0]?.text === lastDone) pending = pending.slice(1); // ya se procesó
   if (!pending.length) { db.set('kv', 'queue', []).catch(() => {}); return; }
-  for (const text of pending) {
-    const el = ui.addMsg('user queued', text);
-    queue.push({ text, el });
+  for (const it of pending) {
+    const el = ui.addMsg('user queued', it.text);
+    queue.push({ text: it.text, intentos: it.intentos || 0, el });
   }
   ui.toast(`${pending.length} mensaje(s) pendientes recuperados — los proceso en cuanto cargue el cerebro.`);
   pump();
@@ -411,6 +511,11 @@ async function changeModel(id) {
     return true;
   }
   ui.modelStatus('loading');
+  // `finally` y no un reset al final del try: si la carga falla —que pasa, de
+  // ahí el camino de respaldo de abajo— el flag se quedaría puesto y la web
+  // avisaría al salir para siempre, hasta que el usuario aprendiera a ignorar
+  // el aviso. Un aviso que miente es peor que no tenerlo.
+  cargandoModelo = true;
   try {
     const mod = await resolveProvider(id);
     ui.modelProgress('Preparando modelo…');
@@ -424,7 +529,6 @@ async function changeModel(id) {
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
     ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
     ui.toast(t('modelReady', { where }));
-    if (id === 'onnx:elffuss-lm') ui.toast('⚠ Cerebro de bajo rendimiento: puede no rastrear bien ni dar buenos consejos. Para ventas/precisión usa Gemma (escritorio).');
     if (window.__copilotOpener) copilotPostState('Listo. Habla con el cliente y te voy soplando.');
     return true;
   } catch (e) {
@@ -445,6 +549,10 @@ async function changeModel(id) {
     ui.setModel('rules');
     ui.toast('⚠️ No se pudo cargar ' + id + ': ' + (e?.message || String(e)));
     return false;
+  } finally {
+    // Pase lo que pase —éxito, fallo, o el respaldo que vuelve a entrar aquí—
+    // la carga ha dejado de estar en curso.
+    cargandoModelo = false;
   }
 }
 let _fellBack = false;
@@ -567,8 +675,8 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // Los dos sondeos se esperan JUNTOS. Repintar solo con el del motor dejaría
     // fuera el 27B cuando su comprobación tarda un poco más, y esa opción no
     // volvería a aparecer hasta que algo forzara otro refresco.
-    const [hayMotor, hay27] = await Promise.all([engineCheck, modelo27Check]);
-    if (hayMotor || hay27) refreshModelOptions();
+    const [hayMotor, hay27, hayMini] = await Promise.all([engineCheck, modelo27Check, minicpmCheck]);
+    if (hayMotor || hay27 || hayMini) refreshModelOptions();
     const saved = localStorage.getItem('elffuss.model');
     if (saved === 'rules') return; // elección explícita
     // En modo copiloto el translator YA está usando la máquina (Whisper +
@@ -770,7 +878,7 @@ function surfaceHtml(sk) {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
 <style>
-:root{--bg:#0b0c14;--card:#12141f;--line:#232838;--brass:#c8a06a;--brass2:#e6c294;--indigo:#8272ff;--fg:#eae8f2;--dim:#8b91a3;--ok:#54dcc6}
+:root{--bg:#0b0c14;--card:#12141f;--line:#232838;--brass:#c8a06a;--brass2:#e6c294;--indigo:#6e63c5;--fg:#eae8f2;--dim:#8b91a3;--ok:#54dcc6}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:radial-gradient(130% 90% at 50% -10%,#181630,#0b0c14);color:var(--fg);padding:20px;min-height:100vh;display:flex;flex-direction:column}
 h1{font-family:"Iowan Old Style",Georgia,serif;font-size:1.12rem;margin:0 0 3px;background:linear-gradient(96deg,var(--brass2),var(--indigo));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .sub{color:var(--dim);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;margin-bottom:14px;font-family:ui-monospace,monospace}

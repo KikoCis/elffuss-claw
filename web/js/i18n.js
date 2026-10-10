@@ -13,7 +13,7 @@ const L = {
     s2: 'Todo lo que pase entre nosotros ocurre solo en tu ordenador.',
     s3: 'Nadie lo registra. Nada sale de tu máquina.', s4: 'Queda entre tú y yo…', enter: 'Entrar',
     // runtime (chat, estado del modelo, payoff): sustitución {var}
-    thinking: 'Elffuss está pensando', writing: 'Elffuss está escribiendo · {n}', using: 'Elffuss está usando {name}',
+    thinking: 'Elffuss está pensando', reading: 'Elffuss está leyendo · {p} %', writing: 'Elffuss está escribiendo · {n}', using: 'Elffuss está usando {name}',
     modelReady: 'Modelo IA listo · {where}', whereGpu: 'WebGPU local', whereCpu: 'CPU/wasm local', whereExt: 'externo',
     done: '¡Listo! {result} ¿Quieres que le cambie algo?',
     appCreated: 'App «{name}» creada y abierta en el visualizador.', appOpened: 'App «{name}» abierta.',
@@ -107,7 +107,7 @@ const L = {
     s1: 'An operating system with a soul that lives here, in your browser.',
     s2: 'Everything between us happens only on your computer.',
     s3: 'No one logs it. Nothing leaves your machine.', s4: 'It stays between you and me…', enter: 'Enter',
-    thinking: 'Elffuss is thinking', writing: 'Elffuss is writing · {n}', using: 'Elffuss is using {name}',
+    thinking: 'Elffuss is thinking', reading: 'Elffuss is reading · {p} %', writing: 'Elffuss is writing · {n}', using: 'Elffuss is using {name}',
     modelReady: 'AI model ready · {where}', whereGpu: 'WebGPU local', whereCpu: 'CPU/wasm local', whereExt: 'external',
     done: 'Done! {result} Want me to tweak anything?',
     appCreated: 'App “{name}” created and opened in the viewer.', appOpened: 'App “{name}” opened.',

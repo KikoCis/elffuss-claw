@@ -6,19 +6,17 @@
 // Límite práctico medido (ver coordinacion/ERRORES.md E-005): un ONNX de q4
 // >~1 GB en disco revienta onnxruntime-web (OOM del heap wasm de 4 GB). Por eso
 // los ONNX de aquí son pequeños; los grandes (Gemma) van por LiteRT-LM.
+// Elffuss LM (healed · LFM2.5-1.2B) estaba aquí y se ha QUITADO. No basta con
+// sacarlo del selector: este registro es lo que `onnx.js models()` devuelve, y
+// de ahí salen las tarjetas de modelo del panel — seguía apareciendo como
+// opción aunque el menú ya no lo ofreciera. Medido en el copiloto, no rastraba
+// bien; un cerebro que no hace la tarea no es una opción avanzada, es una
+// trampa para quien la elige.
+//
+// Quien lo tuviera guardado cae solo: `setOnnxModel` solo acepta claves que
+// existan aquí, así que una preferencia vieja se ignora y queda el de por
+// defecto.
 export const ONNX_MODELS = {
-  'elffuss-lm': {
-    key: 'elffuss-lm',
-    label: 'Elffuss LM (healed · LFM2.5-1.2B)',
-    id: 'KikoCis/Elffuss-LM-1.2B-ONNX',   // nuestro heal agéntico de LFM2.5
-    dtype: 'q4',            // ¡NO q4f16! este modelo genera basura vía WebGPU con q4f16
-    approxMB: 850,
-    selfHosted: false,
-    basePath: '/models/',
-    hidden: true,           // medido flojo en el copiloto (no rastrea objetivos y
-                            // alucina datos): fuera del flujo normal, solo en el
-                            // grupo «Avanzado» del selector y con aviso.
-  },
   'qwen3.5-0.8b': {
     key: 'qwen3.5-0.8b',
     label: 'Qwen3.5-0.8B (WebGPU)',

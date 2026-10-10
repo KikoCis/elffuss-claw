@@ -9,6 +9,20 @@ import { t as tr, uiLang } from './i18n.js';
 import { humanizeStreamPreview } from './humanize.js'; // alias: dentro de tick(t) el token ya se llama t
 import { UI } from './icons.js';
 import { cacheEstimate, clearModelCache } from './model-cache.js';
+// El almacén compartido vive en OTRO origen y `navigator.storage.estimate()` no
+// lo ve: hay que preguntárselo y SUMAR. Ver runtime/model-broker.js.
+import { sharedUsage, clearShared } from './runtime/model-broker.js';
+
+// Los origenes donde puede haber pesos salen del REGISTRO del motor, no de una
+// lista a mano: una lista copiada se queda vieja en cuanto un modelo cambia de
+// host, y entonces el contador vuelve a mirar donde no hay nada. Import
+// perezoso porque el motor puede no estar (modo ONNX).
+async function origenesAlmacen() {
+  try {
+    const r = await import('./engine/registro.js');
+    return r.origenesAlmacen ? r.origenesAlmacen() : undefined;
+  } catch { return undefined; }   // sin motor: sharedUsage usa su defecto
+}
 import * as workspace from './workspace.js';
 import * as telemetry from './telemetry.js';
 
@@ -76,9 +90,36 @@ export function thinkingBubble() {
   div.append(img, label, dots, gen);
   $('log').appendChild(div);
   $('log').scrollTop = $('log').scrollHeight;
+  // Barra del PREFILL. El prefill es la espera larga —leer el prompt antes de
+  // escribir la primera letra— y hasta ahora no se veía: con un prompt de arnés
+  // en el modelo grande son decenas de segundos de burbuja quieta, y una espera
+  // sin señal se lee como «se ha colgado». De hecho se reportó así.
+  //
+  // Va DENTRO de la burbuja que ya existe en vez de un elemento nuevo: la
+  // burbuja aparece justo cuando empieza el turno, que es exactamente cuando
+  // empieza el prefill.
+  const barra = document.createElement('div');
+  barra.className = 'prefill';
+  const relleno = document.createElement('i');
+  barra.appendChild(relleno);
+  barra.hidden = true;
+  div.insertBefore(barra, gen);
+
   let buf = '';
   return {
+    // `hechos` y `total` vienen del motor por lote TERMINADO en la GPU, no
+    // encolado: la barra no llega al 100 % antes de tiempo.
+    prefill(hechos, total) {
+      if (!total) return;
+      const pct = Math.max(0, Math.min(100, Math.round((hechos / total) * 100)));
+      label.textContent = tr('reading', { p: pct });
+      barra.hidden = false;
+      relleno.style.width = pct + '%';
+    },
     tick(t) {
+      // Al escribir la primera letra el prefill ha terminado: fuera la barra, o
+      // se quedaría puesta al 100 % durante toda la respuesta.
+      if (!barra.hidden) barra.hidden = true;
       buf += t;
       label.textContent = tr('writing', { n: buf.length });
       // Si está emitiendo un tool-call (p.ej. app.create con un HTML enorme), NO
@@ -418,7 +459,12 @@ function usageCard() {
       ? `${gb(m.usedJSHeapSize)} / ${gb(m.jsHeapSizeLimit)} (${Math.round(m.usedJSHeapSize / m.jsHeapSizeLimit * 100)}%)`
       : tr('useNoRam');
     const { usage, quota, persisted } = await cacheEstimate();
-    vDisk.textContent = `${gb(usage)}${quota ? ' / ' + gb(quota) : ''} ${persisted ? '· ✓' : '· ⚠'}`;
+    // Sumando el almacén compartido: el modelo grande no está en este origen y
+    // `estimate()` solo ve el propio, así que esta cifra se dejaba fuera
+    // justamente al que más ocupa.
+    const comp = await sharedUsage(await origenesAlmacen());
+    vDisk.textContent = `${gb(usage + comp.usage)}${quota ? ' / ' + gb(quota) : ''} ${persisted ? '· ✓' : '· ⚠'}`
+      + (comp.ok ? '' : ' · ?');
     const sel = $('model-select');
     vBrain.textContent = sel ? (sel.options[sel.selectedIndex]?.textContent || '—').slice(0, 34) : '—';
     freeBtn.style.display = (sel && sel.value !== 'rules') ? '' : 'none';
@@ -567,16 +613,29 @@ export function refreshSettings() {
   const info = el('span', 'muted', tr('storeCalc'));
   store.appendChild(info);
   const clearBtn = btn(tr('storeClear'), 'ghost', async () => {
-    info.textContent = tr('storeClearing'); await clearModelCache(); await paintStore(); toast(tr('cacheCleared'));
+    // LOS DOS almacenes. Vaciar solo el de este origen dejaba intacto el modelo
+    // grande —que es casi todo lo que ocupa—, así que quien pulsaba para
+    // recuperar espacio no lo recuperaba y encima no se enteraba.
+    info.textContent = tr('storeClearing');
+    await clearModelCache();
+    const r = await clearShared();
+    await paintStore();
+    toast(r.ok ? tr('cacheCleared') : tr('cacheCleared') + ' ⚠ el almacén compartido no respondió');
   });
   store.appendChild(clearBtn);
   panel.appendChild(store);
   async function paintStore() {
     const { usage, quota, persisted } = await cacheEstimate();
+    const comp = await sharedUsage(await origenesAlmacen());
+    const total = usage + comp.usage;
     const gb = n => (n / 1073741824).toFixed(2) + ' GB';
-    info.textContent = (usage ? tr('storeCached', { gb: gb(usage) }) : tr('storeNone'))
+    info.textContent = (total ? tr('storeCached', { gb: gb(total) }) : tr('storeNone'))
       + (persisted ? tr('storePersist') : tr('storeNoPersist'))
-      + (quota ? tr('storeLimit', { gb: gb(quota) }) : '');
+      + (quota ? tr('storeLimit', { gb: gb(quota) }) : '')
+      // Si el broker no contesta se dice: un total que se queda corto sin
+      // avisar es peor que uno que admite lo que le falta.
+      + (comp.ok ? (comp.usage ? ` · incluye ${gb(comp.usage)} del almacén compartido` : '')
+                 : ' · no se pudo consultar el almacén compartido');
   }
   paintStore();
 

@@ -67,11 +67,48 @@ Cómo actuar:
 \`\`\`
 3) Tras un [resultado] que EMPIEZA por ERROR: no te rindas ni digas que no se puede. REANALIZA el mensaje de error (suele decir qué hay o qué falta) y REINTENTA con la corrección (otra ruta, otros argumentos). Solo si vuelve a fallar de otra forma, explica al usuario qué pasó.
 4) Tras un [resultado] correcto, o si no hace falta herramienta, responde texto normal en el idioma del usuario. No repitas una herramienta que YA salió bien (una app creada ya está hecha): responde y para.
-5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.${bloqueEjemplos(RECORTAR_EJEMPLOS ? herramientas : null)}${skillsPromptBlock()}${context ? `
-
-CONTEXTO AHORA (estado real del sistema, úsalo al responder):
-${context}` : ''}`;
+5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.${bloqueEjemplos(RECORTAR_EJEMPLOS ? herramientas : null)}${skillsPromptBlock()}`;
 }
+
+export const ETIQUETA_CONTEXTO = 'CONTEXTO AHORA (estado real del sistema, úsalo al responder):';
+
+// ── Dónde va el estado vivo, y por qué NO va en el prompt de sistema ────────
+// El bloque «CONTEXTO AHORA» estaba dentro de `systemPrompt()`, y el motor monta
+// el prompt poniendo el system ENTERO en la cabeza, delante de toda la historia
+// (`montarPrompt` en provider.js). La reutilización de prefijo compara tokens
+// desde el principio y se corta en la primera divergencia, así que cualquier
+// cambio en ese bloque invalidaba el prefijo COMPLETO: el prompt de sistema
+// entero más toda la conversación.
+//
+// Y ese bloque cambia constantemente —es estado vivo— así que en la práctica la
+// caché de prefijo no servía casi nunca. Medido el 2026-10-10: con un prompt
+// realista el prefill del modelo grande es la espera mas larga del producto,
+// y un turno con
+// herramientas pagaba eso EN CADA PASO del bucle, porque cada paso cambia el
+// estado y por tanto la cabeza.
+//
+// Ahora el estado vivo viaja como un MENSAJE, colocado justo antes del último
+// de la conversación. Así el prefijo común cubre el prompt de sistema y toda la
+// historia anterior, y solo se reprocesa lo nuevo.
+//
+// ⚠️ Va antes del ÚLTIMO mensaje, no al final, a propósito: el empaquetador de
+// contexto elige la «pregunta viva» como el último mensaje de usuario que no
+// empiece por «[resultado», y si este bloque fuera el último se convertiría en
+// la pregunta viva y la recuperación puntuaría contra un volcado de estado en
+// vez de contra lo que ha pedido el usuario.
+export function mensajeContexto(context, etiqueta) {
+  if (!context) return null;
+  return { role: 'user', content: `${etiqueta}\n${context}` };
+}
+
+// Inserta el estado vivo justo antes del último mensaje de la conversación.
+export function conContexto(history, context, etiqueta) {
+  const m = mensajeContexto(context, etiqueta);
+  if (!m) return history;
+  if (!history.length) return [m];
+  return [...history.slice(0, -1), m, history[history.length - 1]];
+}
+
 
 // ── qué herramientas se le enseñan al modelo en cada turno ──────────────────
 // Ver tool-router.js: se recuperan por familias según la petición y, si el
@@ -206,7 +243,39 @@ export function parseNativeCall(text) {
   return { tool: m[1], args };
 }
 
+// Formato `<function name="X"><param name="k">v</param></function>`, que es el
+// que emite MiniCPM5 y varios modelos más. No es el que pide nuestro prompt
+// —bloque ```tool con JSON— pero un modelo entrenado con otro formato lo emite
+// igual por mucho que se le pida el nuestro, y entonces la llamada se imprime
+// como texto y no se ejecuta NADA: el usuario ve al modelo "contestar" con una
+// etiqueta XML y no pasa nada más.
+//
+// Se acepta el formato en vez de pelearse con el modelo. El valor de cada
+// `param` se intenta leer como JSON —para que un 3 sea el número 3 y no "3"—
+// y si no es JSON válido se queda como texto, que es lo que hay que hacer con
+// una ruta.
+export function parseFunctionTags(text) {
+  const out = [];
+  const re = /<function\s+name=["']([\w.\-]+)["']\s*>([\s\S]*?)<\/function\s*>/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const args = {};
+    const pre = /<param\s+name=["']([\w.\-]+)["']\s*>([\s\S]*?)<\/param\s*>/g;
+    let p;
+    while ((p = pre.exec(m[2]))) {
+      const bruto = p[2].trim();
+      let v = bruto;
+      try { v = JSON.parse(bruto); } catch { /* texto tal cual: lo normal en una ruta */ }
+      args[p[1]] = v;
+    }
+    out.push({ tool: m[1], args });
+  }
+  return out;
+}
+
 export function parseToolCall(text) {
+  const xml = parseFunctionTags(text);
+  if (xml.length) return xml[0];
   const native = parseNativeCall(text);
   if (native) return native;
 
@@ -290,8 +359,10 @@ export class Agent {
         // nada decepciona más que uno que tarda. El coste del prompt completo se
         // ataca reutilizando el prefijo entre turnos y guardando el estado entre
         // sesiones, no quitándole capacidades al modelo.
-        out = await this.provider.chat(this.history, systemPrompt(context, { herramientas }),
-          t => onEvent({ type: 'token', text: t }));
+        out = await this.provider.chat(conContexto(this.history, context, ETIQUETA_CONTEXTO),
+          systemPrompt('', { herramientas }),
+          t => onEvent({ type: 'token', text: t }),
+          { onPrefill: (hechos, total) => onEvent({ type: 'prefill', hechos, total }) });
       } catch (e) {
         telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });
         onEvent({ type: 'error', text: 'El modelo falló: ' + e.message });

@@ -16,7 +16,7 @@ export const BROKER_URL = 'https://models.elffuss.com/';
 // caché HTTP los imita—: se guarda desde un sitio y se lee desde otro, y se
 // cuentan las peticiones REALES que llegan a nginx.
 //
-//   broker models  → 1 petición   · leer desde el otro sitio: 7 ms, CERO
+//   broker models  → 1 petición   · leer desde el otro sitio: CERO
 //                                   peticiones nuevas. COMPARTE.
 //   broker m1      → 2 peticiones · leer desde el otro sitio se lo vuelve a
 //                                   bajar entero. NO comparte.
@@ -122,5 +122,85 @@ export async function isSharedCached(url, brokerURL = null) {
     const h = e => { if (e.source !== ventana(brokerURL) || e.data?.id !== id) return; if (e.data.kind === 'has') { clearTimeout(to); removeEventListener('message', h); resolve(!!e.data.cached); } };
     addEventListener('message', h);
     ventana(brokerURL).postMessage({ type: 'elffuss-model-has', id, url }, origin(brokerURL));
+  });
+}
+
+// Cuánto ocupa el almacén COMPARTIDO, y cómo vaciarlo.
+// ─────────────────────────────────────────────────────────────────────────────
+// `navigator.storage.estimate()` mide SOLO el origen que lo llama, y el modelo
+// grande no vive aquí: lo guarda el broker, en su propio origen. Así que el
+// panel de ajustes contaba los megas del modelo pequeño y se dejaba fuera los
+// gigas del grande — decía «0,82 GB cacheados» con 7,2 GB guardados al lado— y
+// su botón de vaciar tampoco los tocaba. Esto es el canal que faltaba.
+
+// Lo que ocupa el almacén del broker. Devuelve 0 si no se puede preguntar: la
+// cifra se SUMA a la local, y un fallo aquí tiene que quedarse en «no sé contar
+// esto», nunca en romper el panel entero.
+/**
+ * Cuanto ocupa el almacen compartido. Acepta UN broker o VARIOS.
+ *
+ * Varios porque cada fragmento lo guarda el broker de su propio host: un modelo
+ * repartido entre dos servidores ocupa DOS origenes, y preguntar solo al broker
+ * por defecto enseñaba una fraccion. Con el 27B guardado en dos hosts, el panel
+ * contaba un tercer origen que no tenia nada y mostraba menos de la mitad de lo
+ * que habia en disco.
+ *
+ * Los origenes se deduplican: dos fragmentos del mismo host son un solo
+ * almacen, y sumarlo dos veces seria el error contrario.
+ */
+export async function sharedUsage(brokerURL = BROKER_URL) {
+  // Lista VACIA -> al defecto, no a cero. Un cero calculado sobre «no he
+  // preguntado a nadie» se lee igual que «no hay nada guardado», y es el error
+  // que este arreglo venia a quitar.
+  if (Array.isArray(brokerURL) && brokerURL.length === 0) return sharedUsageUno(BROKER_URL);
+  if (Array.isArray(brokerURL)) {
+    const vistos = new Set();
+    const unicos = brokerURL.filter(u => {
+      try { const o = new URL(u).origin; if (vistos.has(o)) return false; vistos.add(o); return true; }
+      catch { return false; }
+    });
+    const partes = await Promise.all(unicos.map(u => sharedUsage(u)));
+    return {
+      usage: partes.reduce((n, p) => n + (p.usage || 0), 0),
+      quota: partes.reduce((n, p) => Math.max(n, p.quota || 0), 0),
+      ok: partes.some(p => p.ok),
+      porOrigen: unicos.map((u, i) => ({ origen: u, ...partes[i] })),
+    };
+  }
+  return sharedUsageUno(brokerURL);
+}
+
+async function sharedUsageUno(brokerURL = BROKER_URL) {
+  try { await ensure(brokerURL); } catch { return { usage: 0, quota: 0, ok: false }; }
+  return new Promise(resolve => {
+    const id = ++_seq;
+    const to = setTimeout(() => { removeEventListener('message', h); resolve({ usage: 0, quota: 0, ok: false }); }, 5000);
+    const h = e => {
+      if (e.source !== ventana(brokerURL) || e.data?.id !== id || e.data.kind !== 'diag') return;
+      clearTimeout(to); removeEventListener('message', h);
+      resolve({ usage: e.data.usado || 0, quota: e.data.quota || 0, ok: true });
+    };
+    addEventListener('message', h);
+    // Sin `probar`: el diagnóstico solo hace la prueba de escritura cuando se le
+    // pide un tope, y aquí solo se quiere la cifra.
+    ventana(brokerURL).postMessage({ type: 'elffuss-broker-diag', id }, origin(brokerURL));
+  });
+}
+
+// Vacía el almacén compartido. Devuelve cuánto se liberó DE VERDAD (el broker lo
+// mide antes y después), para poder decirlo en vez de suponerlo.
+export async function clearShared(brokerURL = BROKER_URL) {
+  try { await ensure(brokerURL); } catch { return { liberado: 0, ok: false }; }
+  return new Promise(resolve => {
+    const id = ++_seq;
+    const to = setTimeout(() => { removeEventListener('message', h); resolve({ liberado: 0, ok: false }); }, 20000);
+    const h = e => {
+      if (e.source !== ventana(brokerURL) || e.data?.id !== id) return;
+      if (e.data.kind !== 'cleared' && e.data.kind !== 'error') return;
+      clearTimeout(to); removeEventListener('message', h);
+      resolve({ liberado: e.data.liberado || 0, ok: e.data.kind === 'cleared' });
+    };
+    addEventListener('message', h);
+    ventana(brokerURL).postMessage({ type: 'elffuss-model-clear', id }, origin(brokerURL));
   });
 }

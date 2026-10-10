@@ -41,9 +41,14 @@
     <button id="btn-clear" class="ghost icon-btn" title="Nueva conversación"></button>
     <button id="btn-mind" class="ghost icon-btn" title="Mente de Elffuss — cerebro autónomo">🧠</button>
     <button id="disk-chip" class="ghost" hidden></button>
+    <button id="speed-chip" class="ghost" hidden title="velocidad de esta máquina"></button>
     <button id="btn-perms" class="ghost">Permisos</button>
   </div>
 </header>
+
+<!-- El panel del velocímetro va FUERA del header: dentro heredaba su overflow y
+     la gráfica quedaba recortada. Lo rellena js/velocimetro.js. -->
+<div id="speed-panel" hidden></div>
 
 <main>
   <section id="chat">

@@ -71,6 +71,14 @@ export async function runTool(name, args) {
 }
 
 // Estado real del sistema, inyectado al modelo en cada turno (CONTEXTO AHORA).
+// La hora en punto: estable entre turnos, para que el prefijo del prompt se
+// pueda reutilizar. Ver el comentario de abajo, donde se usa.
+const horaEstable = (loc) => {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  return d.toLocaleString(loc, { dateStyle: 'short', timeStyle: 'short' });
+};
+
 export async function snapshot() {
   const [appList, pendingTasks, folderList, facts, watches] = await Promise.all([
     apps.allApps(), tasks.pending(), fs.folders(), memory.recent(8), watch.allWatches(),
@@ -79,7 +87,17 @@ export async function snapshot() {
   return [
     'Memoria (hechos que recuerdas del usuario): ' +
       (facts.length ? facts.map(f => f.fact).join(' · ') : 'nada aún'),
-    'Fecha y hora: ' + new Date().toLocaleString('es-ES'),
+    // TRUNCADA A LA HORA EN PUNTO, y no es estético: esto llevaba SEGUNDOS y va
+    // en la cabeza del prompt de sistema. El motor reutiliza el prefijo solo si
+    // los tokens del turno empiezan EXACTAMENTE por los ya ingeridos, así que un
+    // reloj con segundos lo hacía diverger en CADA turno — la caché de prefijo
+    // existía, estaba encendida y medida (sin ella la espera hasta la primera
+    // letra crece ×3,2 del turno 1 al 6; con ella se queda plana) y no saltaba
+    // nunca porque este prompt la invalidaba sola. Truncar a la hora la deja
+    // estable toda la sesión; cruzar una hora cuesta UN re-prefill, no uno por
+    // turno. Los segundos no los usaba nadie: «ayer» se resuelve con el `ts` del
+    // turno en que se dijo (annotateDates en acer-core.js), no con este reloj.
+    'Fecha y hora: ' + horaEstable('es-ES'),
     'Apps ya creadas: ' + (appList.length ? appList.map(a => a.name).join(', ') : 'ninguna'),
     'App abierta en el visualizador: ' + (apps.currentApp() || 'ninguna'),
     'Carpetas autorizadas: ' + (folderList.length ? folderList.join(', ') : 'ninguna (usa fs.pick_folder)'),

@@ -15,6 +15,9 @@
 // elffuss.utopiaia.com son, para el navegador, otro site distinto.)
 // API postMessage: {type:'elffuss-model-get', id, url} → {kind:'progress'}* →
 // {kind:'file', file} | {kind:'error', message}.  {type:'elffuss-model-has', id, url}
+// {type:'elffuss-model-clear', id} → {kind:'cleared', liberado, restante}: vacia
+// este almacen. Lo necesita el boton «vaciar cache» de las webs, que sin esto
+// solo borraba lo de SU origen y dejaba aqui el modelo grande.
 // (Aquí ponía que la respuesta venían trozos de ArrayBuffer, que es la versión
 // ANTERIOR: ahora se manda el File de OPFS por referencia, justamente para no
 // copiar los gigabytes a la RAM del renderer. La descripción vieja hizo perder
@@ -245,6 +248,29 @@ addEventListener('message', async e => {
     }
     if (type === 'elffuss-model-has') {
     const f = await cachedFile(url); post({ kind:'has', cached: !!f, size: f?f.size:0 }); return;
+  }
+  // Vaciar MI almacén. Hasta ahora no habia forma de pedirlo desde fuera, y eso
+  // hacia que el boton «vaciar cache» de las webs mintiera: borraba la cache de
+  // SU origen y dejaba aqui el modelo grande —que es el que ocupa casi todo—,
+  // asi que quien queria recuperar espacio no lo conseguia y encima no se
+  // enteraba, porque el contador de la web tampoco ve este origen.
+  //
+  // Se devuelve cuanto se ha liberado DE VERDAD, midiendo antes y despues, en
+  // vez de dar por hecho que el borrado funciono: si el navegador se niega a
+  // soltar algo, quien llama tiene que poder decirlo.
+  if (type === 'elffuss-model-clear') {
+    try {
+      const antes = (await navigator.storage.estimate()).usage || 0;
+      const root = await navigator.storage.getDirectory();
+      // `recursive` borra el directorio entero sin tener que enumerar: los
+      // ficheros aqui se llaman por una clave derivada de la URL y troceados en
+      // partes, asi que enumerar para borrar uno a uno es justo la forma de
+      // dejarse alguna atras.
+      await root.removeEntry(DIR, { recursive: true }).catch(() => {});
+      const despues = (await navigator.storage.estimate()).usage || 0;
+      post({ kind: 'cleared', liberado: Math.max(0, antes - despues), restante: despues });
+    } catch (err) { post({ kind: 'error', message: String(err?.message || err) }); }
+    return;
   }
   if (type === 'elffuss-model-get') {
     try{

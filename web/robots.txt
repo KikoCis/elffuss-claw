@@ -1,0 +1,11 @@
+# Elffuss Claw
+#
+# Todo el sitio es público y el blog es justo la superficie que interesa que se
+# indexe, así que no se restringe nada. Esto existe para que el fichero no
+# devuelva 404: un robots.txt ausente lo tratan como «todo permitido» igual,
+# pero deja un 404 en el registro por cada rastreador y cada pasada.
+#
+# NO se declara `Sitemap:` a propósito: todavía no hay sitemap.xml, y apuntar a
+# uno que devuelve 404 es peor que no declararlo.
+User-agent: *
+Allow: /

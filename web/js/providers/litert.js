@@ -72,7 +72,7 @@ export async function load(onProgress = () => {}) {
   // descubrir el fallo solo al crear el motor, al final de todo.
   let adapter = null;
   try { adapter = await navigator.gpu.requestAdapter(); } catch { /* sin adaptador */ }
-  if (!adapter) throw new Error('No hay un adaptador WebGPU real disponible (la API existe pero no hay GPU accesible) — prueba con Elffuss LM, que corre en CPU/wasm.');
+  if (!adapter) throw new Error('No hay un adaptador WebGPU real disponible (la API existe pero no hay GPU accesible) — prueba con el modelo ligero, que corre en CPU/wasm.');
   // VERSIÓN FIJADA a propósito. Sin fijarla, la URL apunta siempre a la última
   // publicada: el 2026-08-11 salió 0.16.0, jsdelivr NO consigue construirle el
   // bundle `+esm` (404) y el cerebro Gemma dejó de cargar en producción sin que
