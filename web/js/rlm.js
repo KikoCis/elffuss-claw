@@ -20,6 +20,10 @@
 // tramos de continuación, candidatos y rondas. Al parar se lanza un error con
 // name 'AbortError', que quien llama trata como parada y no como fallo. Sin
 // señal, todo es exactamente igual que antes.
+//
+// Y una regla para cualquiera que llame a chat(): quien DEJA DE ESPERAR una
+// llamada tiene que abortarla. Una llamada abandonada sigue ocupando el motor,
+// y el motor propio atiende los turnos de uno en uno (ver sub()).
 
 const CHARS_PER_TOK = 4; // misma estimación que context.js
 const DEFAULTS = {
@@ -57,14 +61,32 @@ function chunk(text, chunkChars, overlapChars) {
 }
 
 // sub(): UNA inferencia del modelo local sobre un fragmento. Es la recursión.
+// Cada sub-llamada lleva SU parada, enlazada a la de fuera, y no sobrevive a
+// sub(): si salta la guarda de tiempo, la llamada se ABORTA en vez de quedarse
+// abandonada y viva. Abandonada, un motor que atiende los turnos de uno en uno
+// (el propio) la seguía generando, y la llamada del trozo siguiente esperaba
+// detrás con su reloj ya en marcha: un solo trozo lento hacía caducar a los de
+// después en la cola, Hard Work acababa en «no encontré nada» y el motor seguía
+// ocupado con turnos que nadie iba a leer, retrasando el siguiente mensaje.
 async function sub(provider, system, prompt, timeoutMs, signal = null) {
   siParado(signal);
-  const run = provider.chat([{ role: 'user', content: prompt }], system, () => {}, signal);
-  if (!timeoutMs) { const r = await run; siParado(signal); return r; }
+  const ctl = new AbortController();
+  const enlazar = () => ctl.abort();
+  signal?.addEventListener?.('abort', enlazar, { once: true });
   let to;
-  const guard = new Promise((_, rej) => { to = setTimeout(() => rej(new Error('sub-llamada agotó el tiempo')), timeoutMs); });
-  try { const r = await Promise.race([run, guard]); siParado(signal); return r; }
-  finally { clearTimeout(to); }
+  try {
+    const run = provider.chat([{ role: 'user', content: prompt }], system, () => {}, ctl.signal);
+    if (!timeoutMs) { const r = await run; siParado(signal); return r; }
+    Promise.resolve(run).catch(() => {});   // si gana la guarda, el rechazo de la llamada abortada no queda suelto
+    const guard = new Promise((_, rej) => { to = setTimeout(() => rej(new Error('sub-llamada agotó el tiempo')), timeoutMs); });
+    const r = await Promise.race([run, guard]);
+    siParado(signal);
+    return r;
+  } finally {
+    clearTimeout(to);
+    signal?.removeEventListener?.('abort', enlazar);
+    ctl.abort();   // terminada no le hace nada; colgada tras la guarda, la para
+  }
 }
 
 const MAP_SYS = 'Eres un analista minucioso. Te doy UN fragmento de un material más grande y una pregunta. Responde SOLO con lo que ESTE fragmento aporte a la pregunta: datos concretos, en pocas frases, con cita textual breve si procede. No inventes lo que no esté en el fragmento. Si el fragmento no aporta nada a la pregunta, responde exactamente: NADA';

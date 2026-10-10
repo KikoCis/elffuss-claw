@@ -20,6 +20,8 @@
 //      petición se quedaría esperando para siempre.
 //   9. Un AbortError del proveedor con la señal del turno intacta (el motor
 //      propio al descargarse) es una parada, también en Hard Work.
+//  10. La guarda de tiempo de cada trozo de Hard Work ABORTA la llamada que deja
+//      de esperar, en vez de abandonarla ocupando el motor.
 // (LiteRT tiene su propia prueba: tests/litert-stop.mjs.)
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop.mjs
@@ -356,6 +358,48 @@ await p.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 })
   ok('9 · Hard Work: ese AbortError lo para en el trozo 1 (no sigue pidiendo trozos)',
     r.error === 'AbortError' && r.llamadas === 1, `error=${r.error} · ${r.llamadas} llamadas · ${r.res}`);
   ok('9 · un trozo que falla con otro error sigue sin tumbar el resto', r.chunks2 > 2 && r.kept2 === r.chunks2 - 1, `${r.kept2} de ${r.chunks2}`);
+}
+
+// ── 10 · la guarda de tiempo de Hard Work aborta la sub-llamada que abandona ─
+// Un proveedor como el motor propio: UN turno a la vez, el siguiente espera a
+// que el de delante suelte. La llamada del trozo 1 se cuelga hasta que la paran.
+// Si la guarda solo dejara de esperarla, seguiría ocupando el motor y los
+// trozos siguientes caducarían en la cola sin llegar a empezar.
+{
+  const r = await p.evaluate(async () => {
+    const rlm = await import('/js/rlm.js');
+    const parado = () => new DOMException('Parado', 'AbortError');
+    const log = { llamadas: 0, colgadaAbortada: false, vivas: 0 };
+    let cola = Promise.resolve();
+    const prov = { chat(h, s, cb, signal) {
+      const n = ++log.llamadas;
+      const antes = cola;
+      let soltar; cola = new Promise(r => { soltar = r; });
+      return (async () => {
+        try {
+          await new Promise((si, no) => {
+            if (signal?.aborted) return no(parado());
+            signal?.addEventListener('abort', () => no(parado()), { once: true });
+            antes.then(si);
+          });
+          log.vivas++;
+          try {
+            if (n === 1) await new Promise((_, no) => signal?.addEventListener('abort', () => { log.colgadaAbortada = true; no(parado()); }, { once: true }));
+            await new Promise(r => setTimeout(r, 10));
+            return 'dato ' + n;
+          } finally { log.vivas--; }
+        } finally { soltar(); }
+      })();
+    } };
+    // Con la señal del turno, como la pasa el kernel (nadie pulsa ■ aquí).
+    const turno = new AbortController();
+    const res = await rlm.hardWork({ question: 'q', context: 'línea de material\n'.repeat(1500), provider: prov,
+      signal: turno.signal, opts: { callTimeoutMs: 400 } });
+    await new Promise(r => setTimeout(r, 50));
+    return { ...log, kept: res.kept, chunks: res.chunks, answer: res.answer };
+  });
+  ok('10 · la guarda de tiempo ABORTA la sub-llamada colgada (no la deja ocupando el motor)', r.colgadaAbortada && r.vivas === 0, JSON.stringify(r));
+  ok('10 · los trozos siguientes no caducan esperando detrás de ella', r.chunks > 2 && r.kept === r.chunks - 1, `${r.kept} de ${r.chunks} con señal · «${r.answer}»`);
 }
 
 ok('sin errores de página en todo el recorrido', errores.length === 0, errores.slice(0, 3).join(' | '));
