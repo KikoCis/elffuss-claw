@@ -204,6 +204,9 @@ const L = {
     optBasic: 'Básico (sin modelo)', optWeakGroup: '⚠ Avanzado · sin garantía de rendimiento', optAdvanced: '⚠ Avanzado',
     optSavedOnce: 'se guarda: solo se baja la primera vez', optSaved: 'se guarda', optLighter: 'más ligero, carga antes',
     optWeak: 'poco rendimiento', optDefault: 'por defecto', optLight: '— ligero', optText: '— texto', optSlow: '— lento', optCloud: ' · nube',
+    memTitle: '🧠 Memoria', memDesc: 'Lo que Elffuss recuerda de ti entre conversaciones. Solo vive en este navegador.',
+    memEmpty: 'Nada todavía. Dile «recuerda que…» y lo guarda.', memForgotten: 'Olvidado', memForgetL: 'Olvidar «{fact}»',
+    claim: 'las apps no existen: se crean',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -400,8 +403,12 @@ const L = {
     optBasic: 'Basic (no model)', optWeakGroup: '⚠ Advanced · no performance guarantee', optAdvanced: '⚠ Advanced',
     optSavedOnce: 'saved: downloaded only the first time', optSaved: 'saved', optLighter: 'lighter, loads faster',
     optWeak: 'low performance', optDefault: 'default', optLight: '— light', optText: '— text', optSlow: '— slow', optCloud: ' · cloud',
+    memTitle: '🧠 Memory', memDesc: 'What Elffuss remembers about you between conversations. It only lives in this browser.',
+    memEmpty: 'Nothing yet. Tell it “remember that…” and it keeps it.', memForgotten: 'Forgotten', memForgetL: 'Forget “{fact}”',
+    claim: 'apps don’t exist: they get created',
 },
   uk: {
+    claim: "застосунків не існує: їх створюють",
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
     hi: "Привіт, я Elffuss.",
     chips: ["Зроби мені годинник", "Створи застосунок нотаток", "Дозволь теку", "Створи навичку, щоб упорядкувати мої завантаження", "Знайди фото північного сяйва", "Відкрий https://example.com"],
@@ -476,6 +483,7 @@ const L = {
   },
 
   fr: {
+    claim: "les apps n’existent pas : elles se créent",
     welcome: "Un système d’exploitation avec une âme qui vit dans ton navigateur. Ici les apps ne s’installent pas : elles se créent quand tu les demandes, à droite. Je peux utiliser tes dossiers (avec permission), garder des secrets chiffrés, planifier des tâches et naviguer pour toi. Tout reste sur ta machine.",
     hi: "Salut, je suis Elffuss.",
     chips: ["Fais-moi une horloge", "Crée une app de notes", "Autorise un dossier", "Crée-moi une skill pour ranger mes téléchargements", "Cherche des photos d’aurores boréales", "Ouvre https://example.com"],
@@ -550,6 +558,7 @@ const L = {
   },
 
   de: {
+    claim: "Apps gibt es nicht: Sie entstehen",
     welcome: "Ein Betriebssystem mit Seele, das in deinem Browser lebt. Apps werden hier nicht installiert – sie entstehen, wenn du fragst, und erscheinen rechts. Ich kann deine Ordner nutzen (mit Erlaubnis), verschlüsselte Geheimnisse speichern, Aufgaben planen und für dich surfen. Alles bleibt auf deinem Gerät.",
     hi: "Hallo, ich bin Elffuss.",
     chips: ["Bau mir eine Uhr", "Erstelle eine Notiz-App", "Ordner freigeben", "Erstelle mir einen Skill, der meine Downloads ordnet", "Such Fotos von Polarlichtern", "Öffne https://example.com"],
@@ -624,6 +633,7 @@ const L = {
   },
 
   pt: {
+    claim: "as apps não existem: criam-se",
     welcome: "Um sistema operativo com alma que vive no teu navegador. Aqui as apps não se instalam: criam-se quando pedes e aparecem à direita. Posso usar as tuas pastas (com permissão), guardar segredos cifrados, agendar tarefas e navegar por ti. Tudo fica na tua máquina.",
     hi: "Olá, sou a Elffuss.",
     chips: ["Faz-me um relógio", "Cria uma app de notas", "Autoriza uma pasta", "Cria-me uma skill para organizar as minhas transferências", "Procura fotos de auroras boreais", "Abre https://example.com"],
@@ -751,6 +761,7 @@ export function applyI18n() {
   $('#tabs')?.setAttribute('aria-label', t.tabsLabel || L.en.tabsLabel);
   const ph = $('#prompt'); if (ph) ph.placeholder = t.ph;
   set('#btn-perms', t.perms);
+  set('.brand .claim:not(#build)', t.claim || L.en.claim);   // el lema de la cabecera (se quedaba en español)
   // Botones de solo icono: su nombre accesible, en el idioma de la página (antes
   // era el title en español en todos los idiomas).
   const nombre = (sel, key) => { const e = $(sel); const v = t[key] || L.en[key]; if (e && v) { e.title = v; e.setAttribute('aria-label', v); } };

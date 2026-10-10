@@ -66,6 +66,20 @@ await p.waitForFunction(() => !!window.elffuss?.agent);
 ok('#/ajustes/acerca lleva a esa tarjeta', await hasta(() => p.evaluate(() =>
   document.querySelector('#panel-ajustes [data-ruta="acerca"]')?.classList.contains('resaltado'))));
 
+// ── memoria: se ve y se olvida hecho a hecho ────────────────────────────────
+await p.evaluate(async () => (await import('/js/db.js')).set('memory', 'mprueba', { id: 'mprueba', fact: 'le gusta el té verde', at: Date.now() }));
+await p.goto(BASE + '/#/memoria/mprueba', { waitUntil: 'domcontentloaded' });
+await p.waitForFunction(() => !!window.elffuss?.agent);
+const hecho = p.locator('#panel-ajustes [data-ruta="mprueba"]');
+ok('#/memoria/<id> abre Ajustes y señala ese hecho (sin el texto en la URL)', await hasta(async () =>
+  await hecho.evaluate(e => e.classList.contains('resaltado')).catch(() => false)) && !/t%C3%A9|té/.test(await p.evaluate(() => location.href)));
+await hecho.locator('button[aria-label="Olvidar «le gusta el té verde»"]').click();
+ok('✕ lo olvida…', await hasta(async () => await hecho.count() === 0)
+  && !(await p.evaluate(async () => (await (await import('/js/db.js')).get('memory', 'mprueba')))));
+await p.locator('#toasts .toast', { hasText: 'Olvidado' }).locator('.toast-accion').click();
+ok('…y «Deshacer» lo devuelve', await hasta(async () => await hecho.count() === 1));
+ok('el lema de la cabecera sale en español', (await p.locator('.brand .claim').first().innerText()) === 'las apps no existen: se crean');
+
 // ── el modo básico señala el selector de modelo, no el 🧠 ───────────────────
 await p.fill('#prompt', 'hola');
 await p.press('#prompt', 'Enter');
@@ -75,6 +89,13 @@ ok('la ayuda del modo básico enlaza al «selector de modelo»', await hasta(asy
 await enlace.click();
 ok('…y el enlace lo enfoca (y la URL vuelve a decir dónde estás)', await hasta(() => p.evaluate(() =>
   document.activeElement?.id === 'model-select' && location.hash !== '#/modelo')));
+
+{
+  const { ctx: c2 } = await contexto(b, { locale: 'en-US' });
+  const { p: e } = await pagina(c2);
+  ok('en inglés el lema de la cabecera sale en inglés', (await e.locator('.brand .claim').first().innerText()) === 'apps don’t exist: they get created');
+  await c2.close();
+}
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 await fin(b, 'AJUSTES: sin Ornith roto, casillas con nombre, feedback honesto y «Acerca de» con enlaces');

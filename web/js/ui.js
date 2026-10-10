@@ -3,7 +3,7 @@ import * as db from './db.js';
 import * as perms from './permissions.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
-import { fs, apps, vault, tasks, watch } from './tools/index.js';
+import { fs, apps, vault, tasks, watch, memory } from './tools/index.js';
 import { renderMarkdown, linkify } from './md.js';
 import * as rutas from './rutas.js';
 import { t as tr, uiLang } from './i18n.js';
@@ -66,6 +66,7 @@ function rutaDeHerramienta(call) {
   if (t.startsWith('skill.')) return rutas.href('skills');
   if (t.startsWith('fs.')) return rutas.href('permisos');
   if (t.startsWith('vault.')) return rutas.href('vault');
+  if (t.startsWith('memory.')) return rutas.href('memoria');
   return null;
 }
 
@@ -414,6 +415,9 @@ export async function navegar(ruta) {
     toast(tr('appMissing', { name: detalle }));
     return verPanel('apps');
   }
+  // La memoria vive en Ajustes; #/memoria/<id> señala un hecho por su id (el
+  // texto del hecho nunca va en la URL).
+  if (seccion === 'memoria') { await verPanel('ajustes'); resaltar('ajustes', detalle || 'memoria'); return; }
   if (!['vista', 'apps', 'tareas', 'vault', 'skills', 'permisos', 'ajustes'].includes(seccion)) return;
   await verPanel(seccion);
   if (detalle) resaltar(seccion, detalle);
@@ -1019,6 +1023,7 @@ export function refreshSettings() {
   // Los proveedores externos son configuración avanzada y bajan al final.
   panel.appendChild(usageCard());
   panel.appendChild(workspaceCard());
+  panel.appendChild(memoriaCard());
   // Los modelos EXTERNOS (no locales) van al final, en su propia sección
   // plegada: son la excepción, no la norma — Elffuss corre en tu máquina.
   const ext = document.createElement('details');
@@ -1149,6 +1154,34 @@ export function refreshSettings() {
 
   panel.appendChild(acercaDe());
   panel.appendChild(el('p', 'muted', tr('skillsTabHint')));
+}
+
+// ---------- memoria ----------
+// Lo que Elffuss recuerda de ti (memory.save) se veía solo como un número en
+// «Qué hay guardado» o pidiéndoselo al chat. Aquí se ve y se olvida hecho a hecho.
+function memoriaCard() {
+  const c = el('div', 'card col');
+  c.dataset.ruta = 'memoria';      // #/memoria
+  pintarMemoria(c);
+  return c;
+}
+async function pintarMemoria(c) {
+  const hechos = (await db.all('memory').catch(() => [])).sort((a, b) => a.at - b.at);
+  c.replaceChildren(el('b', null, tr('memTitle')), el('span', 'muted', tr('memDesc')));
+  if (!hechos.length) c.appendChild(el('span', 'muted', tr('memEmpty')));
+  for (const f of hechos) {
+    const fila = el('div', 'row between');
+    fila.dataset.ruta = f.id;       // #/memoria/<id>
+    const x = btn('✕', 'ghost', async () => {
+      await memory.forget({ id: f.id });
+      pintarMemoria(c);
+      toast(tr('memForgotten'), { accion: { label: tr('undo'), run: async () => { await db.set('memory', f.id, f); pintarMemoria(c); } } });
+    });
+    x.title = tr('memForgetL', { fact: String(f.fact).slice(0, 60) });
+    x.setAttribute('aria-label', x.title);
+    fila.append(el('span', null, f.fact), x);
+    c.appendChild(fila);
+  }
 }
 
 // ---------- acerca de ----------
@@ -1387,6 +1420,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   perms.setAsker(askPermission);
   apps.setRenderer((name, html) => renderApp(name, html, { ruta: true }));
   apps.setOnRemoved(vaciarVisor);
+  if ($('appframe').hidden) $('appframe').title = tr('appFrameEmpty');
   onSettingsChangedCb = onSettingsChanged || (() => {});
   // al instalar una skill: mensaje «cómo usarla» en el chat + volver al chat en móvil
   onSkillInstalledCb = entry => {
