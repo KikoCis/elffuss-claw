@@ -43,10 +43,31 @@ export async function propuestasGuardadas(soulDir, { max = 40 } = {}) {
   } catch { return []; }
 }
 
+// El cerebro trabaja mientras NO miras, así que nunca pide permisos: ni el
+// «Archivos» de Claw (fs.root() lo pedía y, con el permiso revocado y carpetas
+// aún guardadas, el cerebro ocioso sacaba «📁 Permiso: Archivos» antes de
+// llamar al modelo, esperaba la respuesta y lo volvía a pedir al escribir) ni
+// el del navegador sobre la carpeta. Sin los dos concedidos no hay espacio de
+// trabajo: isReady() dice que no y el ciclo no arranca.
+async function raizSinPreguntar(nombre) {
+  if (!perms.has('fs')) throw new Error('sin el permiso «Archivos»');
+  const nombres = await fs.folders();
+  const h = await db.get('fs', nombre || nombres[0]);
+  if (!h) throw new Error('sin carpeta autorizada');
+  if (h.queryPermission && await h.queryPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('el navegador no ha dado acceso a la carpeta');
+  return h;
+}
+
 async function dirHandle(dirPath, { create = false } = {}) {
-  let dir = await fs.root();
+  let dir = await raizSinPreguntar();
   for (const p of dirPath.split('/').filter(Boolean)) dir = await dir.getDirectoryHandle(p, { create });
   return dir;
+}
+async function fichero(path, { create = false } = {}) {
+  const partes = String(path || '').split('/').filter(Boolean);
+  const nombre = partes.pop();
+  if (!nombre) throw new Error('Falta path');
+  return (await dirHandle(partes.join('/'), { create })).getFileHandle(nombre, { create });
 }
 
 async function walk(dir, prefix, depth, budget) {
@@ -64,7 +85,7 @@ async function walk(dir, prefix, depth, budget) {
 }
 
 export const ceoWorkspace = {
-  isReady: async () => (await fs.folders()).length > 0,
+  isReady: async () => { try { await raizSinPreguntar(); return true; } catch { return false; } },
   tree: async ({ depth = 2 } = {}) => {
     const names = await fs.folders();
     if (!names.length) return '(sin carpetas autorizadas)';
@@ -72,12 +93,17 @@ export const ceoWorkspace = {
     const out = [];
     for (const name of names) {
       out.push('📁 ' + name);
-      try { out.push(...await walk(await fs.root(name), '  ', depth, budget)); } catch { /* sin permiso ya */ }
+      try { out.push(...await walk(await raizSinPreguntar(name), '  ', depth, budget)); } catch { /* sin permiso ya */ }
     }
     return out.join('\n') || '(vacío)';
   },
-  write: ({ path, content }) => fs.write({ path, content }),
-  read: ({ path }) => fs.read({ path }),
+  write: async ({ path, content = '' }) => {
+    const w = await (await fichero(path, { create: true })).createWritable();
+    await w.write(content);
+    await w.close();
+    return `Escrito ${path} (${content.length} caracteres)`;
+  },
+  read: async ({ path }) => (await (await fichero(path)).getFile()).text(),
   list: async (dirPath) => {
     const dir = await dirHandle(dirPath, { create: true });
     const names = [];

@@ -14,9 +14,12 @@
 //   · «▶ Ejecutar» de la Mente tampoco ejecuta en Básico, y su aviso se ve y se
 //     pulsa con la Mente abierta (los avisos van encima y no quedan inertes);
 //   · cerrar la Mente limpia #/mente/… de la URL (el mismo enlace vuelve a abrir)
-//     y «Atrás» la cierra; cargar la página en #/mente o #/mente/<ruta> la abre.
+//     y «Atrás» la cierra; cargar la página en #/mente o #/mente/<ruta> la abre;
+//   · sin el permiso «Archivos» el cerebro no arranca ni pide nada, y la clave
+//     vieja de encendido (la del primer clic en 🧠) ya no lo enciende.
 //
 //   BASE=http://localhost:8743 node tests/ux-mente.mjs
+import { createServer } from 'node:http';
 import { navegador, contexto, pagina, ok, hasta, espera, avisos, fin, kv, BASE, OUT } from './ux-comun.mjs';
 
 const b = await navegador();
@@ -58,7 +61,7 @@ await p.evaluate(async () => { const ceo = await import('/js/ceo.js'); ceo.enabl
 ok('el botón 🧠 tiene nombre accesible', /Mente de Elffuss/.test(await p.getAttribute('#btn-mind', 'aria-label') || ''));
 
 // ── abrir: solo abrir ───────────────────────────────────────────────────────
-await p.evaluate(() => { localStorage.removeItem('elffuss.ceoEnabled'); });
+await p.evaluate(() => { localStorage.removeItem('elffuss.ceoEnabled'); localStorage.removeItem('elffuss.ceoDecision'); });
 await p.click('#btn-mind');
 ok('la Mente se abre (modal: role=dialog, aria-modal)', await hasta(() => p.evaluate(() => {
   const o = document.getElementById('mind-overlay');
@@ -67,7 +70,7 @@ ok('la Mente se abre (modal: role=dialog, aria-modal)', await hasta(() => p.eval
 await espera(300);
 const abierta = await p.evaluate(async () => ({
   ceo: (await import('/js/ceo.js')).isEnabled(),
-  guardado: localStorage.getItem('elffuss.ceoEnabled'),
+  guardado: localStorage.getItem('elffuss.ceoDecision') ?? localStorage.getItem('elffuss.ceoEnabled'),
   pidio: window.__pidioNotif,
   foco: document.activeElement?.id,
   inerte: document.querySelector('header').inert && document.querySelector('main').inert,
@@ -159,6 +162,24 @@ const hist2 = await kv(p, 'history');
 ok('y se guarda en el historial con su propuesta', Array.isArray(hist2) && hist2.some(m => m.propuesta?.path?.includes('.elffuss/soul/')));
 const n = await p.evaluate(() => window.__notifs.map(x => x.title));
 ok('se notifica (permiso ya concedido)', n.length === 1, JSON.stringify(n));
+
+// ── sin el permiso «Archivos», el cerebro ocioso NO saca diálogos de permiso ─
+// (antes isReady solo miraba si había carpetas, y el ciclo pasaba por fs.root(),
+// que pide el permiso: «📁 Permiso: Archivos» con el usuario fuera)
+await p.evaluate(async () => (await import('/js/permissions.js')).revoke('fs'));
+const sinPermiso = await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  const r = await Promise.race([ceo.forceCycle(), new Promise(res => setTimeout(() => res('colgado'), 4000))]);
+  return { r, dialogo: document.getElementById('perm-dialog').open };
+});
+ok('sin el permiso «Archivos» el ciclo no arranca y no pide nada', sinPermiso.r === false && !sinPermiso.dialogo, JSON.stringify(sinPermiso));
+if (sinPermiso.dialogo) await p.click('#perm-deny');
+await p.evaluate(async () => {   // volver a concederlo para lo que sigue
+  const perms = await import('/js/permissions.js');
+  perms.setAsker(async () => true);
+  await perms.require('fs');
+  perms.setAsker((await import('/js/ui.js')).askPermission);
+});
 await p.evaluate(() => window.__notifs[0].onclick());
 ok('pulsar la notificación abre la Mente en la propuesta', await hasta(() => p.evaluate(() =>
   document.getElementById('mind-overlay').style.display !== 'none' && document.getElementById('mind-panel').classList.contains('show'))));
@@ -261,6 +282,44 @@ await cargarEn('#/mente');
 ok('cargar la página en #/mente abre la Mente', await hasta(() => p.evaluate(() =>
   !!document.getElementById('mind-overlay') && document.getElementById('mind-overlay').style.display !== 'none'), { veces: 300 }));
 ok('ninguna carga en #/mente dejó errores de página', errores.length === erroresAntes, errores.slice(erroresAntes).join(' | '));
+
+// ── la clave vieja del cerebro (la escribía el primer clic en 🧠) no lo enciende ─
+{
+  const { ctx: c2 } = await contexto(b, { extraInit: { 'elffuss.ceoEnabled': '1' } });
+  const { p: q } = await pagina(c2);
+  const viejo = await q.evaluate(async () => ({ on: (await import('/js/ceo.js')).isEnabled(), vieja: localStorage.getItem('elffuss.ceoEnabled'), decidido: (await import('/js/ceo.js')).hasDecided() }));
+  ok('con la clave vieja (ceoEnabled=1) el cerebro NO se enciende al cargar, y la clave se borra', !viejo.on && viejo.vieja === null && !viejo.decidido, JSON.stringify(viejo));
+  await c2.close();
+  const { ctx: c3 } = await contexto(b, { extraInit: { 'elffuss.ceoDecision': 'on' } });
+  const { p: r } = await pagina(c3);
+  ok('con un ▶ de verdad (ceoDecision=on) sí vuelve encendido', await hasta(() => r.evaluate(async () => (await import('/js/ceo.js')).isEnabled())));
+  await c3.close();
+}
+
+// ── con modelo y carpeta pero sin «Archivos»: «Pensar ahora» dice por qué ───
+{
+  const srv = createServer((req, res) => {
+    const c = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type, authorization' };
+    if (req.method === 'OPTIONS') { res.writeHead(204, c); res.end(); return; }
+    req.resume();
+    req.on('end', () => { res.writeHead(200, { ...c, 'Content-Type': 'text/event-stream' }); res.write('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'); res.end(); });
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const { ctx: c4 } = await contexto(b, { model: 'ext:ollama', grants: ['apps'],
+    extraInit: { 'elffuss.providers': JSON.stringify({ ollama: { enabled: true, baseURL: `http://127.0.0.1:${srv.address().port}/v1`, model: 'falso', apiKey: 'ollama' } }) } });
+  const { p: q } = await pagina(c4);
+  await hasta(() => q.evaluate(() => document.getElementById('model-status').classList.contains('on')));
+  await q.evaluate(async () => (await import('/js/db.js')).set('fs', 'proyecto', await navigator.storage.getDirectory()));
+  await q.click('#btn-mind');
+  await hasta(() => q.evaluate(() => !!document.getElementById('mind-overlay') && document.getElementById('mind-overlay').style.display !== 'none'), { veces: 300 });
+  await q.click('#mind-config');
+  await q.click('#cfg-think-now');
+  ok('con modelo y carpeta pero sin «Archivos», «Pensar ahora» lo dice y no saca el diálogo', await hasta(async () =>
+    /permiso «Archivos»/.test(await q.locator('#cfg-status').innerText())) && !(await q.evaluate(() => document.getElementById('perm-dialog').open)),
+  await q.locator('#cfg-status').innerText());
+  await c4.close();
+  srv.close();
+}
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 await fin(b, 'MENTE: abrir no enciende, modal, historial completo, solo lectura, propuestas que se guardan y se enlazan');

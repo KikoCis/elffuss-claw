@@ -980,8 +980,11 @@ function cargarMente() {
         const f = await carpetaDelAlma();
         return f ? t('mindSoulIn', { folder: f }) : t('mindSoulNoFolder');
       },
+      // Sin el permiso «Archivos» el cerebro no trabaja (no lo pide: ver
+      // ceo-adapter.js), y «Pensar ahora» lo dice en vez de «no puedo».
       motivoNoPensar: async () => (activeModel === 'rules' ? t('mindNeedsModel')
-        : !(await carpetaDelAlma()) ? t('mindNeedsFolder') : null),
+        : !(await carpetaDelAlma()) ? t('mindNeedsFolder')
+        : !perms.has('fs') ? t('mindNeedsFsPerm') : null),
     });
     // Claw no tiene editor: «Ver el fichero» cierra la Mente y lo lee en el chat
     // (antes mandaba «Muéstrame el contenido de…» al modelo, que contestaba

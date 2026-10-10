@@ -145,22 +145,36 @@ export function isEnabled() { return enabled; }
 export function isRunning() { return !!running; }
 // Play/stop: persistido AQUÍ (fuente única) — cualquier botón que lo toque
 // queda sincronizado, y la elección sobrevive a recargar la página.
-export function wasEnabledLastSession() { try { return localStorage.getItem(K('ceoEnabled')) === '1'; } catch { return false; } }
+//
+// En una clave NUEVA, «ceoDecision» ('on' | 'off'). La anterior, «ceoEnabled»,
+// la escribía también el primer clic en 🧠, que encendía el cerebro sin pedirlo,
+// y no distingue un ▶ de verdad de aquel encendido implícito: con ella, quien
+// pasó una vez por la Mente tenía el cerebro autónomo encendido en cada visita.
+// Ya no se lee —cuenta como «sin decidir»: apagado, y el botón dice «activar»—
+// y se borra la primera vez que se mira.
+const CLAVE_DECISION = () => K('ceoDecision');
+function decision() {
+  try {
+    if (localStorage.getItem(K('ceoEnabled')) != null) localStorage.removeItem(K('ceoEnabled'));
+    return localStorage.getItem(CLAVE_DECISION());
+  } catch { return null; }
+}
+export function wasEnabledLastSession() { return decision() === 'on'; }
 // ¿el usuario llegó a decidir alguna vez (play o stop)? Distingue «nunca lo
 // tocó» de «lo pausó a propósito» — solo lo primero debe auto-activarse al
 // abrir la Mente; lo segundo hay que RESPETARLO, no pisarlo.
-export function hasDecided() { try { return localStorage.getItem(K('ceoEnabled')) != null; } catch { return false; } }
+export function hasDecided() { return decision() != null; }
 export function enable() {
   if (enabled) return;
   enabled = true; lastActivity = Date.now(); schedule();
-  try { localStorage.setItem(K('ceoEnabled'), '1'); } catch { /* */ }
+  try { localStorage.setItem(CLAVE_DECISION(), 'on'); } catch { /* */ }
   emit('sys', { type: 'status', text: 'CEO en guardia — trabajaré cuando estés ocioso' });
 }
 export function disable() {
   // Antes ponía running = false sin más: el ciclo seguía generando por detrás,
   // escribía su propuesta igual, y «Pensar ahora» podía lanzar otro a la vez.
   enabled = false; interrupt(); if (timer) clearTimeout(timer);
-  try { localStorage.setItem(K('ceoEnabled'), '0'); } catch { /* */ }
+  try { localStorage.setItem(CLAVE_DECISION(), 'off'); } catch { /* */ }
   emit('sys', { type: 'status', text: 'CEO en pausa' });
 }
 
