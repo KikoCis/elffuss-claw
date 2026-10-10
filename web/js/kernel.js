@@ -17,6 +17,7 @@ import * as perms from './permissions.js';
 import * as telemetry from './telemetry.js';
 import * as gram from './copilot-grammar.js';
 import * as rutas from './rutas.js';
+import { abrirModal } from './modal.js';
 
 applyI18n(); // traduce el chrome al idioma del navegador antes de nada
 telemetry.init('elffuss-claw'); // opt-in, apagado por defecto — ver Ajustes
@@ -816,19 +817,36 @@ function refreshModelOptions() {
 }
 
 // Splash de primera visita: galaxia WebGL + promesa de privacidad + guiño.
+// Es una capa MODAL (role=dialog, lo de detrás inerte, el foco en «Entrar»):
+// antes el primer Tab caía en el selector de modelo de detrás, «Entrar» no se
+// alcanzaba en 12 Tab y al cerrar el foco se perdía en <body>. Al entrar, el
+// foco va a la caja de texto.
 const splash = document.getElementById('splash');
-if (!localStorage.getItem('elffuss.welcomed')) {
+let bienvenido = false;
+try { bienvenido = !!localStorage.getItem('elffuss.welcomed'); } catch { /* sin almacenamiento: se enseña */ }
+if (!bienvenido) {
   splash.hidden = false;
+  splash.setAttribute('role', 'dialog');
+  splash.setAttribute('aria-modal', 'true');
+  splash.setAttribute('aria-labelledby', 'splash-t');
+  const cerrarModal = abrirModal(splash, { foco: '#splash-enter' });
   let galaxy = null;
   import('./splash-gl.js')
     .then(m => { galaxy = m.startGalaxy(splash); })
     .catch(() => {}); // sin WebGL queda el gradiente CSS
-  document.getElementById('splash-enter').addEventListener('click', () => {
-    localStorage.setItem('elffuss.welcomed', '1');
+  let dentro = false;
+  const entrar = () => {
+    if (dentro) return;
+    dentro = true;
+    try { localStorage.setItem('elffuss.welcomed', '1'); } catch { /* — */ }
     galaxy?.burst(); // las estrellas salen despedidas al entrar
     splash.style.opacity = '0';
+    cerrarModal({ devolverFoco: false });
+    document.getElementById('prompt')?.focus();
     setTimeout(() => { splash.hidden = true; galaxy?.stop(); }, 800);
-  });
+  };
+  document.getElementById('splash-enter').addEventListener('click', entrar);
+  splash.addEventListener('keydown', e => { if (e.key === 'Escape') entrar(); });
 }
 
 skills.initSkills();

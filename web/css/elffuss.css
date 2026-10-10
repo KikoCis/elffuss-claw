@@ -443,6 +443,13 @@ dialog p { margin: 6px 0; font-size: .9rem; }
   opacity: 0; animation: srise .7s ease-out 4.9s forwards;
 }
 #splash button:hover { filter: brightness(1.1); }
+/* con el teclado, «Entrar» se ve en cuanto tiene el foco (no tras la animación) */
+#splash button:focus-visible { opacity: 1; animation: none; outline: 2px solid #fff; outline-offset: 3px; }
+/* sin animaciones si el sistema lo pide: todo a la vista desde el principio */
+@media (prefers-reduced-motion: reduce) {
+  #splash, #splash .l, #splash button, #splash svg, #splash .spark, #splash .eye-r { animation: none !important; transition: none !important; }
+  #splash .l, #splash button { opacity: 1; }
+}
 
 /* ---------- móvil: una columna, chat ↔ visualizador conmutables ---------- */
 @media (max-width: 700px) {
