@@ -327,7 +327,27 @@ export class Agent {
 
   setProvider(p) { this.provider = p; }
 
-  async handle(userText, onEvent) {
+  // Parar el turno en marcha (mismo patrón que Elffuss Code): aborta la
+  // generación en curso —los proveedores reciben la señal en el 4º argumento de
+  // chat()— y el bucle no da ni un paso más. Parar NO es un error: se avisa
+  // con un evento 'aborted' y no se reporta nada a la telemetría.
+  stop() { try { this._aborter?.abort(); } catch { /* */ } }
+
+  // `signal` (opcional) es el del turno de quien llama —el kernel, el cerebro
+  // CEO…—: abortarlo para este agente igual que stop(). Si ya llega abortado,
+  // ni se apunta el mensaje en el histórico ni se llama al modelo (igual que en
+  // Elffuss Code).
+  async handle(userText, onEvent, { signal: deFuera = null } = {}) {
+    const aborter = (this._aborter = new AbortController());
+    if (deFuera?.aborted) { onEvent({ type: 'aborted', text: t('stopped') }); return; }
+    const alAbortar = () => aborter.abort();
+    deFuera?.addEventListener?.('abort', alAbortar, { once: true });
+    try { return await this._turno(userText, onEvent, aborter.signal); }
+    finally { deFuera?.removeEventListener?.('abort', alAbortar); }
+  }
+
+  async _turno(userText, onEvent, signal) {
+    const parado = () => onEvent({ type: 'aborted', text: t('stopped') });
     // La marca temporal se pone AL AÑADIR, que es el único momento en que se
     // sabe: el gestor de contexto resuelve «ayer» con la fecha del turno en que
     // se dijo, no con la de ahora (ver annotateDates en acer-core.js). Sin esto
@@ -342,8 +362,10 @@ export class Agent {
     const herramientas = ruta?.lineas?.length ? ruta.lineas : null;
     for (let step = 0; step < MAX_STEPS; step++) {
       let out;
+      if (signal.aborted) return parado();
       try {
         const context = await snapshot().catch(() => '');
+        if (signal.aborted) return parado();
         // Los proveedores que saben cuánto contexto tienen lo dicen; los que no,
         // devuelven 0 y todo sigue igual que siempre. Sin esto, Elffuss le
         // mandaba sus 1.315 tokens de instrucciones al 27B —que tiene 512— y el
@@ -359,16 +381,24 @@ export class Agent {
         // nada decepciona más que uno que tarda. El coste del prompt completo se
         // ataca reutilizando el prefijo entre turnos y guardando el estado entre
         // sesiones, no quitándole capacidades al modelo.
+        // El 4º argumento de chat() es { signal, onPrefill }: la parada del
+        // turno y el aviso de avance del prefill (el motor propio admite
+        // también la señal sola).
         out = await this.provider.chat(conContexto(this.history, context, ETIQUETA_CONTEXTO),
           systemPrompt('', { herramientas }),
-          t => onEvent({ type: 'token', text: t }),
-          { onPrefill: (hechos, total) => onEvent({ type: 'prefill', hechos, total }) });
+          t => { if (!signal.aborted) onEvent({ type: 'token', text: t }); },
+          { signal, onPrefill: (hechos, total) => { if (!signal.aborted) onEvent({ type: 'prefill', hechos, total }); } });
       } catch (e) {
+        // Un proveedor que corta con la señal puede LANZAR (fetch abortado,
+        // stream cancelado): eso es la parada que se ha pedido, no un fallo.
+        if (signal.aborted) return parado();
         telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });
         onEvent({ type: 'error', text: 'El modelo falló: ' + e.message });
         return;
       }
 
+      // Lo generado después de parar no se usa: ni se responde ni se ejecuta.
+      if (signal.aborted) return parado();
       const call = parseToolCall(out);
       if (!call) {
         this.history.push({ role: 'assistant', content: out, ts: Date.now() });
@@ -405,6 +435,7 @@ export class Agent {
         return;
       }
     }
+    if (signal.aborted) return parado();
     onEvent({ type: 'text', text: closingLine(done, lastResult) });
   }
 }
