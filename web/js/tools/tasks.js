@@ -26,6 +26,14 @@ export async function removeTask({ id } = {}) {
   return `Tarea ${id} borrada.`;
 }
 
+// «Ejecutar ahora» desde el panel: la marca como hecha en la misma transacción
+// (como el planificador) y la devuelve, o null si ya no estaba o ya se lanzó.
+export async function marcarHecha(id) {
+  const hecha = await db.update('tasks', id,
+    actual => (actual && !actual.done) ? { ...actual, done: true } : undefined).catch(() => undefined);
+  return hecha || null;
+}
+
 export async function pending() {
   return (await db.all('tasks')).filter(t => !t.done);
 }

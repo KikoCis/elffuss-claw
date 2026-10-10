@@ -61,7 +61,8 @@ async function processFile(entry, dstDir) {
   return entry.name;
 }
 
-// El kernel lo arranca con un notificador (toast + mensaje en el chat).
+// El kernel lo arranca con un notificador (toast + mensaje en el chat). El
+// segundo argumento lleva los datos (id, carpetas, fichero) para enlazarlos.
 //
 // Una pasada a la vez: si una tarda más que el intervalo (un Excel grande, una
 // carpeta con muchos ficheros), la siguiente NO arranca encima. Antes podían
@@ -93,7 +94,8 @@ async function pasada(notify) {
         w.seen[entry.name] = mtime;
         if (!procesados.has(w.id)) procesados.set(w.id, {});
         procesados.get(w.id)[entry.name] = mtime;
-        notify(`✨ He cogido «${entry.name}» de ${w.from}, lo he procesado y te lo he dejado en ${w.to}/${outName}`);
+        notify(`✨ He cogido «${entry.name}» de ${w.from}, lo he procesado y te lo he dejado en ${w.to}/${outName}`,
+          { id: w.id, from: w.from, to: w.to, fichero: entry.name, salida: outName });
       }
     } catch (e) {
       console.warn('[elffuss] automatización', w.id, e.message);

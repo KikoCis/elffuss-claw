@@ -5,6 +5,10 @@ import { t } from '../i18n.js';
 
 let renderer = () => {};
 export function setRenderer(fn) { renderer = fn; }
+// Quien enseña la app (el visor) se entera de que la que está abierta se ha
+// borrado: antes el visor la seguía enseñando y el modelo la creía abierta.
+let alQuitar = () => {};
+export function setOnRemoved(fn) { alQuitar = fn; }
 
 let current = null; // app abierta en el visualizador (para el contexto del modelo)
 export function currentApp() { return current; }
@@ -40,7 +44,17 @@ export async function listApps() {
 
 export async function removeApp({ name } = {}) {
   await db.del('apps', name);
+  if (current === name) {
+    current = null;
+    try { alQuitar(name); } catch { /* el visor es cosa de la UI */ }
+  }
   return t('appRemoved', { name });
+}
+
+// «Deshacer» de un borrado: vuelve a guardar la app tal cual estaba.
+export async function restoreApp(app) {
+  if (!app?.name || !app.html) throw new Error('Faltan name o html');
+  await db.set('apps', app.name, app);
 }
 
 export async function allApps() { return db.all('apps'); }
