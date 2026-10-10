@@ -711,7 +711,12 @@ export async function deepCreate({ brief, provider, rounds = 1, onProgress = () 
 // autorizada) y a Code (proyecto abierto): ambos entregan un directory handle.
 const TEXT_EXT = new Set(('txt md markdown js mjs cjs ts tsx jsx json html htm css scss sass ' +
   'py rb php go rs java kt swift c h cpp hpp cc cs sh bash zsh yml yaml toml ini cfg conf ' +
-  'xml csv tsv sql vue svelte astro lua r pl pm ex exs erl clj tex org rst gradle properties env').split(' '));
+  'xml csv tsv sql vue svelte astro lua r pl pm ex exs erl clj tex org rst gradle properties').split(' '));
+// Lo que huele a secreto NO se lee, aunque sea texto: Hard Work manda lo leído
+// al cerebro activo, que puede ser un proveedor externo. Antes .env estaba
+// incluido a propósito (y 'env' entre las extensiones de texto).
+const SECRETO = /^\.env(\..*)?$|\.env$|\.(pem|key|p12|pfx|jks|keystore|asc|gpg|kdbx)$|^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|^\.(npmrc|netrc|pgpass|pypirc|htpasswd)$|(^|[._-])(secrets?|credentials?|passwords?|passwd|tokens?)([._-]|$)/i;
+export const pareceSecreto = nombre => SECRETO.test(nombre);
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out', 'target', 'vendor', '.cache', 'coverage', '__pycache__', '.venv', 'venv']);
 
 export async function gatherFolder(rootHandle, { maxBytes = 1.5e6, maxFiles = 400 } = {}) {
@@ -726,7 +731,8 @@ export async function gatherFolder(rootHandle, { maxBytes = 1.5e6, maxFiles = 40
     entries.sort((a, b) => a[0].localeCompare(b[0]));
     for (const [name, handle] of entries) {
       if (bytes >= maxBytes || files >= maxFiles) return;
-      if (name.startsWith('.') && name !== '.env') { if (handle.kind === 'directory') continue; }
+      if (name.startsWith('.') && handle.kind === 'directory') continue;
+      if (handle.kind !== 'directory' && pareceSecreto(name)) continue;
       const path = prefix ? prefix + '/' + name : name;
       if (handle.kind === 'directory') {
         if (SKIP_DIR.has(name)) continue;
