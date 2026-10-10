@@ -63,8 +63,13 @@ rsync -az --delete "${MOTOR[@]}" "${BLOG[@]}" -e "ssh -i $KEY" web/ "$HOST:$DEST
 rsync -az -e "ssh -i $KEY" server/serve.py "$HOST:${ELFFUSS_APPDIR:-~/elffuss}/serve.py"
 ssh -i "$KEY" "$HOST" 'sudo systemctl restart elffuss-proxy'
 
-# anti-caché: versionar assets del index con el commit y sellar el build
+# anti-caché: versionar assets del index con el commit y sellar el build.
+# Con cambios sin commitear en web/ (o ficheros nuevos sin añadir) el sello lleva
+# «-dirty»: lo desplegado NO es ese commit, y la web solo enlaza el sello a
+# GitHub cuando es un commit limpio. Antes se sellaba HEAD tal cual y el enlace
+# habría llevado a un código distinto del que se sirve.
 V=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
+if [ -n "$(git status --porcelain -- web 2>/dev/null)" ]; then V="$V-dirty"; fi
 ssh -i "$KEY" "$HOST" "sed -i 's|href=\"css/\([^\"]*\)\.css\"|href=\"css/\1.css?v=$V\"|g; s|src=\"js/\([^\"]*\)\.js\"|src=\"js/\1.js?v=$V\"|g; s|__BUILD__|$V|g' $DEST/index.html"
 
 echo "✳ desplegado → https://claw.elffuss.com (build $V)"
