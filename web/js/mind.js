@@ -348,7 +348,8 @@ function wireConfig(root) {
       '<div class="cfg-note">' + escHtml(t('mindCfgNote')) + '</div>';
     const x = cfg.querySelector('#cfg-x');
     x.setAttribute('aria-label', t('close'));
-    x.onclick = () => cfg.classList.remove('show');
+    // El foco vuelve a ⚙ (antes se quedaba en <body>, dentro de la Mente modal).
+    x.onclick = () => { cfg.classList.remove('show'); root.querySelector('#mind-config')?.focus(); };
     // Dónde escribe de verdad (en Claw, la primera carpeta autorizada).
     Promise.resolve().then(() => etiquetaAlma()).then(txt => {
       const l = cfg.querySelector('#cfg-dir-label'); if (l && txt) l.textContent = txt;

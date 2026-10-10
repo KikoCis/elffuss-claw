@@ -113,7 +113,11 @@ ok('la carpeta-alma dice dónde está («dentro de «proyecto»»)', /dentro de 
 ok('los colores de perfil tienen nombre', await p.evaluate(() => [...document.querySelectorAll('.cp-color')].every(i => /^Color de /.test(i.getAttribute('aria-label') || ''))));
 
 // ── ▶/⏸: siempre la verdad; Reprogramar no enciende ─────────────────────────
-await p.click('#cfg-x');
+await p.focus('#cfg-x');
+await p.keyboard.press('Enter');
+ok('✕ del panel ⚙ (con Enter) devuelve el foco a ⚙, no a <body>', await hasta(() => p.evaluate(() =>
+  !document.getElementById('mind-cfg').classList.contains('show') && document.activeElement?.id === 'mind-config')),
+  await p.evaluate(() => document.activeElement?.id || document.activeElement?.tagName));
 await p.click('#mind-playstop');
 ok('▶ enciende: el botón pasa a «pausar»', /pausar/.test(await p.locator('#mind-playstop').innerText()));
 await p.click('#mind-playstop');

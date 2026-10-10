@@ -586,11 +586,11 @@ export function tareasCambiaron() { if (tabActiva() === 'tareas') refreshTasks()
 // bóveda se cierra sola: antes seguía ofreciendo «Bloquear ahora» y un secreto
 // revelado se quedaba en claro.
 const VAULT_REVELADO_MS = 30000;   // un secreto a la vista se vuelve a tapar solo
-let vaultOyente = null;
+let vaultOyente = null, vaultRepintado = Promise.resolve();
 const tabActiva = () => document.querySelector('#tabs button.active')?.dataset.tab;
 export async function refreshVault() {
   vaultOyente ||= vault.alBloquear(motivo => {
-    if (tabActiva() === 'vault') refreshVault();
+    if (tabActiva() === 'vault') vaultRepintado = refreshVault();
     if (motivo === 'auto') toast(tr('vaultAutoLocked'));
   });
   const panel = $('panel-vault');
@@ -630,8 +630,15 @@ export async function refreshVault() {
   }
 
   const estado = el('div', 'row between');
+  // Al bloquear el panel se repinta (y el botón desaparece): el foco va a la
+  // contraseña, que es lo siguiente que se usa; antes caía a <body>.
   estado.append(el('span', 'muted', tr('vaultOpenState')),
-    btn(tr('vaultLockNow'), 'ghost', () => { vault.lock(); toast(tr('vaultLockedNow')); }));
+    btn(tr('vaultLockNow'), 'ghost', async () => {
+      vault.lock();                     // el oyente de alBloquear repinta el panel…
+      toast(tr('vaultLockedNow'));
+      await vaultRepintado;             // …y se espera a ese repintado, sin pintar dos veces
+      $('panel-vault').querySelector('#vault-master')?.focus();
+    }));
   panel.appendChild(estado);
 
   const form = el('form', 'row');
@@ -807,11 +814,21 @@ export function modelProgress(p) {
 }
 
 // Mientras carga un cerebro el selector se desactiva: elegir otro a la vez
-// arrancaba una segunda carga en paralelo.
+// arrancaba una segunda carga en paralelo. Un control desactivado pierde el
+// foco (cae a <body>), así que se recuerda y, al terminar, el foco vuelve al
+// selector si nadie lo ha llevado a otra parte mientras tanto.
+let selectorTeniaFoco = false;
 export function modeloCargando(on) {
   const sel = $('model-select');
+  if (on) selectorTeniaFoco = selectorTeniaFoco || document.activeElement === sel;
   sel.disabled = !!on;
   if (on) sel.setAttribute('aria-busy', 'true'); else sel.removeAttribute('aria-busy');
+  if (!on && selectorTeniaFoco) {
+    selectorTeniaFoco = false;
+    if (!document.activeElement || document.activeElement === document.body) {
+      try { sel.focus({ preventScroll: true }); } catch { /* — */ }
+    }
+  }
 }
 
 // ⓘ junto al selector: la ficha del modelo cargado en Hugging Face (un

@@ -4,6 +4,7 @@
 //   · 👁 enseña y vuelve a tapar (aria-pressed); el autobloqueo repinta el panel
 //     y tapa lo revelado; 🗑 pide confirmación con el nombre del secreto.
 //   · Un solo nombre por idioma: «Bóveda» en español.
+//   · «Bloquear ahora» con el teclado deja el foco en la contraseña.
 //
 //   BASE=http://localhost:8743 node tests/ux-boveda.mjs
 import { navegador, contexto, pagina, ok, hasta, espera, avisos, fin, OUT } from './ux-comun.mjs';
@@ -68,6 +69,13 @@ await hasta(() => p.evaluate(() => !!document.getElementById('vault-name')));
 p.__aceptar = true;
 await p.locator('#panel-vault .card', { hasText: 'correo' }).locator('button[aria-label^="Borrar"]').click();
 ok('y si dices que sí, se borra', await hasta(async () => !(await p.locator('#panel-vault .card b').allTextContents()).includes('correo')));
+
+// ── «Bloquear ahora» con el teclado: el foco va a la contraseña, no a <body> ─
+await p.locator('#panel-vault button', { hasText: 'Bloquear ahora' }).focus();
+await p.keyboard.press('Enter');
+ok('«Bloquear ahora» con Enter deja el foco en la contraseña maestra', await hasta(() => p.evaluate(() =>
+  document.activeElement?.id === 'vault-master' && document.querySelectorAll('#panel-vault form').length === 1)),
+  await p.evaluate(() => document.activeElement?.id || document.activeElement?.tagName));
 if (OUT) await p.screenshot({ path: OUT + '/ux-boveda.png' });
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 
