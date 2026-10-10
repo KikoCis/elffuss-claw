@@ -23,6 +23,12 @@ const DEFAULTS = {
   },
   server: {
     kind: 'openai', label: 'Servidor Elffuss (Ornith 9B)', enabled: false,
+    // RETIRADO de la interfaz: el servicio está parado (/v1/models da 404) y,
+    // como el formulario esconde la clave para este proveedor y la ruta ya no es
+    // '/v1', elegirlo fallaba SIEMPRE con «falta la clave de API». Se conserva la
+    // plantilla para volver a ofrecerlo quitando esta marca cuando el servicio
+    // vuelva (y entonces su ruta tiene que quedar exenta de la clave).
+    retirado: true,
     // Apagado: el servicio del modelo (elffuss-lm) está parado. El mismo valor que
     // en Elffuss Code. La ruta /v1 la resolvería nginx en el servidor (no está en
     // este repo). Los nombres anteriores (claw.elffuss.utopiaia.com y
@@ -42,7 +48,10 @@ function load() {
   return out;
 }
 
-export function configs() { return load(); }
+// Los que se ofrecen (sin los retirados).
+export function configs() {
+  return Object.fromEntries(Object.entries(load()).filter(([, c]) => !c.retirado));
+}
 export function get(id) { return load()[id]; }
 
 export function update(id, patch) {
@@ -58,7 +67,7 @@ export function update(id, patch) {
 
 // Externos habilitados → opciones del selector, como ext:<id>.
 export function enabledExternals() {
-  return Object.entries(load())
+  return Object.entries(configs())
     .filter(([, c]) => c.enabled)
     .map(([id, c]) => ({ id: 'ext:' + id, label: c.label + (id === 'ollama' || c.baseURL.startsWith('http://localhost') ? ' · local' : ' · nube') }));
 }
