@@ -180,8 +180,18 @@ export async function unload() {
   engine = null; conversation = null; sentCount = 0;
 }
 
-export async function chat(history, system, onToken = () => {}) {
+// El 4º argumento de chat() puede ser la señal misma o un objeto que la lleva
+// dentro, { signal, onPrefill }, que es lo que pasa el agente (rlm.js pasa la
+// señal sola). Se aceptan las dos formas, como en el motor propio: se reconoce
+// por la forma y no por la clase, igual que allí.
+const senalDe = x => (x && typeof x.aborted === 'boolean') ? x
+  : (x && x.signal && typeof x.signal.aborted === 'boolean') ? x.signal : null;
+
+// `signal` (opcional): parar el turno. Ver «PARAR» más abajo.
+export async function chat(history, system, onToken = () => {}, signal = null) {
+  signal = senalDe(signal);
   if (!engine) throw new Error('Modelo no cargado');
+  if (signal?.aborted) return '';
   // Comparar solo la parte estática del prompt: el CONTEXTO AHORA va al final
   // y cambia cada turno — recrear la conversación tiraría el KV-cache.
   const sysKey = system.slice(0, 200);
@@ -214,16 +224,27 @@ export async function chat(history, system, onToken = () => {}) {
       `· usados ${antes} · se mandan ${text.length} caracteres (${largo} tenía) · ${charsPorToken} caracteres/token`);
   }
 
+  // PARAR: `conversation.cancel()` (existe en la versión fijada, 0.15.0) corta
+  // la generación EN EL ACTO, también durante el prefill, cuando aún no ha
+  // llegado ningún trozo con el que salir del bucle. Además se sale del bucle
+  // en el trozo siguiente (como en Elffuss Code), y lo generado hasta ahí se
+  // da por enviado: la conversación de LiteRT ya lo tiene en su caché. Parar no
+  // es un error: no se reintenta ni se lanza, se devuelve lo que hubiera.
+  const alAbortar = () => { try { conversation?.cancel?.(); } catch { /* ya no genera */ } };
+  signal?.addEventListener?.('abort', alAbortar, { once: true });
   let out = '';
   const enviar = async t => {
     for await (const chunk of conversation.sendMessageStreaming(t)) {
+      if (signal?.aborted) break;
       for (const item of (chunk.content || []))
         if (item.type === 'text') { out += item.text; onToken(item.text); }
     }
   };
   try {
+    if (signal?.aborted) return '';
     await enviar(text);
   } catch (e) {
+    if (signal?.aborted) { sentCount = history.length; return out.trim(); }
     // Si falla ANTES de escribir nada, lo normal es que no cupiera (la cuenta de
     // caracteres por token se quedó corta): se rehace compactada, se recorta a la
     // mitad de lo libre y se intenta UNA vez más. Si ya había escrito algo,
@@ -235,8 +256,10 @@ export async function chat(history, system, onToken = () => {}) {
     antes = await tokensUsados();
     text = ajustarAlContexto(nuevos, libreEnCaracteres(antes, 0.5));
     console.warn(`[litert] reintento: usados ${antes} · se mandan ${text.length} caracteres`);
-    await enviar(text);
-  }
+    if (signal?.aborted) return '';
+    try { await enviar(text); }
+    catch (e2) { if (signal?.aborted) { sentCount = history.length; return out.trim(); } throw e2; }
+  } finally { signal?.removeEventListener?.('abort', alAbortar); }
   // Se marca como enviado DESPUÉS de enviarlo. Antes se marcaba al principio, y
   // un envío fallido dejaba el mensaje por enviado sin haber llegado nunca.
   sentCount = history.length;
