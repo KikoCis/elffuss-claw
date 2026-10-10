@@ -1045,17 +1045,23 @@ setInterval(async () => {
   }
 }, 15000);
 
-// Las tareas vencidas se auto-envían como prompts al agente.
-tasks.startScheduler(t => {
-  ui.toast('Tarea programada: ' + t.prompt);
-  send('[tarea programada] ' + t.prompt);
-});
+// Las tareas vencidas se auto-envían como prompts al agente. El aviso lleva a
+// la tarea (#/tareas/<id>) y el panel abierto se repinta (se quedaba en ⏳).
+function lanzarTarea(tarea) {
+  ui.toast(t('taskFired', { prompt: tarea.prompt }), { accion: { label: t('see'), run: () => rutas.ir('tareas', tarea.id) } });
+  ui.tareasCambiaron();
+  send('[tarea programada] ' + tarea.prompt);
+}
+tasks.startScheduler(lanzarTarea);
+ui.setOnRunTask(lanzarTarea);      // «Ejecutar ahora» desde el panel
 
 // Automatizaciones de carpetas: dejar un archivo en la de origen → Elffuss lo
-// procesa y lo deja en la de destino, avisando por chat.
-watch.startWatcher(msg => {
-  ui.toast(msg);
-  ui.addMsg('assistant', msg);
+// procesa y lo deja en la de destino, avisando por chat con enlaces a la
+// carpeta y a la automatización.
+watch.startWatcher((msg, w) => {
+  ui.toast(msg, w ? { accion: { label: t('seeFolder'), run: () => rutas.ir('permisos', w.to) } } : undefined);
+  ui.addMsg('assistant', w ? `${msg}\n\n[${t('watchSee')}](${rutas.href('tareas', 'automatizaciones')})` : msg);
+  ui.tareasCambiaron();
 });
 
 // ── Espacio de trabajo: qué se puede guardar en tu disco / ver / borrar ──

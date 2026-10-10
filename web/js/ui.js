@@ -3,7 +3,7 @@ import * as db from './db.js';
 import * as perms from './permissions.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
-import { fs, apps, vault, tasks } from './tools/index.js';
+import { fs, apps, vault, tasks, watch } from './tools/index.js';
 import { renderMarkdown, linkify } from './md.js';
 import * as rutas from './rutas.js';
 import { t as tr, uiLang } from './i18n.js';
@@ -489,31 +489,92 @@ export async function refreshApps() {
       // Por apps.open(): así la app abierta es ESTA también para el modelo
       // (CONTEXTO AHORA), no solo en pantalla.
       btn(tr('open'), 'primary', () => { aperturaManualT = Date.now(); apps.open({ name: app.name }).catch(e => toast('⚠️ ' + e.message)); }),
-      btn('🗑', 'ghost', async () => { await apps.removeApp({ name: app.name }); refreshApps(); }),
+      botonBorrarApp(app),
     ));
   }
+}
+// 🗑 con nombre propio y «Deshacer» (borraba al instante, sin vuelta atrás). Si
+// era la app abierta, el visor se vacía (ver apps.setOnRemoved en init).
+function botonBorrarApp(app) {
+  const b = btn('🗑', 'ghost', async () => {
+    await apps.removeApp({ name: app.name });
+    refreshApps();
+    toast(tr('appRemoved', { name: app.name }), { accion: { label: tr('undo'), run: async () => {
+      try { await apps.restoreApp(app); refreshApps(); } catch (e) { toast('⚠️ ' + e.message); }
+    } } });
+  });
+  b.title = tr('appDelL', { name: app.name });
+  b.setAttribute('aria-label', tr('appDelL', { name: app.name }));
+  return b;
+}
+// El visor deja de enseñar una app borrada.
+function vaciarVisor() {
+  const f = $('appframe');
+  f.hidden = true;
+  f.srcdoc = '';
+  f.title = tr('appFrameEmpty');
+  $('vista-empty').hidden = false;
+  if (/^#\/apps\//.test(location.hash)) rutas.reflejar('apps');
 }
 
 // ---------- panel tareas ----------
 export async function refreshTasks() {
-  const list = (await db.all('tasks')).sort((a, b) => a.when - b.when);
+  const [list, watches] = await Promise.all([
+    db.all('tasks').then(l => l.sort((a, b) => a.when - b.when)),
+    watch.allWatches().catch(() => []),
+  ]);
   const panel = $('panel-tareas');
   panel.replaceChildren(el('h3', null, tr('tasksTitle')));
-  if (!list.length) {
-    panel.appendChild(el('p', 'muted', tr('tasksEmpty')));
-    return;
-  }
+  if (!list.length) panel.appendChild(el('p', 'muted', tr('tasksEmpty')));
   for (const t of list) {
-    const c = card(
-      el('span', null, t.done ? '✅' : '⏳'),
-      el('b', null, t.prompt),
-      el('span', 'muted', new Date(t.when).toLocaleString(uiLang())),
-      btn('🗑', 'ghost', async () => { await tasks.removeTask({ id: t.id }); refreshTasks(); }),
-    );
+    const estado = el('span', null, t.done ? '✅' : '⏳');
+    estado.title = t.done ? tr('taskDone') : tr('taskPending');
+    estado.setAttribute('aria-label', estado.title);
+    const id = el('code', null, t.id);        // el id que nombran los avisos del chat
+    id.title = tr('taskId');
+    const fila = [estado, el('b', null, t.prompt), el('span', 'muted', new Date(t.when).toLocaleString(uiLang())), id];
+    if (!t.done) {
+      const ya = btn(tr('taskRunNow'), 'ghost', async () => {
+        ya.disabled = true;
+        const hecha = await tasks.marcarHecha(t.id);
+        if (hecha) onRunTaskCb(hecha);
+        refreshTasks();
+      });
+      ya.setAttribute('aria-label', tr('taskRunNowL', { prompt: t.prompt }));
+      fila.push(ya);
+    }
+    const borrar = btn('🗑', 'ghost', async () => { await tasks.removeTask({ id: t.id }); toast(tr('taskDeleted', { id: t.id })); refreshTasks(); });
+    borrar.title = tr('taskDelL', { prompt: t.prompt });
+    borrar.setAttribute('aria-label', tr('taskDelL', { prompt: t.prompt }));
+    fila.push(borrar);
+    const c = card(...fila);
     c.dataset.ruta = t.id;          // #/tareas/<id>
     panel.appendChild(c);
   }
+  // Automatizaciones de carpetas (fs.watch): antes no tenían interfaz; solo se
+  // podían ver o quitar pidiéndoselo al chat.
+  const sec = el('section', 'automatizaciones');
+  sec.dataset.ruta = 'automatizaciones';    // #/tareas/automatizaciones
+  sec.appendChild(el('h3', null, tr('watchTitle')));
+  if (!watches.length) sec.appendChild(el('p', 'muted', tr('watchEmpty')));
+  for (const w of watches) {
+    const x = btn('✕', 'ghost', async () => { await watch.removeWatch({ id: w.id }); toast(tr('watchRemoved', { id: w.id })); refreshTasks(); });
+    x.title = tr('watchDelL', { from: w.from, to: w.to });
+    x.setAttribute('aria-label', x.title);
+    const c = card(el('span', null, '👁'), el('b', null, `${w.from} → ${w.to}`),
+      el('span', 'muted', `${w.pattern || '*'} · ${tr('watchSeen', { n: Object.keys(w.seen || {}).length })}`), el('code', null, w.id), x);
+    c.dataset.ruta = w.id;
+    sec.appendChild(c);
+  }
+  panel.appendChild(sec);
 }
+// El kernel manda a la cola una tarea lanzada a mano («Ejecutar ahora»).
+let onRunTaskCb = () => {};
+export function setOnRunTask(fn) { onRunTaskCb = fn; }
+// Algo ha cambiado en tareas o automatizaciones (una tarea se lanzó, una
+// automatización procesó un fichero): si el panel está abierto, se repinta. Se
+// quedaba con ⏳ después de que la tarea se hubiera lanzado.
+export function tareasCambiaron() { if (tabActiva() === 'tareas') refreshTasks(); }
 
 // ---------- panel vault ----------
 // Lo que haces aquí lo haces tú: no pasa por el permiso «Bóveda», que es el del
@@ -646,15 +707,30 @@ export async function refreshPerms() {
   const folders = await fs.folders();
   if (folders.length) {
     panel.appendChild(el('h3', null, tr('foldersTitle')));
+    // Dónde escribe la Mente: en la primera carpeta (ceo-adapter.js).
+    panel.appendChild(el('p', 'muted', tr('folderSoulNote', { name: folders[0] })));
     for (const f of folders) {
-      const c = card(
-        el('b', null, '📁 ' + f),
-        btn(tr('remove'), 'ghost', async () => { await db.del('fs', f); refreshPerms(); }),
-      );
+      const quitar = btn(tr('remove'), 'ghost', () => quitarCarpeta(f, folders));
+      quitar.setAttribute('aria-label', tr('folderRemoveL', { name: f }));
+      const c = card(el('b', null, '📁 ' + f), quitar);
       c.dataset.ruta = f;           // #/permisos/<carpeta>
       panel.appendChild(c);
     }
   }
+}
+// Quitar una carpeta pide confirmación y dice qué arrastra: las automatizaciones
+// que la usan (que si no seguían sondeándola y fallando en silencio) y, si es la
+// primera, que la Mente pasará a escribir en la siguiente.
+async function quitarCarpeta(f, folders) {
+  const dependientes = (await watch.allWatches().catch(() => [])).filter(w => w.from === f || w.to === f);
+  let txt = tr('folderRemoveConfirm', { name: f });
+  if (dependientes.length) txt += '\n\n' + tr('folderRemoveWatches', { list: dependientes.map(w => `${w.from} → ${w.to}`).join(', ') });
+  if (folders[0] === f) txt += '\n\n' + (folders[1] ? tr('folderRemoveSoulNext', { next: folders[1] }) : tr('folderRemoveSoulNone'));
+  if (!window.confirm(txt)) return;
+  for (const w of dependientes) await watch.removeWatch({ id: w.id }).catch(() => {});
+  await db.del('fs', f);
+  toast(tr('folderRemoved', { name: f }) + (dependientes.length ? ' · ' + tr('folderRemovedWatches', { n: dependientes.length }) : ''));
+  refreshPerms();
 }
 
 // ---------- progreso y estado del modelo ----------
@@ -1238,6 +1314,7 @@ export function setStopping() {
 export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChanged }) {
   perms.setAsker(askPermission);
   apps.setRenderer((name, html) => renderApp(name, html, { ruta: true }));
+  apps.setOnRemoved(vaciarVisor);
   onSettingsChangedCb = onSettingsChanged || (() => {});
   // al instalar una skill: mensaje «cómo usarla» en el chat + volver al chat en móvil
   onSkillInstalledCb = entry => {
