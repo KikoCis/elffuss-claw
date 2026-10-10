@@ -32,7 +32,10 @@ async function post(kind, message, opts = {}) {
       body: JSON.stringify({
         app: appName, kind, message: String(message ?? '').slice(0, 2000),
         stack: String(opts.stack || '').slice(0, 4000),
-        url: location.href, userAgent: navigator.userAgent,
+        // Sin el fragmento (#/…): la app guarda ahí dónde estás (rutas.js) —
+        // un nombre de app, un id de tarea, una ruta dentro de tu carpeta— y
+        // eso no tiene por qué viajar en un informe de error.
+        url: location.origin + location.pathname + location.search, userAgent: navigator.userAgent,
         extra: String(opts.extra || '').slice(0, 2000),
       }),
     });
