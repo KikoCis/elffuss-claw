@@ -6,8 +6,11 @@
 //     siguiente mensaje (antes la conversación seguía en memoria y se volvía a
 //     guardar entera), y es TODO: claves de API, permisos, carpetas, sus
 //     automatizaciones, la bóveda (el aviso la nombra) y los ajustes.
+//   · 🧹 con un mensaje en cola: «Deshacer» lo devuelve; y si ya habías empezado
+//     otra conversación, no la tira: se intercambian.
 //
 //   BASE=http://localhost:8743 node tests/ux-borrar.mjs
+import { createServer } from 'node:http';
 import { navegador, contexto, pagina, ok, hasta, espera, escribir, reposo, avisos, fin, kv } from './ux-comun.mjs';
 
 const b = await navegador();
@@ -108,6 +111,67 @@ ok('apps y memoria borradas, y el historial de ↑/↓ empieza de cero', resto.a
     restos.length === 0, JSON.stringify(queda.ls));
   ok('borrar todo no deja errores de página', errW.length === 0, errW.slice(0, 3).join(' | '));
   await c3.close();
+}
+
+// ── 🧹 con trabajo pendiente, y «Deshacer» con una conversación nueva ya empezada ─
+// Un cerebro de verdad (servidor de mentira local) para tener un turno en marcha
+// y un mensaje esperando en la cola cuando se pulsa 🧹.
+{
+  const peticiones = [];
+  const servidor = createServer((req, res) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type, authorization', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+    let cuerpo = '';
+    req.on('data', d => { cuerpo += d; });
+    req.on('end', () => {
+      let msgs = [];
+      try { msgs = JSON.parse(cuerpo).messages || []; } catch { /* */ }
+      const ultimo = msgs.filter(m => m.role === 'user').at(-1)?.content || '';
+      peticiones.push(ultimo);
+      const responder = () => {
+        res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream' });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'respuesta a ' + ultimo.slice(0, 30) } }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      };
+      if (/LENTO/.test(ultimo)) setTimeout(responder, 4000); else responder();
+    });
+  });
+  await new Promise(r => servidor.listen(0, '127.0.0.1', r));
+  const puerto = servidor.address().port;
+  const { ctx: c4 } = await contexto(b, {
+    model: 'ext:ollama',
+    extraInit: { 'elffuss.providers': JSON.stringify({ ollama: { enabled: true, baseURL: `http://127.0.0.1:${puerto}/v1`, model: 'falso', apiKey: 'ollama' } }) },
+  });
+  const { p: q } = await pagina(c4);
+  const listoQ = () => q.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 });
+  const trasRecargar = async accion => { await Promise.all([q.waitForNavigation({ waitUntil: 'domcontentloaded' }), accion()]); await listoQ(); };
+  const avisoQ = texto => q.locator('#toasts .toast', { hasText: texto });
+  await hasta(() => q.evaluate(() => document.getElementById('model-select').value === 'ext:ollama'), { veces: 200 });
+  await escribir(q, 'hola VIEJO-HILO');
+  await reposo(q);
+  await escribir(q, 'LENTO en marcha');
+  await hasta(() => peticiones.some(t => /LENTO en marcha/.test(t)));
+  await escribir(q, 'PENDIENTE-EN-COLA dos');
+  ok('con un turno en marcha, el segundo mensaje espera en la cola', (await kv(q, 'queue'))?.some(x => /PENDIENTE-EN-COLA/.test(x.text || x)));
+  await trasRecargar(() => q.click('#btn-clear'));
+  await hasta(async () => await avisoQ('Conversación nueva').count() === 1);
+  await escribir(q, 'NUEVO-HILO importante');
+  await reposo(q);
+  const n = peticiones.length;
+  await trasRecargar(() => avisoQ('Conversación nueva').locator('.toast-accion').click());
+  ok('«Deshacer» recupera la conversación anterior', await hasta(async () => (await q.locator('#log').innerText()).includes('VIEJO-HILO')));
+  ok('…y el mensaje que esperaba en la cola vuelve y se procesa', await hasta(() =>
+    peticiones.slice(n).some(t => /PENDIENTE-EN-COLA/.test(t)), { veces: 400 }), JSON.stringify(peticiones.slice(n)));
+  ok('la conversación empezada después NO se pierde: el aviso ofrece volver a ella', await hasta(async () =>
+    await avisoQ('La que empezaste después').locator('.toast-accion').count() === 1));
+  const copia = await kv(q, 'historyBackup');
+  ok('…y está guardada como copia', JSON.stringify(copia || '').includes('NUEVO-HILO'));
+  await reposo(q);
+  await trasRecargar(() => avisoQ('La que empezaste después').locator('.toast-accion').click());
+  ok('«Deshacer» otra vez vuelve a la conversación nueva', await hasta(async () => (await q.locator('#log').innerText()).includes('NUEVO-HILO')));
+  await c4.close();
+  servidor.close();
 }
 
 // ── en inglés, el nombre de 🧹 y el aviso de «Borrar todo» ──────────────────

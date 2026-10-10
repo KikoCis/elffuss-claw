@@ -5,6 +5,7 @@
 //   · Cuenta lo que pasó: rondas de mejora reales, «solo el borrador» si la
 //     reescritura no salió, y el error si la app no se pudo guardar.
 //   · Con carpeta, no lee los ficheros que parecen secretos (.env).
+//   · Un mensaje de Hard Work que espera en la cola lo sigue siendo tras recargar.
 //
 //   BASE=http://localhost:8743 node tests/ux-hardwork.mjs
 import { createServer } from 'node:http';
@@ -29,10 +30,14 @@ const servidor = createServer((req, res) => {
     else if (/mejorando tu propia app/.test(sistema)) out = reescrituraMala ? 'no sé hacerlo' : HTML('MEJORADA');
     else if (/creando una app web/.test(sistema)) out = HTML('BORRADOR');
     else if (/analista|sintetizador/.test(sistema)) out = 'resumen de la parte';
-    res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream' });
-    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: out } }] })}\n\n`);
-    res.write('data: [DONE]\n\n');
-    res.end();
+    const responder = () => {
+      res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream' });
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: out } }] })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    };
+    // «LENTO»: un turno que tarda, para que lo siguiente espere en la cola.
+    if (/LENTO/.test(usuario.split('\n').at(-1) || '')) setTimeout(responder, 3000); else responder();
   });
 });
 await new Promise(r => servidor.listen(0, '127.0.0.1', r));
@@ -89,6 +94,25 @@ await hasta(() => p.evaluate(() => document.getElementById('perm-dialog').open))
 await p.keyboard.press('Escape');                 // denegar el permiso de Apps
 ok('si la app no se puede guardar, lo dice (y no «Listo»)', await hasta(async () =>
   /no pude guardar la app/.test(await p.locator('#log .msg.assistant.err').last().innerText().catch(() => ''))));
+await reposo(p);
+
+// ── un mensaje de Hard Work que espera en la cola sigue siéndolo tras recargar ─
+// (antes la cola guardaba solo el texto y, al recargar, iba como chat normal)
+await espera(300);
+if (await p.evaluate(() => document.getElementById('perm-dialog').open)) await p.click('#perm-deny');
+await escribir(p, 'LENTO turno normal');
+await hasta(() => peticiones.some(x => /LENTO turno normal/.test(x.usuario)));
+if (await pulsado() !== 'true') await hw.click();
+await escribir(p, 'hazme un juego de naves EN-COLA');
+const cola = await p.evaluate(async () => (await import('/js/db.js')).get('kv', 'queue'));
+ok('el mensaje de Hard Work se guarda en la cola CON su elección', Array.isArray(cola)
+  && cola.some(x => /EN-COLA/.test(x.text) && x.hard === true), JSON.stringify(cola));
+desde = peticiones.length;
+await p.reload({ waitUntil: 'domcontentloaded' });
+ok('tras recargar, va por Hard Work (no como chat normal)', await hasta(() =>
+  peticiones.slice(desde).some(x => /creando una app web/.test(x.sistema) && /EN-COLA/.test(x.usuario)), { veces: 400 }),
+  JSON.stringify(peticiones.slice(desde).map(x => x.sistema.slice(0, 40) + ' | ' + x.usuario.slice(-30))));
+ok('…y nunca como turno normal', !peticiones.slice(desde).some(x => /^Eres Elffuss: un sistema operativo/.test(x.sistema) && /EN-COLA/.test(x.usuario.split('\n').at(-1))));
 await reposo(p);
 
 // ── con carpeta: .env no se lee ─────────────────────────────────────────────

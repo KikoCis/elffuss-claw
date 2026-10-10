@@ -308,15 +308,22 @@ let pumping = false;
 let bootReady;
 const bootPromise = new Promise(r => { bootReady = r; });
 
-// Se guarda {id, text, intentos} y no solo el texto. El contador es lo que
-// impide el bucle de cuelgue: si un turno se lleva la pestaña por delante —pasa
-// con el modelo grande y poca memoria— al reabrir se reanuda y la vuelve a
-// tumbar, y no hay forma de salir ni cerrando, porque el mensaje sigue en la
+// Se guarda {id, text, intentos, hard} y no solo el texto. El contador es lo
+// que impide el bucle de cuelgue: si un turno se lleva la pestaña por delante
+// —pasa con el modelo grande y poca memoria— al reabrir se reanuda y la vuelve
+// a tumbar, y no hay forma de salir ni cerrando, porque el mensaje sigue en la
 // cola. El id es lo que distingue un mensaje de otro igual (ver restoreQueue).
+// `hard` es la elección de Hard Work, que va CON el mensaje (ver send) también
+// tras recargar: guardando solo el texto, un mensaje de Hard Work que esperaba
+// detrás de otro turno se procesaba como chat normal al recargar.
 // Las colas guardadas por versiones anteriores son de strings sueltos o sin
 // id; restoreQueue las sigue aceptando.
 const persistQueue = () =>
-  db.set('kv', 'queue', queue.map(q => ({ id: q.id, text: q.text, intentos: q.intentos || 0 }))).catch(() => {});
+  db.set('kv', 'queue', queue.map(paraGuardar)).catch(() => {});
+const paraGuardar = q => ({ id: q.id, text: q.text, intentos: q.intentos || 0, hard: !!q.hard });
+// Lo pendiente ahora mismo (el turno en marcha y lo que espera detrás), en el
+// formato de la cola guardada.
+const pendientesAhora = () => queue.map(paraGuardar);
 const MAX_INTENTOS = 2;
 const nuevoId = () => (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 
@@ -576,8 +583,8 @@ async function processHardWork(question, signal, epoca, id = null) {
 async function restoreQueue() {
   let pending = await db.get('kv', 'queue').catch(() => null);
   if (!pending?.length) return;
-  // Compatibilidad: lo guardado por la versión anterior son strings sueltos.
-  pending = pending.map(x => (typeof x === 'string' ? { text: x, intentos: 0 } : x));
+  // Compatibilidad: lo guardado por versiones anteriores son strings sueltos.
+  pending = pending.map(x => (typeof x === 'string' ? { text: x, intentos: 0 } : x)).filter(x => typeof x?.text === 'string');
   const lastDone = await db.get('kv', 'lastDone').catch(() => null);
   // ¿El primero ya se procesó? Se reconoce por su id y no por el texto: antes,
   // reenviar lo mismo que acababas de parar —el reintento natural— y recargar a
@@ -592,7 +599,7 @@ async function restoreQueue() {
   if (!pending.length) { db.set('kv', 'queue', []).catch(() => {}); return; }
   for (const it of pending) {
     const el = ui.addMsg('user queued', it.text);
-    queue.push({ id: it.id || nuevoId(), text: it.text, intentos: it.intentos || 0, el });
+    queue.push({ id: it.id || nuevoId(), text: it.text, intentos: it.intentos || 0, el, hard: !!it.hard });
   }
   ui.toast(`${pending.length} mensaje(s) pendientes recuperados — los proceso en cuanto cargue el cerebro.`);
   pump();
@@ -673,13 +680,21 @@ function avisoPendiente() {
 // 🧹 Nueva conversación. Sin confirmación, pero con «Deshacer»: la conversación
 // que se va se guarda aparte (kv/historyBackup) y, tras recargar, un aviso
 // ofrece recuperarla. Esa copia vive hasta la siguiente carga de la página.
+//
+// La copia lleva también lo PENDIENTE (el turno que se paró y lo que esperaba
+// en la cola): antes «Deshacer» devolvía solo el histórico y un mensaje en cola
+// se perdía para siempre. Se lee antes de parar, porque parar vacía la cola.
+// Formato: { history, queue }; una copia antigua era solo el array del histórico.
+const leerCopia = x => Array.isArray(x) ? { history: x, queue: [] }
+  : x && Array.isArray(x.history) ? { history: x.history, queue: Array.isArray(x.queue) ? x.queue : [] } : null;
 async function nuevaConversacion() {
   const boton = document.getElementById('btn-clear');
   if (boton?.getAttribute('aria-busy') === 'true') return;   // ya se está borrando
+  const pendientes = pendientesAhora();
   await pararParaBorrar({ boton, aviso: t('clearing') });
   const actual = await db.get('kv', 'history').catch(() => null);
-  if (actual?.length) {
-    await db.set('kv', 'historyBackup', actual).catch(() => {});
+  if (actual?.length || pendientes.length) {
+    await db.set('kv', 'historyBackup', { history: actual || [], queue: pendientes }).catch(() => {});
     avisarTrasRecargar({ tipo: 'limpiado' });
   }
   await db.del('kv', 'history').catch(() => {});
@@ -687,13 +702,30 @@ async function nuevaConversacion() {
   agent.history = [];
   recargar(boton);
 }
+// «Deshacer» no tira lo que hayas empezado DESPUÉS de 🧹: antes lo sustituía
+// en silencio. Si hay conversación nueva (o algo pendiente), las dos se
+// intercambian —la nueva pasa a ser la copia— y el aviso tras recargar permite
+// volver a ella.
 async function deshacerNuevaConversacion() {
-  const copia = await db.get('kv', 'historyBackup').catch(() => null);
-  if (!copia?.length) { ui.toast(t('undoGone')); return; }
+  const copia = leerCopia(await db.get('kv', 'historyBackup').catch(() => null));
+  if (!copia || (!copia.history.length && !copia.queue.length)) { ui.toast(t('undoGone')); return; }
+  const pendientes = pendientesAhora();
   await pararParaBorrar();
-  await db.set('kv', 'history', copia).catch(() => {});
-  await db.del('kv', 'historyBackup').catch(() => {});
-  await db.del('kv', 'queue').catch(() => {});
+  const nueva = await db.get('kv', 'history').catch(() => null);
+  if (nueva?.length || pendientes.length) {
+    await db.set('kv', 'historyBackup', { history: nueva || [], queue: pendientes }).catch(() => {});
+    avisarTrasRecargar({ tipo: 'intercambiado' });
+  } else {
+    await db.del('kv', 'historyBackup').catch(() => {});
+  }
+  if (copia.history.length) await db.set('kv', 'history', copia.history).catch(() => {});
+  else await db.del('kv', 'history').catch(() => {});
+  if (copia.queue.length) {
+    await db.set('kv', 'queue', copia.queue).catch(() => {});
+    await db.del('kv', 'lastDone').catch(() => {});   // que restoreQueue no descarte el primero por error
+  } else {
+    await db.del('kv', 'queue').catch(() => {});
+  }
   recargar();
 }
 document.getElementById('btn-clear').addEventListener('click', () => nuevaConversacion());
@@ -905,6 +937,9 @@ const avisoAlCargar = avisoPendiente();
 restoreHistory().then(restoreQueue).then(() => {
   if (avisoAlCargar?.tipo === 'limpiado') {
     ui.toast(t('chatCleared'), { accion: { label: t('undo'), run: deshacerNuevaConversacion } });
+  } else if (avisoAlCargar?.tipo === 'intercambiado') {
+    // «Deshacer» con una conversación nueva ya empezada: esa queda guardada.
+    ui.toast(t('chatSwapped'), { accion: { label: t('undo'), run: deshacerNuevaConversacion } });
   } else {
     // Sin el aviso, ya no hay nada que deshacer: la copia se va.
     db.del('kv', 'historyBackup').catch(() => {});
