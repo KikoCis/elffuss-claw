@@ -308,6 +308,15 @@ main {
 .card code { background: var(--bg); padding: 2px 8px; border-radius: 6px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
 .card.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .card.col b { flex: none; }
+/* Skills: enlaces a repos y SKILL.md, la lista de un repo dentro de su tarjeta y
+   el texto que se le da al modelo */
+.repo-link { color: var(--accent2); font-size: .74rem; text-decoration: none; white-space: nowrap; }
+.repo-link:hover { text-decoration: underline; }
+.repo-skills { display: flex; flex-direction: column; gap: 6px; }
+.repo-skills[hidden] { display: none; }
+.repo-skills .card { margin-bottom: 0; background: var(--bg2); }
+.skill-text { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; font-size: .76rem; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; }
+.card details summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
 .row.between { justify-content: space-between; align-items: center; }
 .field { display: flex; flex-direction: column; gap: 3px; }
 .field .muted { font-size: .74rem; }

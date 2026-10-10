@@ -429,6 +429,7 @@ function resaltar(seccion, detalle) {
     if (!el) { if (n < 20) setTimeout(() => tryIt(n + 1), 50); return; }
     panel.querySelectorAll('.resaltado').forEach(e => e.classList.remove('resaltado'));
     el.classList.add('resaltado');
+    el.querySelector('details')?.setAttribute('open', '');   // p. ej. el texto de una skill
     if (!el.hasAttribute('tabindex') && !/^(BUTTON|A|INPUT|DETAILS|SUMMARY)$/.test(el.tagName)) el.tabIndex = -1;
     el.scrollIntoView({ block: 'nearest' });
     try { el.focus({ preventScroll: true }); } catch { /* — */ }
@@ -980,56 +981,153 @@ export function refreshSettings() {
   panel.appendChild(el('p', 'muted', tr('skillsTabHint')));
 }
 
+// Dos secciones que se repintan solas: lo instalado (con su contador) y las
+// fuentes. Antes «Quitar» y «Añadir repo» llamaban a refreshSettings() —el panel
+// de AJUSTES— y aquí no cambiaba nada hasta cambiar de pestaña; «Instalar» no
+// tocaba el contador; «Explorar» añadía la lista al final del panel, una copia
+// más por clic.
 async function renderSkills(panel) {
-  const inst = skills.installed();
-  panel.appendChild(el('div', 'muted', tr('installedN', { n: inst.length })));
-  for (const s of inst) {
-    const c = el('div', 'card');
-    c.dataset.ruta = s.name;        // #/skills/<nombre>
-    c.append(el('b', null, s.name), el('span', 'muted', s.repo || 'local'),
-      btn(tr('remove'), 'ghost', async () => { await skills.remove(s.name); refreshSettings(); }));
-    panel.appendChild(c);
-  }
-  const srcs = await skills.sources();
-  for (const src of srcs) {
-    const c = el('div', 'card');
-    const link = document.createElement('a');
-    link.href = 'https://github.com/' + src.repo; link.target = '_blank'; link.textContent = src.repo + ' ↗';
-    link.style.cssText = 'color:var(--accent2);font-size:.74rem;text-decoration:none';
-    c.append(el('b', null, src.label), link,
-      btn('Explorar', 'primary', () => browseSkillRepo(panel, src.repo)));
-    panel.appendChild(c);
-  }
-  const row = el('div', 'row');
-  const inp = el('input'); inp.placeholder = tr('repoPh');
-  row.append(inp, btn(tr('addRepo'), 'primary', async () => {
-    try { await skills.addSource(inp.value); refreshSettings(); } catch (e) { toast('⚠️ ' + e.message); }
-  }));
-  panel.appendChild(row);
+  const instaladas = el('section', 'skills-instaladas');
+  const fuentes = el('section', 'skills-fuentes');
+  panel.append(instaladas, fuentes);
+  pintarInstaladas(instaladas);
+  await pintarFuentes(fuentes, instaladas);
 }
 
-async function browseSkillRepo(panel, repo) {
-  const box = el('div');
-  box.appendChild(el('div', 'muted', tr('loadingRepo', { repo })));
-  panel.appendChild(box);
+// La skill instalada desde un repo enlaza a su SKILL.md; todas dejan ver lo
+// que se inyecta al modelo (el panel lo prometía y no había forma de verlo).
+const enlaceSkillMd = (repo, path, branch = 'HEAD') => {
+  const a = document.createElement('a');
+  a.href = `https://github.com/${repo}/blob/${encodeURIComponent(branch)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.className = 'repo-link';
+  a.textContent = 'SKILL.md ↗';
+  return a;
+};
+function pintarInstaladas(box) {
+  const inst = skills.installed();
+  box.replaceChildren(el('div', 'muted', tr('installedN', { n: inst.length })));
+  for (const s of inst) {
+    const c = el('div', 'card col');
+    c.dataset.ruta = s.name;        // #/skills/<nombre>
+    const fila = el('div', 'row between');
+    const desdeRepo = s.repo && s.path && !String(s.path).startsWith('local/');
+    const origen = desdeRepo ? enlaceSkillMd(s.repo, s.path) : el('span', 'muted', s.repo || 'local');
+    const quitar = btn(tr('remove'), 'ghost', async () => {
+      await skills.remove(s.name);
+      pintarInstaladas(box);
+      toast(tr('skillRemoved', { name: s.name }), { accion: { label: tr('undo'), run: async () => {
+        try { await skills.install(s); pintarInstaladas(box); } catch (e) { toast('⚠️ ' + e.message); }
+      } } });
+    });
+    quitar.setAttribute('aria-label', tr('skillRemoveL', { name: s.name }));
+    fila.append(el('b', null, s.name), el('span', 'muted', desdeRepo ? s.repo : ''), origen, quitar);
+    const ver = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = tr('skillSeeText');
+    const pre = el('pre', 'skill-text', [s.description, s.content].filter(Boolean).join('\n\n'));
+    ver.append(sum, pre);
+    c.append(fila, ver);
+    box.appendChild(c);
+  }
+}
+
+async function pintarFuentes(box, instaladas) {
+  const srcs = await skills.sources();
+  box.replaceChildren();
+  for (const src of srcs) {
+    const c = el('div', 'card col');
+    c.dataset.ruta = 'repo:' + src.repo;
+    const fila = el('div', 'row between');
+    const link = document.createElement('a');
+    link.href = 'https://github.com/' + src.repo;
+    link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.className = 'repo-link';
+    link.textContent = src.repo + ' ↗';
+    const lista = el('div', 'repo-skills');
+    lista.id = 'repo-' + src.repo.replace(/[^\w-]/g, '-');
+    lista.hidden = true;
+    lista.setAttribute('aria-live', 'polite');
+    const explorar = btn(tr('browse'), 'primary', () => explorarRepo(src.repo, lista, explorar, instaladas));
+    explorar.setAttribute('aria-expanded', 'false');
+    explorar.setAttribute('aria-controls', lista.id);
+    fila.append(el('b', null, src.label), link, explorar);
+    if (!src.official) {          // las que añadiste tú se pueden quitar
+      const x = btn('✕', 'ghost', async () => {
+        await skills.removeSource(src.repo);
+        toast(tr('repoRemoved', { repo: src.repo }));
+        await pintarFuentes(box, instaladas);
+      });
+      x.title = tr('repoRemoveL', { repo: src.repo });
+      x.setAttribute('aria-label', tr('repoRemoveL', { repo: src.repo }));
+      fila.appendChild(x);
+    }
+    c.append(fila, lista);
+    box.appendChild(c);
+  }
+  const form = el('form', 'row');
+  const inp = el('input'); inp.placeholder = tr('repoPh');
+  inp.setAttribute('aria-label', tr('repoPh'));
+  const add = el('button', 'primary', tr('addRepo'));
+  add.type = 'submit';
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const repo = await skills.addSource(inp.value);
+      inp.value = '';
+      toast(tr('repoAdded', { repo }));
+      await pintarFuentes(box, instaladas);
+      box.querySelector(`[data-ruta="${CSS.escape('repo:' + repo)}"] button`)?.focus();
+    } catch (err) { toast('⚠️ ' + err.message); }
+  });
+  form.append(inp, add);
+  box.appendChild(form);
+}
+
+// La lista de un repo va DENTRO de su tarjeta y el botón la abre y la cierra.
+async function explorarRepo(repo, lista, boton, instaladas) {
+  if (!lista.hidden) {
+    lista.hidden = true;
+    boton.textContent = tr('browse');
+    boton.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  lista.hidden = false;
+  boton.setAttribute('aria-expanded', 'true');
+  boton.textContent = tr('hideList');
+  if (lista.dataset.cargada) return;
+  boton.disabled = true;
+  lista.setAttribute('aria-busy', 'true');
+  lista.replaceChildren(el('div', 'muted', tr('loadingRepo', { repo })));
   try {
     const found = await skills.listFromRepo(repo);
-    box.replaceChildren(el('div', 'muted', tr('repoSkills', { repo, n: found.length })));
+    lista.replaceChildren(el('div', 'muted', tr('repoSkills', { repo, n: found.length })));
     for (const sk of found.slice(0, 120)) {
       const c = el('div', 'card');
       const on = skills.isInstalled(sk.repo, sk.path);
       const b = btn(on ? tr('installedOk') : tr('install'), on ? 'ghost' : 'primary', async () => {
+        b.disabled = true;
         b.textContent = '…';
         try {
           const entry = await skills.installFromRepo(sk);
           b.textContent = tr('installedOk');
+          b.className = 'ghost';
+          pintarInstaladas(instaladas);
           onSkillInstalledCb(entry);           // → mensaje «cómo usarla» en el chat
-        } catch (e) { b.textContent = tr('install'); toast('⚠️ ' + e.message); }
+        } catch (e) { b.disabled = false; b.textContent = tr('install'); toast('⚠️ ' + e.message); }
       });
-      c.append(el('b', null, sk.name), el('span', 'muted', sk.dir), b);
-      box.appendChild(c);
+      b.disabled = on;
+      b.setAttribute('aria-label', (on ? tr('installedOk') : tr('install')) + ': ' + sk.name);
+      c.append(el('b', null, sk.name), el('span', 'muted', sk.dir), enlaceSkillMd(sk.repo, sk.path, sk.branch || 'HEAD'), b);
+      lista.appendChild(c);
     }
-  } catch (e) { box.replaceChildren(el('div', 'muted', '⚠️ ' + e.message)); }
+    lista.dataset.cargada = '1';
+  } catch (e) {
+    lista.replaceChildren(el('div', 'muted', '⚠️ ' + e.message));
+  } finally {
+    boton.disabled = false;
+    lista.removeAttribute('aria-busy');
+  }
 }
 
 function labeled(label, input) {
