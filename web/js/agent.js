@@ -319,6 +319,23 @@ function closingLine(done, lastResult) {
   return t('anythingElse');
 }
 
+// Espera a `p` salvo que paren el turno antes: entonces rechaza en el acto con
+// un AbortError. Las herramientas no reciben la señal, y alguna puede tardar o
+// no volver nunca (un permiso sin contestar, una web que no responde): sin
+// esto, ■ abortaba el turno pero el bucle seguía colgado de la herramienta, sin
+// llegar a ninguna comprobación. La herramienta puede terminar igualmente por
+// detrás; su resultado ya no se usa.
+function hastaQueParen(p, signal) {
+  return new Promise((si, no) => {
+    const alParar = () => no(Object.assign(new Error('parado'), { name: 'AbortError' }));
+    if (signal.aborted) { alParar(); return; }
+    signal.addEventListener('abort', alParar, { once: true });
+    Promise.resolve(p).then(
+      v => { signal.removeEventListener('abort', alParar); si(v); },
+      e => { signal.removeEventListener('abort', alParar); no(e); });
+  });
+}
+
 export class Agent {
   constructor(provider) {
     this.provider = provider;
@@ -423,8 +440,13 @@ export class Agent {
 
       onEvent({ type: 'tool', call });
       let result;
-      try { result = await runTool(call.tool, call.args); }
-      catch (e) { result = 'ERROR: ' + e.message; }
+      try { result = await hastaQueParen(runTool(call.tool, call.args), signal); }
+      catch (e) {
+        // Parado con la herramienta en marcha: el turno acaba aquí y no apunta
+        // nada de este paso (la herramienta puede acabar por detrás).
+        if (signal.aborted) return parado();
+        result = 'ERROR: ' + e.message;
+      }
       const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
       lastResult = resultStr;
       onEvent({ type: 'tool_result', tool: call.tool, result: resultStr });

@@ -156,16 +156,40 @@ export function toast(text, ms = 4500) {
 }
 
 // ---------- modal de permisos ----------
+// Contesta SIEMPRE, también si el diálogo se cierra sin pulsar nada (Escape):
+// cerrar es «no». Antes Escape lo cerraba sin contestar, y la herramienta que
+// lo pidió esperaba para siempre —y con ella el turno, la cola de detrás y el
+// cerebro CEO, que no arrancaba otro ciclo—.
+// Las peticiones llegan de una en una (permissions.js las pone en fila). Si
+// aun así entrara otra con el diálogo abierto, la que se estaba enseñando se
+// da por denegada en vez de quedarse sin respuesta: los botones son unos.
+let permEnCurso = null;   // done() de la petición que enseña el diálogo
 export function askPermission(scope, meta, detail) {
   return new Promise(resolve => {
+    const dlg = $('perm-dialog');
+    permEnCurso?.(false);
+    let contestada = false;
+    const done = ok => {
+      if (contestada) return;
+      contestada = true;
+      if (permEnCurso === done) permEnCurso = null;
+      dlg.removeEventListener('close', alCerrar);
+      if (dlg.open) dlg.close();
+      refreshPerms();
+      resolve(ok);
+    };
+    // El evento «close» llega DESPUÉS de cerrarse, ya en otra tarea: si para
+    // entonces el diálogo vuelve a estar abierto, es el cierre de la petición
+    // anterior y no va con esta.
+    const alCerrar = () => { if (!dlg.open) done(false); };
+    permEnCurso = done;
     $('perm-title').textContent = `${meta?.icon || '❓'} ${tr('permWord')}: ${meta?.label || scope}`;
     $('perm-desc').textContent = meta?.desc || '';
     $('perm-detail').textContent = detail || '';
-    const dlg = $('perm-dialog');
-    const done = ok => { dlg.close(); refreshPerms(); resolve(ok); };
     $('perm-allow').onclick = () => done(true);
     $('perm-deny').onclick = () => done(false);
-    dlg.showModal();
+    dlg.addEventListener('close', alCerrar);
+    if (!dlg.open) dlg.showModal();
   });
 }
 

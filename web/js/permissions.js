@@ -20,13 +20,25 @@ export function setAsker(fn) { asker = fn; }
 export function grants() { return [...granted]; }
 export function has(scope) { return granted.has(scope); }
 
+// Las peticiones se hacen EN FILA, una detrás de otra. El diálogo es uno: con
+// varias a la vez —los perfiles del cerebro CEO piensan en paralelo y pueden
+// pedir un ámbito al mismo tiempo— solo la última quedaba enganchada a sus
+// botones y las demás esperaban una respuesta que no iba a llegar nunca. En
+// fila, cada una recibe la suya; y la que espera turno ya no pregunta si
+// mientras tanto ese ámbito se concedió.
+let fila = Promise.resolve();
 export async function require(scope, detail = '') {
   if (granted.has(scope)) return true;
-  const ok = await asker(scope, SCOPES[scope], detail);
-  if (!ok) throw new Error(t('permDenied', { label: SCOPES[scope]?.label || scope }));
-  granted.add(scope);
-  localStorage.setItem(KEY, JSON.stringify([...granted]));
-  return true;
+  const turno = fila.then(async () => {
+    if (granted.has(scope)) return true;
+    const ok = await asker(scope, SCOPES[scope], detail);
+    if (!ok) throw new Error(t('permDenied', { label: SCOPES[scope]?.label || scope }));
+    granted.add(scope);
+    localStorage.setItem(KEY, JSON.stringify([...granted]));
+    return true;
+  });
+  fila = turno.catch(() => {});
+  return turno;
 }
 
 export function revoke(scope) {
