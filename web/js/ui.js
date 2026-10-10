@@ -1121,6 +1121,7 @@ export function refreshSettings() {
   store.appendChild(clearBtn);
   panel.appendChild(store);
   async function paintStore() {
+    contarCompartido();             // Ajustes abierto: el chip ya puede preguntar al compartido
     const [{ total, compartido, compartidoOk, hayCompartido }, { quota, persisted }] = await Promise.all([modelos.medir(), cacheEstimate()]);
     const gb = n => (n / 1073741824).toFixed(2) + ' GB';
     info.textContent = (total >= UMBRAL_CHIP ? tr('storeCached', { gb: gb(total) }) : tr('storeNone'))
@@ -1689,12 +1690,25 @@ function avisarLiberado(r) {
   toast(tr('diskFreed', { size: _gbDisk(r?.liberado || 0) }) + (r?.hayCompartido && !r.compartidoOk ? ' ' + tr('diskSharedFail') : ''));
 }
 
+// El chip mide SOLO este origen hasta que haya motivo para preguntar al almacén
+// compartido: abrir el chip o Ajustes, o cargar un modelo local en esta sesión
+// (kernel.js). Preguntar incrusta la página del broker (models.elffuss.com y cada
+// host del registro del motor), y eso pasaba en cada carga y cada minuto, también
+// en Básico sin nada descargado. Lo que vive solo en el compartido aparece en
+// cuanto se da uno de esos motivos.
+let preguntarCompartido = false, repintarChip = () => {};
+export function contarCompartido() {
+  if (preguntarCompartido) return;
+  preguntarCompartido = true;
+  repintarChip();
+}
 export function mountDiskChip() {
   const chip = document.getElementById('disk-chip');
   if (!chip) return;
+  repintarChip = () => paint();
   async function paint() {
     if (chip.disabled) return;
-    const { total } = await modelos.medir();
+    const { total } = await modelos.medir({ compartido: preguntarCompartido });
     if (total < UMBRAL_CHIP) { chip.hidden = true; return; }
     chip.hidden = false;
     chip.textContent = '💾 ' + _gbDisk(total);
@@ -1703,8 +1717,10 @@ export function mountDiskChip() {
     chip.setAttribute('aria-label', txt);
   }
   chip.addEventListener('click', async () => {
-    const { total } = await modelos.medir();
-    if (!confirm(tr('diskConfirm', { size: _gbDisk(total) }))) return;
+    preguntarCompartido = true;
+    const { total, hayCompartido } = await modelos.medir();
+    // El aviso solo menciona el almacén compartido si de verdad se va a vaciar.
+    if (!confirm(tr(hayCompartido ? 'diskConfirm' : 'diskConfirmLocal', { size: _gbDisk(total) }))) return;
     chip.disabled = true;
     chip.setAttribute('aria-busy', 'true');
     chip.textContent = '💾 …';

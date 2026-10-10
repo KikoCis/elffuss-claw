@@ -818,6 +818,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     pintarFicha(id);
     localStorage.setItem('elffuss.model', id);
     ui.setModel(id);
+    if (isLocal(id)) ui.contarCompartido();   // sus pesos pueden estar en el almacén compartido
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
     ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
     ui.toast(t('modelReady', { where }));

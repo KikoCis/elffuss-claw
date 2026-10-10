@@ -58,20 +58,32 @@ export async function bytesLocales() {
   return total;
 }
 
-// { local, compartido, compartidoOk, total }. `compartidoOk` en false significa
-// «no se pudo preguntar»: la cifra puede quedarse corta, y quien la enseñe lo dice.
-export async function medir() {
+// ¿Sabe el SDK del broker preguntar por el almacén compartido? (Sin sharedUsage
+// y clearShared no hay camino al compartido: ni se mide ni se vacía, y lo que se
+// enseña no debe prometerlo.)
+export const hayCompartido = () => typeof broker.sharedUsage === 'function' && typeof broker.clearShared === 'function';
+
+// { local, compartido, compartidoOk, hayCompartido, total }. `compartidoOk` en
+// false significa «no se pudo preguntar»: la cifra puede quedarse corta, y quien
+// la enseñe lo dice.
+//
+// `{ compartido: false }` cuenta solo ESTE origen y no toca el broker. Preguntar
+// al compartido incrusta la página del broker (models.elffuss.com y cada host
+// del registro del motor): eso no puede pasar en cada carga ni cada minuto, en
+// modo Básico y sin nada descargado. El chip 💾 lo pide así hasta que el usuario
+// abre el chip o Ajustes, o carga un modelo local (ver ui.js).
+export async function medir({ compartido: conCompartido = true } = {}) {
   const local = await bytesLocales();
-  let compartido = 0, compartidoOk = false, hayCompartido = false;
-  if (typeof broker.sharedUsage === 'function') {
-    hayCompartido = true;
+  let compartido = 0, compartidoOk = false;
+  const hay = hayCompartido();
+  if (hay && conCompartido) {
     try {
       const r = await broker.sharedUsage(await origenesDeBroker());
       compartido = r?.usage || 0;
       compartidoOk = !!r?.ok;
     } catch { compartidoOk = false; }
   }
-  return { local, compartido, compartidoOk, hayCompartido, total: local + compartido };
+  return { local, compartido, compartidoOk, hayCompartido: hay, preguntado: hay && conCompartido, total: local + compartido };
 }
 
 // Vacía los modelos de este origen (todas sus cachés y el OPFS de modelos) y el
@@ -81,16 +93,18 @@ export async function vaciar() {
   await clearModelCache();
   try { for (const n of await caches.keys()) await caches.delete(n); } catch { /* — */ }
   const despues = await bytesLocales();
-  let liberadoCompartido = 0, compartidoOk = true, hayCompartido = false;
-  if (typeof broker.clearShared === 'function') {
-    hayCompartido = true;
-    for (const o of await origenesDeBroker()) {
-      try {
-        const r = await broker.clearShared(o);
-        liberadoCompartido += r?.liberado || 0;
-        if (!r?.ok) compartidoOk = false;
-      } catch { compartidoOk = false; }
+  let liberadoCompartido = 0, compartidoOk = true;
+  const hay = hayCompartido();
+  if (hay) {
+    // Todos los orígenes A LA VEZ: uno detrás de otro, un broker que no contesta
+    // (cada clearShared espera su propio tope) sumaba las esperas, y el chip y el
+    // botón se quedaban ocupados todo ese rato.
+    const rs = await Promise.all((await origenesDeBroker()).map(o =>
+      Promise.resolve().then(() => broker.clearShared(o)).catch(() => ({ ok: false }))));
+    for (const r of rs) {
+      liberadoCompartido += r?.liberado || 0;
+      if (!r?.ok) compartidoOk = false;
     }
   }
-  return { liberado: Math.max(0, antes - despues) + liberadoCompartido, compartidoOk, hayCompartido };
+  return { liberado: Math.max(0, antes - despues) + liberadoCompartido, compartidoOk, hayCompartido: hay };
 }

@@ -157,6 +157,9 @@ const L = {
     chatSwapped: 'Conversación anterior recuperada. La que empezaste después está guardada: «Deshacer» vuelve a ella.',
     diskChipT: 'Modelos descargados en este navegador: {size}. Pulsa para liberar ese espacio.',
     diskConfirm: 'Vas a borrar {size} de modelos descargados, también los del almacén compartido de Elffuss.\n\nNo se pierde nada tuyo: ni apps, ni conversación, ni bóveda; solo los pesos. La próxima vez habrá que bajarlos otra vez.\n\n¿Seguir?',
+    // Sin camino al almacén compartido (el SDK del broker no sabe medirlo ni
+    // vaciarlo), el aviso no lo promete.
+    diskConfirmLocal: 'Vas a borrar {size} de modelos descargados en este navegador.\n\nNo se pierde nada tuyo: ni apps, ni conversación, ni bóveda; solo los pesos. La próxima vez habrá que bajarlos otra vez.\n\n¿Seguir?',
     diskFreed: 'Liberados {size}', diskSharedFail: '⚠ el almacén compartido no respondió: puede quedar algo guardado allí',
     diskFail: 'No se pudo vaciar: {err}',
     storeShared: ' · incluye {gb} del almacén compartido', storeSharedUnknown: ' · no se pudo consultar el almacén compartido',
@@ -359,6 +362,7 @@ const L = {
     chatSwapped: 'Previous conversation restored. The one you started afterwards is kept: “Undo” goes back to it.',
     diskChipT: 'Models downloaded in this browser: {size}. Click to free that space.',
     diskConfirm: 'You are about to delete {size} of downloaded models, including the ones in the shared Elffuss store.\n\nNothing of yours is lost: no apps, no conversation, no vault; only the weights. Next time they will be downloaded again.\n\nContinue?',
+    diskConfirmLocal: 'You are about to delete {size} of models downloaded in this browser.\n\nNothing of yours is lost: no apps, no conversation, no vault; only the weights. Next time they will be downloaded again.\n\nContinue?',
     diskFreed: 'Freed {size}', diskSharedFail: '⚠ the shared store did not answer: something may still be stored there',
     diskFail: 'Could not clear it: {err}',
     storeShared: ' · includes {gb} in the shared store', storeSharedUnknown: ' · the shared store could not be queried',

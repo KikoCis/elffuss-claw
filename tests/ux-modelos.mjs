@@ -6,6 +6,10 @@
 //     modelos) el chip los cuenta y vaciarlo libera eso, dice cuánto, y tus apps
 //     siguen ahí.
 //   · «Vaciar caché del modelo» se desactiva mientras trabaja y dice cuánto liberó.
+//   · El aviso del chip solo nombra el almacén compartido si hay camino a él. Con
+//     un SDK de broker que lo sabe medir y vaciar (un doble local, como el de
+//     main): al arrancar no se le pregunta; al abrir Ajustes sí, a todos los
+//     orígenes; vaciar los pide a la vez; «En disco» lo suma sin errores.
 //
 //   BASE=http://localhost:8743 node tests/ux-modelos.mjs
 import { navegador, contexto, pagina, ok, hasta, escribir, reposo, avisos, fin, BASE } from './ux-comun.mjs';
@@ -44,6 +48,8 @@ ok('su nombre accesible dice qué es y qué hace', /Modelos descargados en este 
 p.__aceptar = true;
 await p.click('#disk-chip');
 ok('la confirmación dice cuánto y que tus datos no se tocan', await hasta(() => (p.__dialogos || []).some(m => /6 MB/.test(m) && /ni apps/.test(m))));
+ok('…y, sin camino al almacén compartido (el SDK no sabe vaciarlo), no lo promete', (p.__dialogos || []).every(m => !/almacén compartido/.test(m)),
+  (p.__dialogos || []).join(' | '));
 ok('vaciar dice cuánto se liberó', await hasta(async () => (await avisos(p)).some(t => /Liberados 6 MB/.test(t))), (await avisos(p)).join(' | '));
 const tras = await p.evaluate(async () => ({
   chip: document.getElementById('disk-chip').hidden,
@@ -70,4 +76,57 @@ ok('el botón se desactiva mientras vacía y dice cuánto liberó', await hasta(
 ok('y después cuenta cero', await hasta(async () => /Nada cacheado todavía/.test(await card.innerText())));
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
+
+// ── con un SDK de broker que SÍ sabe del almacén compartido (como el de main) ─
+// Doble local: el model-broker.js de este árbol más sharedUsage/clearShared que
+// apuntan lo que se les pide, y un registro del motor con dos hosts de pesos.
+// Nada sale a la red: ni se incrusta ni se consulta ningún broker de verdad.
+{
+  const DOBLE = `
+export async function sharedUsage(o) { (window.__comp ||= []).push(['medir', JSON.stringify(o)]); return { usage: 5 * 1048576, quota: 0, ok: true }; }
+export async function clearShared(o) {
+  window.__vuelo = (window.__vuelo || 0) + 1; window.__maxVuelo = Math.max(window.__maxVuelo || 0, window.__vuelo);
+  (window.__comp ||= []).push(['vaciar', o]);
+  await new Promise(r => setTimeout(r, 400));
+  window.__vuelo--;
+  return { liberado: 1048576, ok: true };
+}`;
+  const { ctx: c2 } = await contexto(b, { grants: ['apps'] });
+  await c2.route('**/js/runtime/model-broker.js', async route => {
+    const r = await route.fetch();
+    await route.fulfill({ response: r, body: (await r.text()) + DOBLE, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
+  });
+  await c2.route('**/js/engine/registro.js', route => route.fulfill({ contentType: 'text/javascript',
+    body: "export const MODELS = {}; export async function disponible() { return false; } export function origenesAlmacen() { return ['https://m1.elffuss.com/', 'https://m2.elffuss.com/']; }" }));
+  const { p: q, errores: errQ } = await pagina(c2);
+  await q.evaluate(async () => {
+    const c = await caches.open('transformers-cache');
+    await c.put('/modelo-falso.bin', new Response(new Uint8Array(3 * 1024 * 1024)));
+  });
+  await q.reload({ waitUntil: 'domcontentloaded' });
+  await q.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 });
+  await hasta(() => q.evaluate(() => !document.getElementById('disk-chip').hidden));
+  await q.waitForTimeout(1500);
+  const alArrancar = await q.evaluate(() => ({ comp: window.__comp || [], chip: document.getElementById('disk-chip').textContent }));
+  ok('al arrancar en Básico, el chip cuenta solo este origen: no pregunta al almacén compartido', !alArrancar.comp.length && /💾 3 MB/.test(alArrancar.chip),
+    JSON.stringify(alArrancar));
+  await q.click('#tabs button[data-tab="ajustes"]');
+  ok('al abrir Ajustes sí pregunta, a todos los orígenes con pesos', await hasta(() => q.evaluate(() =>
+    (window.__comp || []).some(([k, o]) => k === 'medir' && /m1\.elffuss/.test(o) && /m2\.elffuss/.test(o)))));
+  const uso = q.locator('#panel-ajustes .card', { hasText: '📊' });
+  ok('«En disco» se pinta (no se queda en «…») y suma el compartido sin «?»', await hasta(async () => {
+    const txt = await uso.innerText();
+    return /En disco[^\n]*\n?[^\n]*\d/.test(txt) && !/En disco[^\n]*…/.test(txt) && !/ · \?/.test(txt);
+  }), await uso.innerText());
+  q.__aceptar = true;
+  await q.click('#disk-chip');
+  ok('con almacén compartido, la confirmación lo menciona', await hasta(() => (q.__dialogos || []).some(m => /almacén compartido/.test(m))),
+    (q.__dialogos || []).join(' | '));
+  ok('vaciar pide a todos los brokers A LA VEZ (models, m1 y m2 en paralelo)', await hasta(() => q.evaluate(() =>
+    (window.__comp || []).filter(([k]) => k === 'vaciar').length === 3 && window.__maxVuelo === 3)),
+  JSON.stringify(await q.evaluate(() => ({ comp: window.__comp, max: window.__maxVuelo }))));
+  ok('…y dice cuánto liberó, contando el compartido', await hasta(async () => (await avisos(q)).some(t => /Liberados 6 MB/.test(t))), (await avisos(q)).join(' | '));
+  ok('sin errores de página con el almacén compartido', errQ.length === 0, errQ.slice(0, 3).join(' | '));
+  await c2.close();
+}
 await fin(b, 'MODELOS: el chip 💾 y «Vaciar caché» cuentan y vacían pesos, no tus datos');
