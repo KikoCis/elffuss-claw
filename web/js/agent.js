@@ -354,16 +354,20 @@ export class Agent {
   // CEO…—: abortarlo para este agente igual que stop(). Si ya llega abortado,
   // ni se apunta el mensaje en el histórico ni se llama al modelo (igual que en
   // Elffuss Code).
-  async handle(userText, onEvent, { signal: deFuera = null } = {}) {
+  //
+  // `permitir` (opcional): (nombre de herramienta) => bool. Lo que no pasa no se
+  // ejecuta: el modelo recibe un ERROR que se lo explica. Lo usa el cerebro
+  // autónomo, que solo puede leer (ver ceo.js `allowTool`).
+  async handle(userText, onEvent, { signal: deFuera = null, permitir = null } = {}) {
     const aborter = (this._aborter = new AbortController());
     if (deFuera?.aborted) { onEvent({ type: 'aborted', text: t('stopped') }); return; }
     const alAbortar = () => aborter.abort();
     deFuera?.addEventListener?.('abort', alAbortar, { once: true });
-    try { return await this._turno(userText, onEvent, aborter.signal); }
+    try { return await this._turno(userText, onEvent, aborter.signal, permitir); }
     finally { deFuera?.removeEventListener?.('abort', alAbortar); }
   }
 
-  async _turno(userText, onEvent, signal) {
+  async _turno(userText, onEvent, signal, permitir = null) {
     const parado = () => onEvent({ type: 'aborted', text: t('stopped') });
     // La marca temporal se pone AL AÑADIR, que es el único momento en que se
     // sabe: el gestor de contexto resuelve «ayer» con la fecha del turno en que
@@ -440,12 +444,16 @@ export class Agent {
 
       onEvent({ type: 'tool', call });
       let result;
-      try { result = await hastaQueParen(runTool(call.tool, call.args), signal); }
-      catch (e) {
-        // Parado con la herramienta en marcha: el turno acaba aquí y no apunta
-        // nada de este paso (la herramienta puede acabar por detrás).
-        if (signal.aborted) return parado();
-        result = 'ERROR: ' + e.message;
+      if (permitir && !permitir(call.tool)) {
+        result = `ERROR: aquí solo puedes leer; «${call.tool}» cambiaría cosas y no está permitida. Propón ese cambio en texto.`;
+      } else {
+        try { result = await hastaQueParen(runTool(call.tool, call.args), signal); }
+        catch (e) {
+          // Parado con la herramienta en marcha: el turno acaba aquí y no apunta
+          // nada de este paso (la herramienta puede acabar por detrás).
+          if (signal.aborted) return parado();
+          result = 'ERROR: ' + e.message;
+        }
       }
       const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
       lastResult = resultStr;
