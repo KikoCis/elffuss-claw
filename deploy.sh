@@ -38,6 +38,23 @@ BLOG=(--filter='P blog/***')
 for a in "$@"; do
   if [ "$a" = "--con-motor" ]; then
     echo "▲ el motor propio (js/engine/) SE INCLUYE en este despliegue"
+    # El protocolo de publicación pide BARRER antes de publicar. Hasta el
+    # 2026-10-10 ese barrido se hacía a mano, o sea que un día no se hizo:
+    # veinte de los veintiún ficheros que servía este sitio decían dentro
+    # «Licencia: código propio y PRIVADO — no se publica», más el fabricante
+    # del chip, la cuota de disco medida en este equipo y un tiempo de espera
+    # absoluto. Estuvieron semanas ahí porque nada lo comprobaba.
+    #
+    # Ahora lo comprueba el mismo instrumento que genera la copia pública, con
+    # su propio control positivo, y el despliegue se para si no pasa. Si el
+    # guardia no está, tampoco se despliega: un barrido que no se puede
+    # ejecutar no es un barrido aprobado.
+    GUARDIA=../elffuss-engine/scripts/publica-motor.mjs
+    if [ ! -f "$GUARDIA" ]; then
+      echo "✗ no encuentro $GUARDIA: no despliego el motor sin barrerlo" >&2; exit 1
+    fi
+    node "$GUARDIA" --revisa web/js/engine || {
+      echo "✗ el motor que ibas a servir no pasa el protocolo. No se ha subido nada." >&2; exit 1; }
     MOTOR=("${PESOS[@]}")
   fi
 done
