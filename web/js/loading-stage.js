@@ -27,8 +27,8 @@ export async function show(panel, emptyEl) {
         </div>
         <div class="ls-head">Preparando tu sistema operativo…</div>
         <div class="ls-sub">el cerebro se descarga una vez y corre <b>en tu máquina</b>. Mientras, mira lo que sabe construir:</div>
-        <div class="ls-prog"><div class="ls-bar indet"></div></div>
-        <div class="ls-progtext">Descargando…</div>
+        <div class="ls-prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-labelledby="ls-progtext"><div class="ls-bar indet"></div></div>
+        <div class="ls-progtext" id="ls-progtext">Descargando…</div>
       </div>
     </div>`);
   panel.appendChild(root);
@@ -64,17 +64,22 @@ function cycle() {
 }
 
 // progreso: número (%) → barra determinada; string → barra indeterminada + texto.
+// La barra es una barra de progreso también para un lector de pantalla
+// (role=progressbar con aria-valuenow cuando se sabe el %).
 export function setProgress(p) {
   if (!root) return;
   const bar = root.querySelector('.ls-bar'), txt = root.querySelector('.ls-progtext');
+  const prog = root.querySelector('.ls-prog');
+  const valor = v => { if (v == null) prog.removeAttribute('aria-valuenow'); else prog.setAttribute('aria-valuenow', String(Math.round(v))); };
   if (typeof p === 'number' && isFinite(p)) {
     bar.classList.remove('indet'); bar.style.width = Math.max(2, Math.min(100, p)) + '%';
     txt.textContent = `Descargando el cerebro · ${Math.round(p)}%`;
+    valor(Math.min(100, p));
   } else if (typeof p === 'string') {
     // extraer un % si el string lo trae («… 42%…»), si no barra indeterminada
     const m = p.match(/(\d+)\s*%/);
-    if (m) { bar.classList.remove('indet'); bar.style.width = m[1] + '%'; }
-    else { bar.classList.add('indet'); bar.style.width = ''; }
+    if (m) { bar.classList.remove('indet'); bar.style.width = m[1] + '%'; valor(+m[1]); }
+    else { bar.classList.add('indet'); bar.style.width = ''; valor(null); }
     txt.textContent = p;
   }
 }
