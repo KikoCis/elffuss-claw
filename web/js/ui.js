@@ -143,8 +143,48 @@ export function thinkingBubble() {
       gen.textContent = '';
       label.textContent = tr('using', { name });
     },
+    // ■ pulsado y el turno aún soltando el modelo: la burbuja lo dice en vez
+    // de seguir animando como si nada.
+    stopping() {
+      label.textContent = tr('stopping');
+      div.classList.add('stopping');
+    },
+    // Lo que llegó a escribir, si era texto para el usuario (no una herramienta
+    // a medias, que se enseña como «creando app…»): lo que se conserva al parar.
+    partial() { return humanizeStreamPreview(buf) ? '' : buf.trim(); },
     remove() { div.remove(); },
   };
+}
+
+// Un mensaje de la cola que ■ dejó sin procesar: tachado y, para quien no lo
+// ve, dicho con palabras (el tachado solo no llega a un lector de pantalla).
+export function markCancelled(el) {
+  if (!el) return;
+  el.classList.remove('queued');
+  el.classList.add('cancelled');
+  if (el.querySelector('.sr-only')) return;
+  const s = document.createElement('span');
+  s.className = 'sr-only';
+  s.textContent = ' ' + tr('cancelled');
+  el.append(s);
+}
+
+// Región viva (#stop-status) para lo que no se oye de otro modo: parar con el
+// ratón o con Enter deja el foco en otro sitio, el botón solo lo dice en su
+// etiqueta y el chat no es una región viva. Se vacía y se escribe en otra
+// tarea para que el mismo texto dos veces seguidas se vuelva a leer.
+let anuncio = null;
+export function announce(texto) {
+  const r = $('stop-status');
+  if (!r) return;
+  clearTimeout(anuncio);
+  r.textContent = '';
+  anuncio = setTimeout(() => { r.textContent = texto; }, 50);
+}
+
+// Vaciar el chat a la vista, dejando el saludo (🧹).
+export function clearLog() {
+  for (const el of [...$('log').children]) if (!el.classList.contains('sys')) el.remove();
 }
 
 export function toast(text, ms = 4500) {
@@ -758,15 +798,38 @@ function labeled(label, input) {
 // (sin botón de enviar, el formulario se envía directamente) y sigue mandando
 // a la cola lo que escribas, que es como funciona la cola de Claw.
 const STOP_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor"/></svg>';
-let working = false;
+let working = false, parando = false;
 export function setWorking(on) {
   working = !!on;
+  parando = false;
   const b = $('send');
   if (!b) return;
   b.type = working ? 'button' : 'submit';
   b.classList.toggle('is-stop', working);
+  b.classList.remove('is-stopping');
+  b.removeAttribute('aria-busy');
+  b.removeAttribute('aria-disabled');
   b.innerHTML = working ? STOP_ICON : UI.send;
   b.title = working ? tr('stop') : tr('send');
+  b.setAttribute('aria-label', b.title);
+}
+
+// «Parando…»: ya se pulsó ■ y el turno aún está soltando el modelo (un cerebro
+// que no suelta al momento, una herramienta, Hard Work leyendo la carpeta…).
+// Antes el ■ seguía igual tras el clic —rojo, «Parar», pulsable— y parecía que
+// no había hecho caso. Mientras dura, los clics no hacen nada. Se marca con
+// aria-disabled y NO con disabled: deshabilitar el botón que tiene el foco lo
+// saca del foco y el teclado cae a <body> (lo mismo que en Elffuss Code).
+// Vuelve a ➤ (o a ■ si arranca el siguiente de la cola) con setWorking().
+export function setStopping() {
+  const b = $('send');
+  if (!b || !working) return;
+  parando = true;
+  b.classList.add('is-stopping');
+  b.setAttribute('aria-busy', 'true');
+  b.setAttribute('aria-disabled', 'true');
+  b.textContent = tr('stopping');
+  b.title = tr('stopping');
   b.setAttribute('aria-label', b.title);
 }
 
@@ -801,6 +864,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   $('send').addEventListener('click', e => {
     if (!working) return;        // en reposo es el submit de siempre
     e.preventDefault();
+    if (parando) return;         // ya se está parando: otro clic no hace nada
     onStop();
   });
   $('composer').addEventListener('submit', e => {

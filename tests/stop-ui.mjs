@@ -19,7 +19,11 @@
 //   · ■ en el instante en que la cola guarda el intento no deja procesar ese
 //     mensaje;
 //   · reenviar lo mismo que acabas de parar y recargar a mitad NO pierde el
-//     reintento, y lo ya hecho no se repite (la cola se deduplica por id).
+//     reintento, y lo ya hecho no se repite (la cola se deduplica por id);
+//   · con un cerebro que tarda en soltar, ■ dice «Parando…» (sin más clics, sin
+//     perder el foco, anunciado en una región viva) y lo escrito se conserva;
+//   · 🧹 se nota al momento: botón ocupado, aviso y la conversación fuera de la
+//     vista, aunque el turno tarde en soltar.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop-ui.mjs
 import { chromium } from 'playwright';
@@ -123,6 +127,12 @@ ok('el botón vuelve a ser ➤', await hasta(async () => { const x = await boton
 ok('la burbuja de «pensando» desaparece', await p.locator('.msg.thinking').count() === 0);
 ok('lo que esperaba en la cola queda tachado, no pendiente',
   await p.locator('.msg.user.cancelled').count() === 2 && await p.locator('.msg.user.queued').count() === 0);
+ok('  …y lo dice con palabras para un lector de pantalla (no solo el tachado)',
+  (await p.locator('.msg.user.cancelled .sr-only').allTextContents()).filter(t => t.includes('(cancelado: no se procesará)')).length === 2);
+ok('  el aviso cuenta los mensajes de la cola cancelados', (await p.locator('.msg.assistant.muted').allTextContents())
+  .some(t => t.includes('(Parado.) 2 mensaje(s) en cola cancelado(s).')));
+ok('  lo que llegó a escribir se queda en el chat, apagado (no desaparece con la burbuja)',
+  (await p.locator('.msg.assistant.muted.partial').allTextContents()).some(t => t.includes('palabra')));
 ok('la cola persistida queda VACÍA', await hasta(async () => { const q = await kv('queue'); return Array.isArray(q) && q.length === 0; }));
 await espera(400);
 if (OUT) await p.screenshot({ path: OUT + '/stop-ui-parado.png' });
@@ -251,7 +261,7 @@ ok('🧹: y no se reanuda nada', peticiones.length === limpiaInicio + 1, `${peti
   const r8 = await p.evaluate(txt => {
     IDBObjectStore.prototype.put = window.__putAntes;
     return { pulsado: !!window.__paradoAlGuardar,
-      tachado: [...document.querySelectorAll('.msg.user.cancelled')].some(d => d.textContent === txt) };
+      tachado: [...document.querySelectorAll('.msg.user.cancelled')].some(d => d.textContent.startsWith(txt)) };
   }, TXT);
   ok('8 · ■ pulsado mientras se guardaba el intento', r8.pulsado);
   ok('8 · ese mensaje no llega a procesarse (ninguna petición)', peticiones.length === ini, `${peticiones.length - ini} peticiones`);
@@ -293,6 +303,71 @@ ok('🧹: y no se reanuda nada', peticiones.length === limpiaInicio + 1, `${peti
   await espera(1500);
   ok('10 · un mensaje de la cola con el id del último terminado no se repite al recargar', peticiones.length === ini &&
     await p.locator('.msg.user.queued').count() === 0, `${peticiones.length - ini} peticiones`);
+}
+
+// ── 11 · «Parando…» mientras el cerebro tarda en soltar ─────────────────────
+// Con un cerebro que no suelta al momento, el ■ seguía rojo, «Parar» y pulsable
+// tras el clic: parecía que no había hecho caso. Ahora dice «Parando…», no
+// acepta más clics, conserva el foco del teclado y lo anuncia; al soltar vuelve
+// a ➤ y anuncia «(Parado.)».
+const cerebroLento = () => p.evaluate(() => {
+  window.__provAntes = window.elffuss.agent.provider;
+  window.__lento = { soltar: null };
+  window.elffuss.agent.setProvider({ chat: async (h, s, cb, opts) => {
+    for (let i = 0; i < 400 && !opts?.signal?.aborted; i++) { cb('palabra' + i + ' '); await new Promise(r => setTimeout(r, 20)); }
+    // tarda en soltar después de parar: hasta que la prueba lo suelte, o un rato
+    await new Promise(r => { window.__lento.soltar = r; setTimeout(r, 2000); });
+    return 'esto no se usa';
+  } });
+});
+{
+  await cerebroLento();
+  await escribir('escribe algo largo con un cerebro que tarda en soltar');
+  await hasta(() => p.evaluate(() => (document.querySelector('.msg.thinking .gen')?.textContent || '').includes('palabra3')));
+  await p.focus('#send');
+  await p.keyboard.press('Enter');             // ■ con el teclado
+  const st = await p.evaluate(() => {
+    const s = document.getElementById('send');
+    return { clase: s.className, titulo: s.title, aria: s.getAttribute('aria-label'), ocupado: s.getAttribute('aria-busy'),
+      inactivo: s.getAttribute('aria-disabled'), disabled: s.disabled, foco: document.activeElement === s,
+      burbuja: document.querySelector('.msg.thinking .label')?.textContent || null };
+  });
+  ok('11 · tras ■, el botón dice «Parando…» (clase, título, aria-busy, aria-disabled) y no pierde el foco',
+    st.clase.includes('is-stopping') && st.titulo === 'Parando…' && st.aria === 'Parando…' && st.ocupado === 'true'
+    && st.inactivo === 'true' && !st.disabled && st.foco, JSON.stringify(st));
+  ok('11 · …y la burbuja también dice «Parando…»', st.burbuja === 'Parando…', st.burbuja);
+  ok('11 · la región viva lo anuncia', await hasta(() => p.evaluate(() => document.getElementById('stop-status')?.textContent === 'Parando…')));
+  // (Playwright espera a que un botón aria-disabled se habilite antes de pulsar:
+  // el clic se da desde la página, que es lo que haría un usuario impaciente.)
+  await p.evaluate(() => document.getElementById('send').click());
+  ok('11 · otro clic mientras se para no hace nada', await p.evaluate(() => document.getElementById('send').classList.contains('is-stopping')));
+  await p.evaluate(() => window.__lento.soltar?.());
+  ok('11 · cuando suelta, vuelve a ➤ «Enviar»', await hasta(async () => { const x = await boton(); return !x.stop && x.title === 'Enviar' && x.aria === 'Enviar'; }));
+  ok('11 · y la región viva anuncia «(Parado.)»', await hasta(() => p.evaluate(() => document.getElementById('stop-status')?.textContent === '(Parado.)')));
+  ok('11 · lo que llegó a escribir se queda, apagado', (await p.locator('.msg.assistant.muted.partial').allTextContents()).some(t => t.includes('palabra3')));
+  await p.evaluate(() => window.elffuss.agent.setProvider(window.__provAntes));
+}
+
+// ── 12 · 🧹 se nota al momento, aunque el turno tarde en soltar ──────────────
+{
+  await cerebroLento();
+  await escribir('cuéntame algo larguísimo antes de borrar');
+  await hasta(() => p.evaluate(() => (document.querySelector('.msg.thinking .gen')?.textContent || '').includes('palabra3')));
+  const navegacion = p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 });
+  await p.click('#btn-clear');
+  const ya = await p.evaluate(() => ({
+    ocupado: document.getElementById('btn-clear').getAttribute('aria-busy'),
+    aviso: [...document.querySelectorAll('#toasts .toast')].some(t => t.textContent === 'Borrando la conversación…'),
+    log: [...document.getElementById('log').children].map(e => e.className),
+    enviar: document.getElementById('send').title,
+  }));
+  ok('12 · al pulsar 🧹: el botón queda ocupado y sale el aviso «Borrando la conversación…»', ya.ocupado === 'true' && ya.aviso, JSON.stringify(ya));
+  ok('12 · la conversación sale de la vista al momento (queda el saludo)', ya.log.length === 1 && /\bsys\b/.test(ya.log[0]), JSON.stringify(ya.log));
+  ok('12 · y ■ dice «Parando…» mientras el turno suelta', ya.enviar === 'Parando…', ya.enviar);
+  await navegacion;
+  await hasta(() => p.evaluate(() => document.getElementById('model-status')?.classList.contains('on')));
+  const hist12 = await kv('history');
+  ok('12 · tras recargar, la conversación borrada no vuelve', !hist12 || !hist12.length, JSON.stringify(hist12?.map(m => m.content.slice(0, 20))));
 }
 
 if (OUT) { await p.screenshot({ path: OUT + '/stop-ui.png' }); console.log('captura → stop-ui.png'); }

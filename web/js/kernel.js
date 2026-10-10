@@ -338,15 +338,48 @@ let turnCtl = null;
 // no guarda el histórico al terminar (ver el botón 🧹).
 let epocaHistorial = 0;
 let pumpFin = Promise.resolve();
+// La burbuja de «pensando» del turno en marcha (para que diga «Parando…») y
+// cuántos mensajes de la cola canceló la parada (para decirlo al terminar).
+let burbujaTurno = null, canceladasEnParada = 0;
 function stopCurrent() {
   try { turnCtl?.abort(); } catch { /* */ }
+  let canceladas = 0;
   for (const it of queue) {
     if (!it.el?.classList.contains('queued')) continue;   // el que ya está en marcha no se tacha
-    it.el.classList.remove('queued');
-    it.el.classList.add('cancelled');
+    ui.markCancelled(it.el);
+    canceladas++;
   }
   queue.length = 0;
   persistQueue();
+  canceladasEnParada += canceladas;
+  if (busy) {
+    // Hay un turno soltando el modelo: el botón y su burbuja dicen «Parando…»
+    // hasta que termine (pump() devuelve el botón a ➤). El aviso llega al final.
+    ui.setStopping();
+    burbujaTurno?.stopping?.();
+    ui.announce(t('stopping'));
+  } else if (canceladas) {
+    // Nada en marcha (el cerebro aún cargando, o entre dos turnos): solo se
+    // cancelaron mensajes de la cola, y ningún turno va a avisar después.
+    avisoParado(null);
+  }
+}
+
+// El aviso de una parada, en UN sitio. Lo que el modelo llegó a escribir —si era
+// texto, no una herramienta a medias— se queda en el chat, apagado: antes se iba
+// con la burbuja y solo quedaban la petición y «(Parado.)». Pero NO entra en el
+// historial del agente (un turno parado no deja respuesta); por eso mismo LiteRT
+// tira su conversación al parar, y el modelo no recuerda un texto que no está en
+// su historial. Debajo va «(Parado.)» con cuántos mensajes de la cola se
+// cancelaron, y lo mismo se anuncia a los lectores de pantalla.
+function avisoParado(thinking) {
+  const parcial = thinking?.partial?.();
+  if (parcial) ui.addMsg('assistant muted partial', parcial);
+  const n = canceladasEnParada;
+  canceladasEnParada = 0;
+  const aviso = n ? t('stoppedQueued', { n }) : t('stopped');
+  ui.addMsg('assistant muted', aviso);
+  ui.announce(aviso);
 }
 
 // Mientras haya cola o turno, el botón de enviar es ■. El finally garantiza que
@@ -384,6 +417,7 @@ async function vaciarCola() {
       await persistQueue();
       continue;
     }
+    ui.setWorking(true);   // ■ «Parar» para este turno, aunque el anterior dijera «Parando…»
     await process(item.text, item.id);
     // Orden anti-pérdida: el histórico ya está COMMITEADO dentro de process()
     // (incluye este turno como lastDone). Solo entonces sacamos de la cola.
@@ -403,7 +437,7 @@ async function process(text, id = null) {
   const epoca = epocaHistorial;
   if (hardMode) return processHardWork(text, signal, epoca, id);
   busy = true;
-  const thinking = ui.thinkingBubble();
+  const thinking = (burbujaTurno = ui.thinkingBubble());
   // Tasa de resolución y tiempo por tarea: se miden AQUÍ, envolviendo la
   // llamada, y no dentro de `agent.handle`. El motor no sabe qué es una tarea
   // —solo ve turnos— y el bucle del agente es delicado, así que la frontera se
@@ -422,7 +456,7 @@ async function process(text, id = null) {
       if (ev.type === 'tool') { thinking.tool(ev.call.tool); ui.addTool(ev.call); }
       if (ev.type === 'tool_result') ui.addToolResult(ev.tool, ev.result);
       if (ev.type === 'error') { huboError = true; ui.addMsg('assistant err', ev.text); }
-      if (ev.type === 'aborted') { parado = true; ui.addMsg('assistant muted', ev.text); }   // parado: aviso, no error
+      if (ev.type === 'aborted') { parado = true; avisoParado(thinking); }   // parado: aviso, no error
     }, { signal });
   } catch (e) {
     huboError = true;
@@ -437,6 +471,10 @@ async function process(text, id = null) {
       vm.tarea({ ok: !huboError, ms: ahora - t0 });
     } catch { /* sin velocímetro la app funciona igual */ }
     thinking.remove();
+    if (burbujaTurno === thinking) burbujaTurno = null;
+    // ■ llegó cuando el turno ya acababa por su cuenta: no hubo «parado», pero
+    // la cola sí se canceló, y eso se dice.
+    if (canceladasEnParada) avisoParado(null);
     busy = false;
     // Histórico persistente COMMITEADO (await) antes de vaciar la cola: al
     // refrescar, la conversación sigue ahí y ningún mensaje se pierde.
@@ -455,7 +493,7 @@ async function process(text, id = null) {
 // entre trozos y rondas; al parar lanza un AbortError, que aquí es un aviso.
 async function processHardWork(question, signal, epoca, id = null) {
   busy = true;
-  const thinking = ui.thinkingBubble();
+  const thinking = (burbujaTurno = ui.thinkingBubble());
   const fail = msg => { thinking.remove(); ui.addMsg('assistant', msg); busy = false; };
   const siParado = () => { if (signal?.aborted) throw Object.assign(new Error('parado'), { name: 'AbortError' }); };
   try {
@@ -505,9 +543,11 @@ async function processHardWork(question, signal, epoca, id = null) {
     // Parar no es un fallo: aviso discreto, como en el chat normal. Tampoco
     // cuando el AbortError no viene de ■ sino del proveedor (el motor propio
     // corta el turno al descargarse): eso no es «Hard Work falló».
-    if (signal?.aborted || e?.name === 'AbortError') ui.addMsg('assistant muted', t('stopped'));
+    if (signal?.aborted || e?.name === 'AbortError') avisoParado(null);
     else ui.addMsg('assistant err', 'Hard Work falló: ' + (e?.message || String(e)));
   } finally {
+    if (burbujaTurno === thinking) burbujaTurno = null;
+    if (canceladasEnParada) avisoParado(null);   // ver process()
     busy = false;
     if (epoca === epocaHistorial) {
       await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
@@ -565,7 +605,9 @@ async function restoreHistory() {
   ui.toast('Conversación restaurada (para empezar de cero)');
 }
 
-document.getElementById('btn-clear').addEventListener('click', async () => {
+document.getElementById('btn-clear').addEventListener('click', async e => {
+  const boton = e.currentTarget;
+  if (boton.getAttribute('aria-busy') === 'true') return;   // ya se está borrando
   // PARAR PRIMERO. Un turno en marcha guarda el histórico al terminar: si lo
   // hacía DESPUÉS de este borrado, la conversación «borrada» volvía al recargar.
   // Subir la época hace que ese turno ya no guarde, y se espera (con tope) a que
@@ -575,11 +617,24 @@ document.getElementById('btn-clear').addEventListener('click', async () => {
   // seguir guardando.
   epocaHistorial++;
   stopCurrent();
+  // Y que se note YA que el clic ha llegado: hasta que el turno soltaba el
+  // modelo (o vencía el tope) no cambiaba nada —ni el botón, ni un aviso— y la
+  // conversación seguía a la vista. Sale de la vista al momento: se va a borrar
+  // igual, y si la recarga no llega a ocurrir, lo que se ve coincide con lo que
+  // queda guardado. aria-disabled y no disabled, por el foco (ver setStopping).
+  boton.setAttribute('aria-busy', 'true');
+  boton.setAttribute('aria-disabled', 'true');
+  ui.toast(t('clearing'));
+  ui.announce(t('clearing'));
+  ui.clearLog();
   await Promise.race([pumpFin, new Promise(r => setTimeout(r, 3000))]);
   await db.del('kv', 'history').catch(() => {});
   await db.del('kv', 'queue').catch(() => {});
   agent.history = [];
   location.reload();
+  // Si el navegador pregunta antes de salir y le dicen que no, la página sigue
+  // aquí: el botón vuelve a estar disponible.
+  setTimeout(() => { boton.removeAttribute('aria-busy'); boton.removeAttribute('aria-disabled'); }, 1500);
 });
 
 async function changeModel(id) {

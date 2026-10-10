@@ -491,6 +491,14 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 /* mientras trabaja, el mismo botón PARA (como en Elffuss Code) */
 #send.is-stop { background: linear-gradient(135deg, #e5484d, #c0353a); }
 #send.is-stop svg { width: 14px; height: 14px; }
+/* ■ ya pulsado y el turno aún soltando el modelo: «Parando…», sin más clics */
+#send.is-stopping { background: #7a2a2d; color: #f3d6d7; cursor: progress; font-size: .78rem; white-space: nowrap; }
+.msg.thinking.stopping .dots i { animation: none; opacity: .35; }
+/* lo que llegó a escribir antes de parar: se queda, apagado */
+.msg.assistant.partial { opacity: .75; }
+#btn-clear[aria-busy="true"] { opacity: .5; cursor: progress; }
+/* solo para lectores de pantalla */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 #btn-slash { background: var(--bg3); border: 1px solid var(--line); border-radius: 12px; color: var(--muted); }
 #btn-slash:hover { color: var(--fg); border-color: var(--accent2); }
 #cmd-menu {
