@@ -1357,7 +1357,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
     if (hist.length > 100) hist = hist.slice(-100);
     try { localStorage.setItem(HKEY, JSON.stringify(hist)); } catch { /* lleno */ }
     hIdx = -1; draft = '';
-    onSend(text);
+    onSend(text, { desdeCaja: true });     // solo lo escrito en la caja puede ir por Hard Work
   });
   // Chips: botones (antes <span> sin foco). «Autoriza una carpeta» abre el
   // selector de carpetas EN el clic: pasándoselo al modelo, el selector nativo

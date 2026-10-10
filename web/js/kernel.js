@@ -319,9 +319,12 @@ const persistQueue = () =>
 const MAX_INTENTOS = 2;
 const nuevoId = () => (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 
-function send(text) {
+// `hard`: este mensaje va por Hard Work. Se decide al ENVIARLO, no al
+// procesarlo: antes el modo era global y una vez encendido se aplicaba a todo lo
+// que llegara después —chips, tareas programadas, «Ejecutar propuesta»—.
+function send(text, { hard = false } = {}) {
   const el = ui.addMsg('user queued', text);
-  queue.push({ id: nuevoId(), text, el });
+  queue.push({ id: nuevoId(), text, el, hard });
   persistQueue();
   if (queue.length > 1) ui.toast(`En cola (${queue.length - 1} por delante) — no se pierde ni refrescando.`);
   pump();
@@ -421,7 +424,7 @@ async function vaciarCola() {
       continue;
     }
     ui.setWorking(true);   // ■ «Parar» para este turno, aunque el anterior dijera «Parando…»
-    await process(item.text, item.id);
+    await process(item.text, item.id, item.hard);
     // Orden anti-pérdida: el histórico ya está COMMITEADO dentro de process()
     // (incluye este turno como lastDone). Solo entonces sacamos de la cola.
     // Si el refresco cae entre ambos commits, el mensaje aparece en histórico
@@ -435,10 +438,11 @@ async function vaciarCola() {
 }
 
 // `id` es el del mensaje en la cola: se apunta como lastDone al terminar.
-async function process(text, id = null) {
+// `hard`: este mensaje va por Hard Work (se decide al enviarlo, ver send()).
+async function process(text, id = null, hard = false) {
   const signal = (turnCtl = new AbortController()).signal;
   const epoca = epocaHistorial;
-  if (hardMode) return processHardWork(text, signal, epoca, id);
+  if (hard) return processHardWork(text, signal, epoca, id);
   busy = true;
   const thinking = (burbujaTurno = ui.thinkingBubble());
   // Tasa de resolución y tiempo por tarea: se miden AQUÍ, envolviendo la
@@ -500,7 +504,7 @@ async function processHardWork(question, signal, epoca, id = null) {
   const fail = msg => { thinking.remove(); ui.addMsg('assistant', msg); busy = false; };
   const siParado = () => { if (signal?.aborted) throw Object.assign(new Error('parado'), { name: 'AbortError' }); };
   try {
-    if (activeModel === 'rules') return fail('Hard Work necesita un cerebro cargado: elige un modelo local o remoto en el selector de arriba y vuelve a intentarlo.');
+    if (activeModel === 'rules') return fail(t('hwNeedsModel'));
     const names = await fs.folders().catch(() => []);
     if (!names.length) {
       // Sin carpeta que leer → modo CREACIÓN: el modelo hace un borrador, se
@@ -516,17 +520,24 @@ async function processHardWork(question, signal, epoca, id = null) {
       siParado();
       thinking.remove();
       const name = (question.trim().slice(0, 24) || 'app');
-      try { await apps.create({ name, html: res.html }); } catch { /* si falla, al menos responde */ }
-      ui.addMsg('assistant', `Listo. Lo trabajé en dos pasadas — borrador → autocrítica → reescritura — y lo dejé en el visualizador.\n\n_⛏ Hard Work (creación): ${res.trace.length - 1} ronda de mejora._`);
+      // Se cuenta lo que PASÓ: antes decía siempre «lo trabajé en dos pasadas y
+      // lo dejé en el visualizador», aunque guardar la app hubiera fallado (el
+      // error se tragaba) o la reescritura no hubiera salido.
+      let fallo = '';
+      try { await apps.create({ name, html: res.html }); } catch (e) { fallo = e?.message || String(e); }
+      const rondas = Math.max(0, (res.trace?.length || 1) - 1);
+      const como = rondas ? t('hwRounds', { n: rondas }) : t('hwDraftOnly');
+      if (fallo) ui.addMsg('assistant err', t('hwCreateFailed', { err: fallo }));
+      else ui.addMsg('assistant', `${t('hwCreated', { como })}\n\n_⛏ Hard Work: ${como}._`);
       agent.history.push({ role: 'user', content: question, ts: Date.now() });
-      agent.history.push({ role: 'assistant', content: '(app creada con Hard Work)', ts: Date.now() });
+      agent.history.push({ role: 'assistant', content: fallo ? '(Hard Work: no pude guardar la app: ' + fallo + ')' : '(app creada con Hard Work)', ts: Date.now() });
       return; // el finally resetea busy y guarda el histórico
     }
     thinking.tool('Hard Work · abriendo carpeta…');
     const root = await fs.root();
     const context = await gatherFolder(root, { maxBytes: 1.5e6 });
     siParado();
-    if (!context.trim()) return fail('Esa carpeta no tiene archivos de texto que pueda leer. Autoriza otra con documentos/código y reintenta.');
+    if (!context.trim()) return fail(t('hwEmptyFolder'));
     const res = await hardWork({
       question, context, provider: agent.provider, signal,
       onProgress: p => {
@@ -803,7 +814,14 @@ async function autorizarCarpeta() {
     if (e?.name !== 'AbortError') ui.toast('⚠️ ' + (e?.message || e));   // cancelar el selector no es un error
   }
 }
-ui.init({ onSend: send, onStop: stopCurrent, onModelChange: changeModel, onSettingsChanged: refreshModelOptions, onPickFolder: autorizarCarpeta });
+// Lo que escribes en la caja: si Hard Work está puesto, ESE mensaje va por Hard
+// Work y el modo se apaga (es para un mensaje).
+function enviarDesdeLaCaja(text, { desdeCaja = false } = {}) {
+  const hard = desdeCaja && hardMode;
+  if (hard) apagarHardWork();
+  send(text, { hard });
+}
+ui.init({ onSend: enviarDesdeLaCaja, onStop: stopCurrent, onModelChange: changeModel, onSettingsChanged: refreshModelOptions, onPickFolder: autorizarCarpeta });
 ui.mountDiskChip();   // cuánto ocupan los modelos en este navegador, y cómo vaciarlo
 // Botón «liberar el modelo» del panel de consumo: suelta la RAM sin recargar.
 ui.setOnFreeModel(async () => {
@@ -1100,19 +1118,24 @@ if (workspace.autosaveEnabled()) workspace.autosave({ enabled: true });
 window.elffuss = { agent, send, workspace }; // consola de depuración
 
 // ── Hard Work (RLM): trabaja la carpeta autorizada entera por partes ──
+// Es para el PRÓXIMO mensaje que escribas, y se apaga solo al mandarlo (el
+// estado se ve en el botón —aria-pressed— y en la caja). Antes se quedaba
+// puesto para todo lo que viniera después, chips y tareas incluidos.
 const hwBtn = document.getElementById('btn-hardwork');
+function pintarHardWork() {
+  if (!hwBtn) return;
+  hwBtn.classList.toggle('on', hardMode);
+  hwBtn.setAttribute('aria-pressed', hardMode ? 'true' : 'false');
+  hwBtn.title = t('hwTitle');
+  document.getElementById('prompt').placeholder = hardMode ? t('hwPlaceholder') : t('ph');
+}
+function apagarHardWork() { hardMode = false; pintarHardWork(); }
 hwBtn?.addEventListener('click', () => {
   hardMode = !hardMode;
-  hwBtn.classList.toggle('on', hardMode);
-  const prompt = document.getElementById('prompt');
-  if (hardMode) {
-    prompt.placeholder = '⛏ Hard Work: crea algo, o pregunta sobre TODA tu carpeta…';
-    ui.toast('Hard Work activado. Con carpeta autorizada: la leo entera por partes y respondo. Sin carpeta: creo lo que pidas en dos pasadas (borrador → autocrítica → mejora). Tarda más, sale mejor.');
-  } else {
-    prompt.placeholder = 'Pídeme lo que necesites…  (/ para comandos)';
-    ui.toast('Hard Work desactivado: vuelvo al modo normal.');
-  }
+  pintarHardWork();
+  ui.toast(hardMode ? t('hwOn') : t('hwOff'));
 });
+pintarHardWork();
 
 // ── Skills de audio en vivo + superficies (SSP v0.1) ────────────────────────
 // Una skill de audio escucha la conversación que llega del Translator y pinta

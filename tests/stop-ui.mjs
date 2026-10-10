@@ -179,7 +179,9 @@ ok('Hard Work: avisa «(Parado.)» y no «Hard Work falló»', await hasta(async
 await espera(400);
 ok('Hard Work: no hace la autocrítica ni la reescritura después de parar', peticiones.length === hwInicio + 1, `${peticiones.length - hwInicio} llamadas`);
 ok('Hard Work: el botón vuelve a ➤', await hasta(async () => !(await boton()).stop));
-await p.click('#btn-hardwork');   // apagar Hard Work
+// Hard Work es para un mensaje: se apagó solo al mandarlo (antes había que
+// pulsarlo otra vez para apagarlo, y ese clic ahora lo volvería a encender).
+ok('Hard Work: se apagó solo al mandar el mensaje', await p.evaluate(() => document.getElementById('btn-hardwork').getAttribute('aria-pressed') === 'false'));
 
 // ── 5 · 🧹 con un turno en marcha ───────────────────────────────────────────
 const limpiaInicio = peticiones.length;
