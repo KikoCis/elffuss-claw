@@ -401,58 +401,115 @@ export async function refreshTasks() {
 }
 
 // ---------- panel vault ----------
+// Lo que haces aquí lo haces tú: no pasa por el permiso «Bóveda», que es el del
+// agente (ver tools/vault.js, `desdePanel`). Y el panel se repinta cuando la
+// bóveda se cierra sola: antes seguía ofreciendo «Bloquear ahora» y un secreto
+// revelado se quedaba en claro.
+const VAULT_REVELADO_MS = 30000;   // un secreto a la vista se vuelve a tapar solo
+let vaultOyente = null;
+const tabActiva = () => document.querySelector('#tabs button.active')?.dataset.tab;
 export async function refreshVault() {
+  vaultOyente ||= vault.alBloquear(motivo => {
+    if (tabActiva() === 'vault') refreshVault();
+    if (motivo === 'auto') toast(tr('vaultAutoLocked'));
+  });
   const panel = $('panel-vault');
   panel.replaceChildren(el('h3', null, tr('vaultTitle')));
   const setup = await vault.isSetup();
 
   if (!vault.isUnlocked()) {
     panel.appendChild(el('p', 'muted', setup ? tr('vaultLocked') : tr('vaultUnset')));
+    // Un <form>: Enter envía como el botón, sin un keydown a mano.
+    const form = el('form', 'row');
     const input = el('input');
     input.type = 'password';
+    input.id = 'vault-master';
+    input.autocomplete = setup ? 'current-password' : 'new-password';
     input.placeholder = tr('vaultMasterPh');
-    const go = btn(setup ? tr('vaultUnlock') : tr('vaultCreate'), 'primary', async () => {
-      try { toast(await vault.unlock(input.value)); refreshVault(); }
-      catch (e) { toast('⚠️ ' + e.message); }
+    input.setAttribute('aria-label', tr('vaultMasterPh'));
+    const go = el('button', 'primary', setup ? tr('vaultUnlock') : tr('vaultCreate'));
+    go.type = 'submit';
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (!input.value) { input.focus(); return; }
+      go.disabled = true;
+      try {
+        await vault.unlock(input.value, { desdePanel: true });
+        toast(setup ? tr('vaultUnlockedT') : tr('vaultCreatedT'));
+        await refreshVault();
+        panel.querySelector('#vault-name')?.focus();
+      } catch (err) {
+        go.disabled = false;
+        toast('⚠️ ' + (/incorrecta/.test(err.message) ? tr('vaultWrongPw') : err.message));
+        input.select();
+      }
     });
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
-    const row = el('div', 'row');
-    row.append(input, go);
-    panel.appendChild(row);
+    form.append(input, go);
+    panel.appendChild(form);
     return;
   }
 
-  panel.appendChild(btn(tr('vaultLockNow'), 'ghost', () => { vault.lock(); refreshVault(); }));
+  const estado = el('div', 'row between');
+  estado.append(el('span', 'muted', tr('vaultOpenState')),
+    btn(tr('vaultLockNow'), 'ghost', () => { vault.lock(); toast(tr('vaultLockedNow')); }));
+  panel.appendChild(estado);
 
+  const form = el('form', 'row');
   const name = el('input');
+  name.id = 'vault-name';
   name.placeholder = tr('vaultNamePh');
+  name.setAttribute('aria-label', tr('vaultNameL'));
   const secret = el('input');
   secret.type = 'password';
+  secret.autocomplete = 'off';
   secret.placeholder = tr('vaultSecretPh');
-  const add = btn(tr('save'), 'primary', async () => {
+  secret.setAttribute('aria-label', tr('vaultSecretL'));
+  const add = el('button', 'primary', tr('save'));
+  add.type = 'submit';
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
     try {
-      toast(await vault.setSecret({ name: name.value.trim(), secret: secret.value }));
+      await vault.setSecret({ name: name.value.trim(), secret: secret.value }, { desdePanel: true });
+      toast(tr('vaultSavedT', { name: name.value.trim() }));
       name.value = secret.value = '';
-      refreshVault();
-    } catch (e) { toast('⚠️ ' + e.message); }
+      await refreshVault();
+      panel.querySelector('#vault-name')?.focus();
+    } catch (err) { toast('⚠️ ' + err.message); }
   });
-  const row = el('div', 'row');
-  row.append(name, secret, add);
-  panel.appendChild(row);
+  form.append(name, secret, add);
+  panel.appendChild(form);
 
-  const ks = await db.keys('vault');
-  for (const k of ks.filter(k => k.startsWith('s:'))) {
-    const n = k.slice(2);
+  for (const n of await vault.secretNames()) {
     const val = el('code', null, '••••••');
-    panel.appendChild(card(
-      el('b', null, n),
-      val,
-      btn('👁', 'ghost', async () => {
-        try { val.textContent = await vault.getSecret({ name: n }); }
-        catch (e) { toast('⚠️ ' + e.message); }
-      }),
-      btn('🗑', 'ghost', async () => { await db.del('vault', k); refreshVault(); }),
-    ));
+    let tapar = null;
+    const ver = btn('👁', 'ghost', async () => {
+      if (ver.getAttribute('aria-pressed') === 'true') { ocultar(); return; }
+      try {
+        val.textContent = await vault.getSecret({ name: n }, { desdePanel: true });
+        ver.setAttribute('aria-pressed', 'true');
+        ver.title = tr('vaultHide', { name: n });
+        clearTimeout(tapar);
+        tapar = setTimeout(ocultar, VAULT_REVELADO_MS);
+      } catch (err) { toast('⚠️ ' + err.message); refreshVault(); }
+    });
+    const ocultar = () => {
+      clearTimeout(tapar);
+      val.textContent = '••••••';
+      ver.setAttribute('aria-pressed', 'false');
+      ver.title = tr('vaultShow', { name: n });
+    };
+    ver.setAttribute('aria-pressed', 'false');
+    ver.title = tr('vaultShow', { name: n });
+    ver.setAttribute('aria-label', tr('vaultShowL', { name: n }));
+    const borrar = btn('🗑', 'ghost', async () => {
+      if (!window.confirm(tr('vaultDelConfirm', { name: n }))) return;
+      try { await vault.removeSecret({ name: n }); toast(tr('vaultDeleted', { name: n })); }
+      catch (err) { toast('⚠️ ' + err.message); }
+      refreshVault();
+    });
+    borrar.title = tr('vaultDel', { name: n });
+    borrar.setAttribute('aria-label', tr('vaultDel', { name: n }));
+    panel.appendChild(card(el('b', null, n), val, ver, borrar));
   }
 }
 

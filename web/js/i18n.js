@@ -23,7 +23,7 @@ const L = {
     open: 'Abrir', save: 'Guardar', saved: 'Guardado', remove: 'Quitar', revoke: 'Revocar',
     appsTitle: 'Apps creadas', appsEmpty: 'Ninguna aún. Pídele una a Elffuss.',
     tasksTitle: 'Tareas programadas', tasksEmpty: 'Ninguna. Prueba «recuérdame dentro de 5 minutos…».',
-    vaultTitle: '🔐 Bóveda', vaultLocked: 'Bloqueado. Introduce tu contraseña maestra.',
+    vaultTitle: '🔐 Bóveda', vaultLocked: 'Bloqueada. Introduce tu contraseña maestra.',
     vaultUnset: 'Sin crear. Elige una contraseña maestra (no hay recuperación posible).',
     vaultMasterPh: 'Contraseña maestra', vaultUnlock: 'Desbloquear', vaultCreate: 'Crear bóveda',
     vaultLockNow: '🔒 Bloquear ahora', vaultNamePh: 'nombre (p. ej. gmail)', vaultSecretPh: 'secreto',
@@ -101,6 +101,14 @@ const L = {
     extDesc: "Elffuss corre en TU máquina y nada sale de ella. Estas opciones son la excepción: mandan tus mensajes a un servidor de fuera. Solo si tú lo activas a mano. Las claves se guardan en este navegador y las llamadas van directas al proveedor.",
     // ── arreglos de UX (ronda 20261010) ──
     close: 'Cerrar', undo: 'Deshacer',
+    vaultCreatedT: 'Bóveda creada y abierta. Guarda bien tu contraseña maestra: sin ella no hay recuperación.',
+    vaultUnlockedT: 'Bóveda abierta (se bloquea sola a los 5 min sin uso).',
+    vaultWrongPw: 'Contraseña maestra incorrecta', vaultAutoLocked: 'La bóveda se ha bloqueado sola',
+    vaultOpenState: '🔓 Abierta: se bloquea sola a los 5 min sin uso', vaultLockedNow: 'Bóveda bloqueada',
+    vaultNameL: 'Nombre del secreto', vaultSecretL: 'Valor del secreto', vaultSavedT: 'Secreto «{name}» guardado cifrado',
+    vaultShowL: 'Ver «{name}»', vaultShow: 'Ver «{name}»', vaultHide: 'Ocultar «{name}»',
+    vaultDel: 'Borrar «{name}»', vaultDelConfirm: '¿Borrar el secreto «{name}»? No se puede recuperar.',
+    vaultDeleted: 'Secreto «{name}» borrado',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -198,6 +206,14 @@ const L = {
     extDesc: "Elffuss runs on YOUR machine and nothing leaves it. These options are the exception: they send your messages to an outside server. Only if you turn them on yourself. Keys stay in this browser and calls go straight to the provider.",
     // ── UX fixes (round 20261010) ──
     close: 'Close', undo: 'Undo',
+    vaultCreatedT: 'Vault created and unlocked. Keep your master password safe: there is no recovery without it.',
+    vaultUnlockedT: 'Vault unlocked (it locks itself after 5 idle minutes).',
+    vaultWrongPw: 'Wrong master password', vaultAutoLocked: 'The vault locked itself',
+    vaultOpenState: '🔓 Unlocked: locks itself after 5 idle minutes', vaultLockedNow: 'Vault locked',
+    vaultNameL: 'Secret name', vaultSecretL: 'Secret value', vaultSavedT: 'Secret “{name}” saved, encrypted',
+    vaultShowL: 'Show “{name}”', vaultShow: 'Show “{name}”', vaultHide: 'Hide “{name}”',
+    vaultDel: 'Delete “{name}”', vaultDelConfirm: 'Delete the secret “{name}”? It cannot be recovered.',
+    vaultDeleted: 'Secret “{name}” deleted',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
