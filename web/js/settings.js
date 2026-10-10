@@ -24,11 +24,10 @@ const DEFAULTS = {
   server: {
     kind: 'openai', label: 'Servidor Elffuss (Ornith 9B)', enabled: false,
     // Apagado: el servicio del modelo (elffuss-lm) está parado. El mismo valor que
-    // en Elffuss Code. La ruta /v1 la resuelve nginx en el servidor (no está en
-    // este repo); mientras dure el cambio de dominio la sigue sirviendo también
-    // claw.elffuss.utopiaia.com, sin redirigir. elffuss-claw.utopiaia.com no
-    // vale: solo redirige, y un POST que recibe un 301 se repite como GET, sin
-    // el cuerpo.
+    // en Elffuss Code. La ruta /v1 la resolvería nginx en el servidor (no está en
+    // este repo). Los nombres anteriores (claw.elffuss.utopiaia.com y
+    // elffuss-claw.utopiaia.com) solo redirigen, y un POST que recibe un 301 se
+    // repite como GET, sin el cuerpo: por eso el valor es el nombre nuevo.
     baseURL: 'https://claw.elffuss.com/v1', model: 'ornith-9b', apiKey: '',
     temperature: 1.0, top_p: 0.95, thinking: false,
     help: 'El modelo grande en el servidor de UtopiaIA. No es local: los mensajes salen de tu máquina.',
