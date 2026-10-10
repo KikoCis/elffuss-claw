@@ -34,9 +34,13 @@ export function startScheduler(fire) {
   setInterval(async () => {
     for (const t of await pending())
       if (t.when <= Date.now()) {
-        t.done = true;
-        await db.set('tasks', t.id, t);
-        fire(t);
+        // Se RELEE antes de escribir, en la misma transacción. Escribir la copia
+        // leída al principio de la pasada resucitaba (como hecha) una tarea que
+        // acababas de borrar, y pisaba lo que hubiera cambiado entre medias. Si
+        // ya no está o ya se lanzó (otra pestaña), no se escribe ni se lanza.
+        const hecha = await db.update('tasks', t.id,
+          actual => (actual && !actual.done) ? { ...actual, done: true } : undefined).catch(() => undefined);
+        if (hecha) fire(hecha);
       }
   }, 15000);
 }
