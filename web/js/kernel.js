@@ -305,19 +305,21 @@ let pumping = false;
 let bootReady;
 const bootPromise = new Promise(r => { bootReady = r; });
 
-// Se guarda {text, intentos} y no solo el texto. El contador es lo que impide
-// el bucle de cuelgue: si un turno se lleva la pestaña por delante —pasa con el
-// modelo grande y poca memoria— al reabrir se reanuda y la vuelve a tumbar, y
-// no hay forma de salir ni cerrando, porque el mensaje sigue en la cola.
-// Las colas guardadas por la versión anterior son de strings sueltos;
-// restoreQueue las sigue aceptando.
+// Se guarda {id, text, intentos} y no solo el texto. El contador es lo que
+// impide el bucle de cuelgue: si un turno se lleva la pestaña por delante —pasa
+// con el modelo grande y poca memoria— al reabrir se reanuda y la vuelve a
+// tumbar, y no hay forma de salir ni cerrando, porque el mensaje sigue en la
+// cola. El id es lo que distingue un mensaje de otro igual (ver restoreQueue).
+// Las colas guardadas por versiones anteriores son de strings sueltos o sin
+// id; restoreQueue las sigue aceptando.
 const persistQueue = () =>
-  db.set('kv', 'queue', queue.map(q => ({ text: q.text, intentos: q.intentos || 0 }))).catch(() => {});
+  db.set('kv', 'queue', queue.map(q => ({ id: q.id, text: q.text, intentos: q.intentos || 0 }))).catch(() => {});
 const MAX_INTENTOS = 2;
+const nuevoId = () => (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 
 function send(text) {
   const el = ui.addMsg('user queued', text);
-  queue.push({ text, el });
+  queue.push({ id: nuevoId(), text, el });
   persistQueue();
   if (queue.length > 1) ui.toast(`En cola (${queue.length - 1} por delante) — no se pierde ni refrescando.`);
   pump();
@@ -382,7 +384,7 @@ async function vaciarCola() {
       await persistQueue();
       continue;
     }
-    await process(item.text);
+    await process(item.text, item.id);
     // Orden anti-pérdida: el histórico ya está COMMITEADO dentro de process()
     // (incluye este turno como lastDone). Solo entonces sacamos de la cola.
     // Si el refresco cae entre ambos commits, el mensaje aparece en histórico
@@ -395,10 +397,11 @@ async function vaciarCola() {
   }
 }
 
-async function process(text) {
+// `id` es el del mensaje en la cola: se apunta como lastDone al terminar.
+async function process(text, id = null) {
   const signal = (turnCtl = new AbortController()).signal;
   const epoca = epocaHistorial;
-  if (hardMode) return processHardWork(text, signal, epoca);
+  if (hardMode) return processHardWork(text, signal, epoca, id);
   busy = true;
   const thinking = ui.thinkingBubble();
   // Tasa de resolución y tiempo por tarea: se miden AQUÍ, envolviendo la
@@ -439,7 +442,7 @@ async function process(text) {
     // refrescar, la conversación sigue ahí y ningún mensaje se pierde.
     if (epoca === epocaHistorial) {
       await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
-      await db.set('kv', 'lastDone', text).catch(() => {});
+      await db.set('kv', 'lastDone', { id, text }).catch(() => {});
       workspace.touch('history');
     }
   }
@@ -450,7 +453,7 @@ async function process(text) {
 // pero abarca material que no cabe en la ventana del modelo.
 // `signal` es el del turno: rlm.js lo pasa a cada llamada al modelo y lo mira
 // entre trozos y rondas; al parar lanza un AbortError, que aquí es un aviso.
-async function processHardWork(question, signal, epoca) {
+async function processHardWork(question, signal, epoca, id = null) {
   busy = true;
   const thinking = ui.thinkingBubble();
   const fail = msg => { thinking.remove(); ui.addMsg('assistant', msg); busy = false; };
@@ -508,7 +511,7 @@ async function processHardWork(question, signal, epoca) {
     busy = false;
     if (epoca === epocaHistorial) {
       await db.set('kv', 'history', agent.history.slice(-80)).catch(() => {});
-      await db.set('kv', 'lastDone', question).catch(() => {});
+      await db.set('kv', 'lastDone', { id, text: question }).catch(() => {});
     }
   }
 }
@@ -521,11 +524,20 @@ async function restoreQueue() {
   // Compatibilidad: lo guardado por la versión anterior son strings sueltos.
   pending = pending.map(x => (typeof x === 'string' ? { text: x, intentos: 0 } : x));
   const lastDone = await db.get('kv', 'lastDone').catch(() => null);
-  if (lastDone && pending[0]?.text === lastDone) pending = pending.slice(1); // ya se procesó
+  // ¿El primero ya se procesó? Se reconoce por su id y no por el texto: antes,
+  // reenviar lo mismo que acababas de parar —el reintento natural— y recargar a
+  // mitad tiraba el reintento sin decir nada, porque su texto coincidía con el
+  // del turno parado. Lo guardado por versiones anteriores no lleva id y se
+  // sigue comparando por texto.
+  const primero = pending[0];
+  const hecho = lastDone && primero && (primero.id && lastDone.id
+    ? primero.id === lastDone.id
+    : primero.text === (typeof lastDone === 'string' ? lastDone : lastDone.text));
+  if (hecho) pending = pending.slice(1); // ya se procesó
   if (!pending.length) { db.set('kv', 'queue', []).catch(() => {}); return; }
   for (const it of pending) {
     const el = ui.addMsg('user queued', it.text);
-    queue.push({ text: it.text, intentos: it.intentos || 0, el });
+    queue.push({ id: it.id || nuevoId(), text: it.text, intentos: it.intentos || 0, el });
   }
   ui.toast(`${pending.length} mensaje(s) pendientes recuperados — los proceso en cuanto cargue el cerebro.`);
   pump();

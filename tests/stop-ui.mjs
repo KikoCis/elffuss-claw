@@ -15,7 +15,11 @@
 //   · Hard Work también se para (y no dice «Hard Work falló»);
 //   · 🧹 con un turno en marcha lo para primero y la conversación no vuelve;
 //   · un AbortError del proveedor sin pulsar ■ (el motor al descargarse) es
-//     «(Parado.)» en el chat y en Hard Work, no un fallo.
+//     «(Parado.)» en el chat y en Hard Work, no un fallo;
+//   · ■ en el instante en que la cola guarda el intento no deja procesar ese
+//     mensaje;
+//   · reenviar lo mismo que acabas de parar y recargar a mitad NO pierde el
+//     reintento, y lo ya hecho no se repite (la cola se deduplica por id).
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop-ui.mjs
 import { chromium } from 'playwright';
@@ -220,6 +224,75 @@ ok('🧹: y no se reanuda nada', peticiones.length === limpiaInicio + 1, `${peti
   await hasta(async () => !(await boton()).stop);
   await p.click('#btn-hardwork');
   await p.evaluate(() => window.elffuss.agent.setProvider(window.__provAntes));
+}
+
+// ── 8 · ■ justo mientras la cola guarda el intento, antes de empezar ─────────
+// La cola cuenta y GUARDA cada intento antes de procesar (await), y un ■ puede
+// caer en esa espera. Ese mensaje ya no debe procesarse: se pararía con un
+// controlador nuevo que nadie aborta. Se pulsa ■ desde dentro del put() de
+// IndexedDB que guarda el intento, que es exactamente ese momento.
+{
+  const TXT = 'mensaje parado mientras se guardaba';
+  await p.evaluate(txt => {
+    const put = IDBObjectStore.prototype.put;
+    window.__putAntes = put;
+    IDBObjectStore.prototype.put = function (val, key) {
+      if (key === 'queue' && Array.isArray(val) && val[0]?.text === txt && val[0]?.intentos === 1 && !window.__paradoAlGuardar) {
+        window.__paradoAlGuardar = true;
+        document.getElementById('send').click();   // ■
+      }
+      return put.call(this, val, key);
+    };
+  }, TXT);
+  const ini = peticiones.length;
+  await p.evaluate(txt => window.elffuss.send(txt), TXT);
+  await hasta(async () => !(await boton()).stop);
+  await espera(600);
+  const r8 = await p.evaluate(txt => {
+    IDBObjectStore.prototype.put = window.__putAntes;
+    return { pulsado: !!window.__paradoAlGuardar,
+      tachado: [...document.querySelectorAll('.msg.user.cancelled')].some(d => d.textContent === txt) };
+  }, TXT);
+  ok('8 · ■ pulsado mientras se guardaba el intento', r8.pulsado);
+  ok('8 · ese mensaje no llega a procesarse (ninguna petición)', peticiones.length === ini, `${peticiones.length - ini} peticiones`);
+  ok('8 · queda tachado como lo demás que se paró, y la cola vacía', r8.tachado &&
+    await hasta(async () => { const q = await kv('queue'); return Array.isArray(q) && q.length === 0; }));
+}
+
+// ── 9 · el reintento de lo que acabas de parar sobrevive a una recarga ──────
+// Lo natural tras parar es mandar lo mismo otra vez. La cola deduplicaba al
+// recargar comparando el TEXTO con el del último turno terminado (lastDone),
+// que era justo el parado: el reintento se tiraba sin decir nada.
+{
+  const TXT = 'escribe un poema sobre el faro';
+  const ini = peticiones.length;
+  await escribir(TXT);
+  await hasta(() => peticiones.length > ini && peticiones.at(-1).enviados >= 3);
+  await p.click('#send');
+  await hasta(async () => !(await boton()).stop);
+  await escribir(TXT);                                     // el reintento
+  await hasta(() => peticiones.length > ini + 1 && peticiones.at(-1).enviados >= 3);
+  const antesDeRecargar = peticiones.length;
+  await listo();                                           // recarga a mitad del reintento
+  ok('9 · tras recargar, el reintento (mismo texto que lo parado) se reanuda', await hasta(() =>
+    peticiones.slice(antesDeRecargar).some(x => x.ultimo === TXT)), `${peticiones.length - antesDeRecargar} peticiones tras recargar`);
+  await hasta(() => peticiones.length > antesDeRecargar && peticiones.at(-1).enviados >= 2);
+  await p.click('#send');                                  // y se para, para seguir
+  await hasta(async () => !(await boton()).stop);
+}
+
+// ── 10 · lo que ya se hizo no se repite al recargar (por id, no por texto) ───
+{
+  await p.evaluate(async () => {
+    const db = await import('/js/db.js');
+    await db.set('kv', 'lastDone', { id: 'ya-hecho', text: 'ya estaba hecho, rápido' });
+    await db.set('kv', 'queue', [{ id: 'ya-hecho', text: 'ya estaba hecho, rápido', intentos: 1 }]);
+  });
+  const ini = peticiones.length;
+  await listo();
+  await espera(1500);
+  ok('10 · un mensaje de la cola con el id del último terminado no se repite al recargar', peticiones.length === ini &&
+    await p.locator('.msg.user.queued').count() === 0, `${peticiones.length - ini} peticiones`);
 }
 
 if (OUT) { await p.screenshot({ path: OUT + '/stop-ui.png' }); console.log('captura → stop-ui.png'); }
