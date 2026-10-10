@@ -55,13 +55,9 @@ async function resolveProvider(id) {
     // changeModel lo trata como cualquier otro fallo de carga.
     const mod = await import('./engine/provider.js');
     mod.configure(id.slice(7));
-    // El velocímetro se engancha AQUÍ y no al arrancar la app: solo el motor
-    // propio mide tok/s (`alMedir`), así que con un proveedor externo o con
-    // ONNX el chip no tiene nada que decir y se queda oculto.
-    try {
-      const vm = await import('./velocimetro.js');
-      vm.montar(mod);
-    } catch (e) { console.warn('[claw] velocímetro no disponible:', e.message); }
+    // El velocímetro lo monta changeModel() tras cargar (montarVelocimetro):
+    // solo el motor propio mide tok/s (`alMedir`), y con cualquier otro cerebro
+    // se monta con null y el chip se esconde.
     return mod;
   }
   if (id.startsWith('ext:')) {
@@ -700,11 +696,19 @@ ui.setOnWipe(async () => {
   recargar();
 });
 
+// El velocímetro (⚡ tok/s) solo tiene algo que decir con el motor propio, que
+// es quien mide (`alMedir`). Con cualquier otro cerebro se monta con null y el
+// chip se esconde: antes se quedaba con la última cifra del motor a la vista.
+function montarVelocimetro(mod) {
+  import('./velocimetro.js').then(vm => vm.montar(mod?.alMedir ? mod : null)).catch(() => { /* sin velocímetro la app funciona igual */ });
+}
+
 async function changeModel(id) {
   if (id === 'rules') { // modo básico
     agent.setProvider(rules);
     activeModel = 'rules';
     activeMod = null;
+    montarVelocimetro(null);
     ui.modelStatus('off');
     localStorage.setItem('elffuss.model', 'rules');
     ui.setModel('rules');
@@ -725,6 +729,7 @@ async function changeModel(id) {
     agent.setProvider(mod);
     activeModel = id;
     activeMod = mod;
+    montarVelocimetro(mod);
     localStorage.setItem('elffuss.model', id);
     ui.setModel(id);
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
@@ -747,6 +752,7 @@ async function changeModel(id) {
     ui.modelStatus('off');
     agent.setProvider(rules);
     activeModel = 'rules';
+    montarVelocimetro(null);
     ui.setModel('rules');
     ui.toast('⚠️ No se pudo cargar ' + id + ': ' + (e?.message || String(e)));
     return false;
@@ -786,6 +792,7 @@ ui.mountDiskChip();   // cuánto ocupan los modelos en este navegador, y cómo v
 ui.setOnFreeModel(async () => {
   const mod = activeMod;
   agent.setProvider(rules); activeModel = 'rules'; activeMod = null;
+  montarVelocimetro(null);
   ui.setModel('rules'); ui.modelStatus('off');
   try { await mod?.unload?.(); } catch { /* mejor esfuerzo */ }
 });
@@ -1015,6 +1022,7 @@ setInterval(async () => {
     agent.setProvider(rules);
     activeModel = 'rules';
     activeMod = null;
+    montarVelocimetro(null);
     ui.setModel('rules');
     ui.modelStatus('off');
     try { await mod?.unload?.(); } catch { /* mejor esfuerzo */ }
