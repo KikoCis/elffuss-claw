@@ -301,6 +301,8 @@ main {
 .field .muted { font-size: .74rem; }
 .msg.user.queued { opacity: .55; }
 .msg.user.queued::after { content: ' ⏳'; }
+/* en cola cuando pulsaste ■: no se llegó a procesar ni se procesará */
+.msg.user.cancelled { opacity: .45; text-decoration: line-through; }
 .muted { color: var(--muted); font-size: .82rem; }
 .row { display: flex; gap: 8px; margin: 10px 0; }
 .row.right { justify-content: flex-end; }
@@ -486,6 +488,9 @@ dialog p { margin: 6px 0; font-size: .9rem; }
 .icon-inline { display: inline-flex; vertical-align: middle; color: var(--muted); }
 #send { display: inline-flex; align-items: center; justify-content: center; }
 #send svg { width: 18px; height: 18px; }
+/* mientras trabaja, el mismo botón PARA (como en Elffuss Code) */
+#send.is-stop { background: linear-gradient(135deg, #e5484d, #c0353a); }
+#send.is-stop svg { width: 14px; height: 14px; }
 #btn-slash { background: var(--bg3); border: 1px solid var(--line); border-radius: 12px; color: var(--muted); }
 #btn-slash:hover { color: var(--fg); border-color: var(--accent2); }
 #cmd-menu {

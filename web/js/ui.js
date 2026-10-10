@@ -727,8 +727,27 @@ function labeled(label, input) {
   return row;
 }
 
+// ---------- botón enviar ↔ parar ----------
+// Mientras Elffuss trabaja, #send es ■ y PARA (mismo icono, título y aria que
+// en Elffuss Code). Va como type="button" a propósito: así un clic en él —con
+// ratón, dedo o teclado— solo para, y Enter en la caja ya no pasa por el botón
+// (sin botón de enviar, el formulario se envía directamente) y sigue mandando
+// a la cola lo que escribas, que es como funciona la cola de Claw.
+const STOP_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor"/></svg>';
+let working = false;
+export function setWorking(on) {
+  working = !!on;
+  const b = $('send');
+  if (!b) return;
+  b.type = working ? 'button' : 'submit';
+  b.classList.toggle('is-stop', working);
+  b.innerHTML = working ? STOP_ICON : UI.send;
+  b.title = working ? tr('stop') : tr('send');
+  b.setAttribute('aria-label', b.title);
+}
+
 // ---------- arranque ----------
-export function init({ onSend, onModelChange, onSettingsChanged }) {
+export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChanged }) {
   perms.setAsker(askPermission);
   apps.setRenderer(renderApp);
   onSettingsChangedCb = onSettingsChanged || (() => {});
@@ -755,8 +774,16 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
       hIdx++; inp.value = hIdx >= hist.length ? (hIdx = -1, draft) : hist[hIdx]; e.preventDefault();
     }
   });
+  $('send').addEventListener('click', e => {
+    if (!working) return;        // en reposo es el submit de siempre
+    e.preventDefault();
+    onStop();
+  });
   $('composer').addEventListener('submit', e => {
     e.preventDefault();
+    // Mientras trabaja, aquí solo se llega con Enter (el ■ no envía): con texto
+    // va a la cola como siempre, y sin texto no hace nada —un segundo Enter
+    // dado por inercia no debe tirar el trabajo en curso—. Parar es el ■.
     const text = $('prompt').value.trim();
     if (!text) return;
     $('prompt').value = '';
@@ -778,7 +805,7 @@ export function init({ onSend, onModelChange, onSettingsChanged }) {
   // iconos vectoriales (sin emojis)
   $('model-ico').innerHTML = UI.code;
   $('btn-clear').innerHTML = UI.clear;
-  $('send').innerHTML = UI.send;
+  setWorking(working);   // icono, título y aria del botón enviar/parar
   $('btn-slash').innerHTML = UI.slash;
 
   // menú de comandos (/) en el chat, estilo plugin de Claude Code
