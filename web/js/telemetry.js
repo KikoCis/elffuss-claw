@@ -23,10 +23,12 @@ export function setEnabled(v) {
   if (enabled) hookGlobalErrors();
 }
 
+// Devuelve si el informe LLEGÓ (true) o no (false). Antes no devolvía nada y
+// quien mandaba feedback decía «¡enviado, gracias!» aunque el envío fallara.
 async function post(kind, message, opts = {}) {
-  if (!enabled) return;
+  if (!enabled) return false;
   try {
-    await fetch('/proxy/report', {
+    const r = await fetch('/proxy/report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -39,7 +41,8 @@ async function post(kind, message, opts = {}) {
         extra: String(opts.extra || '').slice(0, 2000),
       }),
     });
-  } catch { /* sin conexión o proxy caído: se descarta, no hay reintento */ }
+    return r.ok;
+  } catch { return false; /* sin conexión o proxy caído: se descarta, no hay reintento */ }
 }
 
 export function reportError(message, opts = {}) { return post('error', message, opts); }
