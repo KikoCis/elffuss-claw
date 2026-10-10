@@ -92,7 +92,9 @@ const L = {
     wsDownload: "Descargar copia",
     wsWhat: "Qué hay guardado",
     wsWipe: "Borrar todo del navegador",
-    wsWipeConfirm: "¿Borrar TODO lo guardado en este navegador (apps, tareas, memoria, historial, skills)? Los ficheros de tu carpeta NO se tocan.",
+    // Dice TODO lo que se va —la bóveda y sus secretos también, sin vuelta atrás—
+    // y lo que se queda.
+    wsWipeConfirm: "¿Borrar TODO lo que Claw guarda en este navegador?\n\nSe borra: apps, tareas, memoria, conversación, skills, automatizaciones, carpetas autorizadas, permisos, claves de los proveedores externos, ajustes y la BÓVEDA con todos sus secretos (no se pueden recuperar).\n\nSe queda: los modelos descargados (se vacían con «Vaciar caché del modelo») y los ficheros de tus carpetas, que no se tocan.",
     wsWiped: "Borrado del navegador",
     useTitle: "Consumo ahora",
     useRam: "Memoria del navegador",
@@ -291,7 +293,7 @@ const L = {
     wsDownload: "Download copy",
     wsWhat: "What's stored",
     wsWipe: "Wipe browser data",
-    wsWipeConfirm: "Wipe EVERYTHING stored in this browser (apps, tasks, memory, history, skills)? Files in your folder are NOT touched.",
+    wsWipeConfirm: "Wipe EVERYTHING Claw stores in this browser?\n\nDeleted: apps, tasks, memory, conversation, skills, automations, authorized folders, permissions, external provider keys, settings and the VAULT with all its secrets (they cannot be recovered).\n\nKept: downloaded models (clear them with “Clear model cache”) and the files in your folders, which are not touched.",
     wsWiped: "Browser data wiped",
     useTitle: "Usage right now",
     useRam: "Browser memory",

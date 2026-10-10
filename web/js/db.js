@@ -49,3 +49,7 @@ export const set  = (store, key, val) => tx(store, 'readwrite', s => s.put(val, 
 export const del  = (store, key)      => tx(store, 'readwrite', s => s.delete(key));
 export const keys = (store)           => tx(store, 'readonly',  s => s.getAllKeys());
 export const all  = (store)           => tx(store, 'readonly',  s => s.getAll());
+// Vacía un almacén entero. Para «Borrar todo del navegador», que borra TODOS
+// (ALMACENES), no solo los que se enseñan en «Qué hay guardado».
+export const clear = (store)          => tx(store, 'readwrite', s => s.clear());
+export const ALMACENES = [...STORES];

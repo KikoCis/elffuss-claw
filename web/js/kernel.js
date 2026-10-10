@@ -701,12 +701,32 @@ document.getElementById('btn-clear').addEventListener('click', () => nuevaConver
 // «Borrar todo del navegador» (Ajustes). Lo mismo que 🧹 —parar primero, que
 // nada vuelva a escribir— y RECARGAR: lo que vive en memoria (la conversación,
 // las skills, la bóveda abierta, la app actual) también se va.
+//
+// TODO es todo: antes se borraba solo lo del manifiesto (apps, tareas, memoria,
+// conversación, skills, bóveda) y sobrevivían las claves de API de los
+// proveedores externos, los permisos concedidos, las carpetas autorizadas, sus
+// automatizaciones, la misión y los perfiles de la Mente, la carpeta de trabajo
+// y el historial del velocímetro. Ahora se vacían todos los almacenes de Claw y
+// todas sus claves «elffuss.*». Se quedan, y el aviso lo dice: los modelos
+// descargados (tienen su propio botón) y la marca de bienvenida.
+const SE_QUEDA = new Set(['elffuss.welcomed']);
+async function borrarTodoDelNavegador() {
+  try { ceo.disable(); } catch { /* — */ }          // que el cerebro no vuelva a escribir
+  for (const s of db.ALMACENES) await db.clear(s).catch(() => {});
+  const fuera = almacen => {
+    try {
+      for (const k of Object.keys(almacen)) if (k.startsWith('elffuss.') && !SE_QUEDA.has(k)) almacen.removeItem(k);
+    } catch { /* sin almacenamiento */ }
+  };
+  fuera(localStorage);
+  fuera(sessionStorage);
+}
 ui.setOnWipe(async () => {
   await pararParaBorrar();
   await workspace.wipe({ confirm: 'BORRAR' });
-  for (const k of ['queue', 'lastDone', 'mindLog', 'historyBackup']) await db.del('kv', k).catch(() => {});
+  await workspace.forget().catch(() => {});
+  await borrarTodoDelNavegador();
   mindLog.olvidar();
-  try { localStorage.removeItem('elffuss.promptHistory'); } catch { /* — */ }
   agent.history = [];
   avisarTrasRecargar({ tipo: 'borrado' });
   recargar();
