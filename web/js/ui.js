@@ -9,21 +9,8 @@ import * as rutas from './rutas.js';
 import { t as tr, uiLang } from './i18n.js';
 import { humanizeStreamPreview } from './humanize.js'; // alias: dentro de tick(t) el token ya se llama t
 import { UI } from './icons.js';
-import { cacheEstimate, clearModelCache } from './model-cache.js';
-// El almacén compartido vive en OTRO origen y `navigator.storage.estimate()` no
-// lo ve: hay que preguntárselo y SUMAR. Ver runtime/model-broker.js.
-import { sharedUsage, clearShared } from './runtime/model-broker.js';
-
-// Los origenes donde puede haber pesos salen del REGISTRO del motor, no de una
-// lista a mano: una lista copiada se queda vieja en cuanto un modelo cambia de
-// host, y entonces el contador vuelve a mirar donde no hay nada. Import
-// perezoso porque el motor puede no estar (modo ONNX).
-async function origenesAlmacen() {
-  try {
-    const r = await import('./engine/registro.js');
-    return r.origenesAlmacen ? r.origenesAlmacen() : undefined;
-  } catch { return undefined; }   // sin motor: sharedUsage usa su defecto
-}
+import { cacheEstimate } from './model-cache.js';
+import * as modelos from './model-storage.js';
 import * as workspace from './workspace.js';
 import * as telemetry from './telemetry.js';
 
@@ -749,13 +736,12 @@ function usageCard() {
     vRam.textContent = m?.jsHeapSizeLimit
       ? `${gb(m.usedJSHeapSize)} / ${gb(m.jsHeapSizeLimit)} (${Math.round(m.usedJSHeapSize / m.jsHeapSizeLimit * 100)}%)`
       : tr('useNoRam');
-    const { usage, quota, persisted } = await cacheEstimate();
-    // Sumando el almacén compartido: el modelo grande no está en este origen y
-    // `estimate()` solo ve el propio, así que esta cifra se dejaba fuera
-    // justamente al que más ocupa.
-    const comp = await sharedUsage(await origenesAlmacen());
-    vDisk.textContent = `${gb(usage + comp.usage)}${quota ? ' / ' + gb(quota) : ''} ${persisted ? '· ✓' : '· ⚠'}`
-      + (comp.ok ? '' : ' · ?');
+    // Este origen (estimate) más el almacén compartido, medido por model-storage.js
+    // como el chip y «Vaciar caché»: el modelo grande vive en los brokers de sus
+    // hosts y estimate() no lo ve. Sin camino al compartido no hay «?».
+    const [{ usage, quota, persisted }, m2] = await Promise.all([cacheEstimate(), modelos.medir()]);
+    const comp = { usage: m2.compartido, ok: m2.compartidoOk || !m2.hayCompartido };
+    vDisk.textContent = `${gb(usage + comp.usage)}${quota ? ' / ' + gb(quota) : ''} ${persisted ? '· ✓' : '· ⚠'}` + (comp.ok ? '' : ' · ?');
     const sel = $('model-select');
     vBrain.textContent = sel ? (sel.options[sel.selectedIndex]?.textContent || '—').slice(0, 34) : '—';
     freeBtn.style.display = (sel && sel.value !== 'rules') ? '' : 'none';
@@ -910,30 +896,28 @@ export function refreshSettings() {
   store.appendChild(el('b', null, tr('storeTitle')));
   const info = el('span', 'muted', tr('storeCalc'));
   store.appendChild(info);
+  // Lo mismo que el chip 💾 (model-storage.js): cuenta solo pesos, y vacía los de
+  // este origen y los del almacén compartido de CADA broker con modelos (antes
+  // el modelo grande, guardado en los brokers de sus hosts, no se tocaba).
   const clearBtn = btn(tr('storeClear'), 'ghost', async () => {
-    // LOS DOS almacenes. Vaciar solo el de este origen dejaba intacto el modelo
-    // grande —que es casi todo lo que ocupa—, así que quien pulsaba para
-    // recuperar espacio no lo recuperaba y encima no se enteraba.
+    clearBtn.disabled = true;
+    clearBtn.setAttribute('aria-busy', 'true');
     info.textContent = tr('storeClearing');
-    await clearModelCache();
-    const r = await clearShared();
+    try { avisarLiberado(await modelos.vaciar()); }
+    catch (e) { toast(tr('diskFail', { err: e?.message || e })); }
+    clearBtn.disabled = false;
+    clearBtn.removeAttribute('aria-busy');
     await paintStore();
-    toast(r.ok ? tr('cacheCleared') : tr('cacheCleared') + ' ⚠ el almacén compartido no respondió');
   });
   store.appendChild(clearBtn);
   panel.appendChild(store);
   async function paintStore() {
-    const { usage, quota, persisted } = await cacheEstimate();
-    const comp = await sharedUsage(await origenesAlmacen());
-    const total = usage + comp.usage;
+    const [{ total, compartido, compartidoOk, hayCompartido }, { quota, persisted }] = await Promise.all([modelos.medir(), cacheEstimate()]);
     const gb = n => (n / 1073741824).toFixed(2) + ' GB';
-    info.textContent = (total ? tr('storeCached', { gb: gb(total) }) : tr('storeNone'))
+    info.textContent = (total >= UMBRAL_CHIP ? tr('storeCached', { gb: gb(total) }) : tr('storeNone'))
       + (persisted ? tr('storePersist') : tr('storeNoPersist'))
       + (quota ? tr('storeLimit', { gb: gb(quota) }) : '')
-      // Si el broker no contesta se dice: un total que se queda corto sin
-      // avisar es peor que uno que admite lo que le falta.
-      + (comp.ok ? (comp.usage ? ` · incluye ${gb(comp.usage)} del almacén compartido` : '')
-                 : ' · no se pudo consultar el almacén compartido');
+      + (!hayCompartido ? '' : !compartidoOk ? tr('storeSharedUnknown') : compartido ? tr('storeShared', { gb: gb(compartido) }) : '');
   }
   paintStore();
 
@@ -1177,35 +1161,45 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
 
 // ---------- indicador de disco, SIEMPRE a la vista ----------
 // El dato ya existía, pero dentro del panel de Ajustes: o sea escondido. Nadie
-// sabía cuánto ocupaban los modelos en su navegador ni que se podían borrar
-// —clearModelCache() llevaba escrita desde el principio y sin enchufar a nada—.
-// Aquí va en la cabecera, pequeño y permanente, y solo aparece si hay algo
-// guardado: un chip que dice «0 MB» es ruido.
+// sabía cuánto ocupaban los modelos en su navegador ni que se podían borrar.
+// Aquí va en la cabecera, pequeño y permanente, y solo aparece si hay MODELOS
+// guardados (model-storage.js): antes contaba el origen entero —tus apps y tu
+// conversación incluidas— y con solo eso decía «💾 0 MB … pulsa para vaciarlo».
 const _gbDisk = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : Math.round(n / 1048576) + ' MB';
+const UMBRAL_CHIP = 1048576;       // menos de 1 MB de pesos no es un modelo: no se enseña
+
+function avisarLiberado(r) {
+  toast(tr('diskFreed', { size: _gbDisk(r?.liberado || 0) }) + (r?.hayCompartido && !r.compartidoOk ? ' ' + tr('diskSharedFail') : ''));
+}
 
 export function mountDiskChip() {
   const chip = document.getElementById('disk-chip');
   if (!chip) return;
   async function paint() {
-    const { usage, quota } = await cacheEstimate();
-    if (!usage) { chip.hidden = true; return; }
+    if (chip.disabled) return;
+    const { total } = await modelos.medir();
+    if (total < UMBRAL_CHIP) { chip.hidden = true; return; }
     chip.hidden = false;
-    chip.textContent = '💾 ' + _gbDisk(usage);
-    chip.title = `Modelos guardados en este navegador: ${_gbDisk(usage)}` +
-      (quota ? ` de ${_gbDisk(quota)} disponibles` : '') + '. Pulsa para vaciarlo.';
+    chip.textContent = '💾 ' + _gbDisk(total);
+    const txt = tr('diskChipT', { size: _gbDisk(total) });
+    chip.title = txt;
+    chip.setAttribute('aria-label', txt);
   }
   chip.addEventListener('click', async () => {
-    const { usage } = await cacheEstimate();
-    const ok = confirm(`Vas a borrar ${_gbDisk(usage)} de modelos guardados en este navegador.\n\n` +
-      `No se pierde nada tuyo: solo los pesos descargados. La próxima vez habrá que bajarlos otra vez.\n\n¿Seguir?`);
-    if (!ok) return;
+    const { total } = await modelos.medir();
+    if (!confirm(tr('diskConfirm', { size: _gbDisk(total) }))) return;
+    chip.disabled = true;
+    chip.setAttribute('aria-busy', 'true');
     chip.textContent = '💾 …';
-    try { await clearModelCache(); toast('Caché vaciada'); }
-    catch (e) { toast('No se pudo vaciar: ' + (e.message || e)); }
+    try { avisarLiberado(await modelos.vaciar()); }
+    catch (e) { toast(tr('diskFail', { err: e?.message || e })); }
+    chip.disabled = false;
+    chip.removeAttribute('aria-busy');
     paint();
   });
   paint();
-  setInterval(paint, 20000);
+  // Cada minuto y solo con la pestaña a la vista: contar es fichero a fichero.
+  setInterval(() => { if (document.visibilityState === 'visible') paint(); }, 60000);
 }
 
 // ---------- puerta de móvil ----------

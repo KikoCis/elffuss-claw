@@ -147,6 +147,11 @@ const L = {
     pickModel: 'Elegir modelo',
     newChat: 'Nueva conversación', chatRestored: 'Conversación restaurada',
     chatCleared: 'Conversación nueva: la anterior se ha borrado', undoGone: 'Ya no hay nada que deshacer',
+    diskChipT: 'Modelos descargados en este navegador: {size}. Pulsa para liberar ese espacio.',
+    diskConfirm: 'Vas a borrar {size} de modelos descargados, también los del almacén compartido de Elffuss.\n\nNo se pierde nada tuyo: ni apps, ni conversación, ni bóveda; solo los pesos. La próxima vez habrá que bajarlos otra vez.\n\n¿Seguir?',
+    diskFreed: 'Liberados {size}', diskSharedFail: '⚠ el almacén compartido no respondió: puede quedar algo guardado allí',
+    diskFail: 'No se pudo vaciar: {err}',
+    storeShared: ' · incluye {gb} del almacén compartido', storeSharedUnknown: ' · no se pudo consultar el almacén compartido',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -290,6 +295,11 @@ const L = {
     pickModel: 'Pick a model',
     newChat: 'New conversation', chatRestored: 'Conversation restored',
     chatCleared: 'New conversation: the previous one was deleted', undoGone: 'There is nothing to undo any more',
+    diskChipT: 'Models downloaded in this browser: {size}. Click to free that space.',
+    diskConfirm: 'You are about to delete {size} of downloaded models, including the ones in the shared Elffuss store.\n\nNothing of yours is lost: no apps, no conversation, no vault; only the weights. Next time they will be downloaded again.\n\nContinue?',
+    diskFreed: 'Freed {size}', diskSharedFail: '⚠ the shared store did not answer: something may still be stored there',
+    diskFail: 'Could not clear it: {err}',
+    storeShared: ' · includes {gb} in the shared store', storeSharedUnknown: ' · the shared store could not be queried',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
