@@ -92,7 +92,16 @@ export async function hardWork({ question, context, provider, onProgress = () =>
     onProgress({ phase: 'map', i: i + 1, n: parts.length });
     let ans;
     try { ans = await sub(provider, MAP_SYS, `PREGUNTA:\n${q}\n\nFRAGMENTO ${i + 1}/${parts.length}:\n${parts[i]}`, o.callTimeoutMs, signal); }
-    catch { siParado(signal); ans = 'NADA'; }   // un trozo que falla no tumba el resto; parar, sí
+    catch (e) {
+      // Un trozo que falla no tumba el resto; parar, sí. También cuando la
+      // parada viene del proveedor (AbortError sin que `signal` se abortara: el
+      // motor propio corta así su turno al descargarse). Seguir pidiendo trozos
+      // a un modelo descargado solo acumularía «no está cargado» hasta acabar
+      // en «no encontré nada».
+      siParado(signal);
+      if (e?.name === 'AbortError') throw e;
+      ans = 'NADA';
+    }
     ans = String(ans || '').trim();
     if (ans && !/^NADA\b/i.test(ans)) findings.push(`[${i + 1}] ${ans}`);
   }

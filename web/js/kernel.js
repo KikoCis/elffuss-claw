@@ -499,8 +499,10 @@ async function processHardWork(question, signal, epoca) {
     agent.history.push({ role: 'assistant', content: res.answer, ts: Date.now() });
   } catch (e) {
     thinking.remove();
-    // Parar no es un fallo: aviso discreto, como en el chat normal.
-    if (signal?.aborted) ui.addMsg('assistant muted', t('stopped'));
+    // Parar no es un fallo: aviso discreto, como en el chat normal. Tampoco
+    // cuando el AbortError no viene de ■ sino del proveedor (el motor propio
+    // corta el turno al descargarse): eso no es «Hard Work falló».
+    if (signal?.aborted || e?.name === 'AbortError') ui.addMsg('assistant muted', t('stopped'));
     else ui.addMsg('assistant err', 'Hard Work falló: ' + (e?.message || String(e)));
   } finally {
     busy = false;

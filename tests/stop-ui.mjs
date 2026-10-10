@@ -13,7 +13,9 @@
 //     identidad, no con shift);
 //   · tras recargar no se reanuda nada de lo parado;
 //   · Hard Work también se para (y no dice «Hard Work falló»);
-//   · 🧹 con un turno en marcha lo para primero y la conversación no vuelve.
+//   · 🧹 con un turno en marcha lo para primero y la conversación no vuelve;
+//   · un AbortError del proveedor sin pulsar ■ (el motor al descargarse) es
+//     «(Parado.)» en el chat y en Hard Work, no un fallo.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop-ui.mjs
 import { chromium } from 'playwright';
@@ -193,6 +195,31 @@ ok('🧹: y no se reanuda nada', peticiones.length === limpiaInicio + 1, `${peti
   ok('en-US: «Send» en reposo y «Stop» / «(Stopped.)» al parar', en.title === 'Send' && en.aria === 'Send' && en.stop === 'Stop' && en.stopped === '(Stopped.)',
     JSON.stringify(en));
   await ctxEn.close();
+}
+
+// ── 7 · el proveedor corta solo (el motor propio al descargarse) ────────────
+// unload() del motor corta el turno en marcha y rechaza con AbortError sin que
+// nadie haya pulsado ■. En el chat y en Hard Work es «(Parado.)», no un fallo.
+{
+  await p.evaluate(() => {
+    const abortError = () => Object.assign(new Error('turno parado a petición'), { name: 'AbortError' });
+    window.__provAntes = window.elffuss.agent.provider;
+    window.elffuss.agent.setProvider({ chat: async (h, s, cb) => { cb('algo '); await new Promise(r => setTimeout(r, 150)); throw abortError(); } });
+  });
+  const avisosAntes = (await p.locator('.msg.assistant.muted').allTextContents()).filter(t => t.includes('(Parado.)')).length;
+  await escribir('pregunta con el motor a punto de descargarse');
+  ok('7 · AbortError del proveedor sin ■: el chat avisa «(Parado.)»', await hasta(async () =>
+    (await p.locator('.msg.assistant.muted').allTextContents()).filter(t => t.includes('(Parado.)')).length === avisosAntes + 1));
+  ok('7 · …y no pinta «El modelo falló»', !(await p.locator('#log').innerText()).includes('El modelo falló'));
+  await hasta(async () => !(await boton()).stop);
+  await p.click('#btn-hardwork');
+  await escribir('hazme un juego con el motor a punto de descargarse');
+  ok('7 · Hard Work: el mismo AbortError avisa «(Parado.)»', await hasta(async () =>
+    (await p.locator('.msg.assistant.muted').allTextContents()).filter(t => t.includes('(Parado.)')).length === avisosAntes + 2));
+  ok('7 · …y no dice «Hard Work falló»', !(await p.locator('#log').innerText()).includes('Hard Work falló'));
+  await hasta(async () => !(await boton()).stop);
+  await p.click('#btn-hardwork');
+  await p.evaluate(() => window.elffuss.agent.setProvider(window.__provAntes));
 }
 
 if (OUT) { await p.screenshot({ path: OUT + '/stop-ui.png' }); console.log('captura → stop-ui.png'); }

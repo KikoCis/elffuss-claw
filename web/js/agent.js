@@ -391,7 +391,12 @@ export class Agent {
       } catch (e) {
         // Un proveedor que corta con la señal puede LANZAR (fetch abortado,
         // stream cancelado): eso es la parada que se ha pedido, no un fallo.
-        if (signal.aborted) return parado();
+        // Un AbortError con la señal del turno INTACTA también es una parada:
+        // el motor propio corta el turno en marcha al descargarse (vigilante de
+        // RAM, «liberar el modelo», cambiar de modelo a mitad) y rechaza así.
+        // Antes eso salía como «El modelo falló» y se reportaba a telemetría.
+        // Elffuss Code ya lo trataba como parada.
+        if (signal.aborted || e?.name === 'AbortError') return parado();
         telemetry.reportError('agent.handle: ' + e.message, { stack: e.stack || '' });
         onEvent({ type: 'error', text: 'El modelo falló: ' + e.message });
         return;

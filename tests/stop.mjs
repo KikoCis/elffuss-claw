@@ -18,6 +18,8 @@
 //   8. webllm.js: interruptGenerate() y el flujo se lee hasta el final, porque el
 //      cerrojo del modelo se suelta al acabar el generador; si no, la siguiente
 //      petición se quedaría esperando para siempre.
+//   9. Un AbortError del proveedor con la señal del turno intacta (el motor
+//      propio al descargarse) es una parada, también en Hard Work.
 // (LiteRT tiene su propia prueba: tests/litert-stop.mjs.)
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop.mjs
@@ -323,6 +325,37 @@ await p.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 })
   ok('8 · webllm: el flujo se lee hasta el final (el generador termina y suelta el cerrojo)', r.a.terminados === 1, `terminados ${r.a.terminados}`);
   ok('8 · webllm: una parada anterior al primer trozo no se pierde', r.b2.trozos <= 2 && r.b2.terminados === 2, JSON.stringify(r.b2));
   ok('8 · webllm: la petición siguiente no se queda esperando el cerrojo', r.error === null && r.s3len > 0, r.error || `${r.esperas} esperas`);
+}
+
+// ── 9 · AbortError que no viene de ■ (el motor propio al descargarse) ────────
+// unload() del motor (vigilante de RAM, «liberar el modelo», cambiar de modelo
+// a mitad) corta el turno en marcha y rechaza con AbortError, sin que la señal
+// del turno se haya abortado. Es una parada, no «El modelo falló».
+{
+  const r = await p.evaluate(async () => {
+    const { Agent } = await import('/js/agent.js');
+    const rlm = await import('/js/rlm.js');
+    const abortError = () => Object.assign(new Error('turno parado a petición'), { name: 'AbortError' });
+    const descargado = { chat: async (h, s, cb) => { cb('a'); throw abortError(); } };
+    const eventos = [];
+    await new Agent(descargado).handle('hola', ev => eventos.push(ev));
+    // Hard Work: el trozo 1 recibe ese AbortError → se para ahí.
+    let llamadas = 0, error = null, res = null;
+    const prov = { chat: async () => { llamadas++; throw abortError(); } };
+    try { res = await rlm.hardWork({ question: 'q', context: 'línea de material\n'.repeat(3000), provider: prov }); }
+    catch (e) { error = e.name; }
+    // Un trozo que falla con OTRO error sigue sin tumbar el resto.
+    let llamadas2 = 0;
+    const roto = { chat: async () => { llamadas2++; if (llamadas2 === 1) throw new Error('fallo raro'); return 'dato'; } };
+    const res2 = await rlm.hardWork({ question: 'q', context: 'línea de material\n'.repeat(3000), provider: roto });
+    return { tipos: eventos.map(e => e.type), texto: eventos.find(e => e.type === 'aborted')?.text,
+      error, llamadas, res: res?.answer || null, kept2: res2.kept, chunks2: res2.chunks };
+  });
+  ok('9 · AbortError del proveedor con la señal del turno intacta: «aborted», no «El modelo falló»',
+    r.tipos.includes('aborted') && !r.tipos.includes('error') && r.texto === '(Parado.)', r.tipos.join(','));
+  ok('9 · Hard Work: ese AbortError lo para en el trozo 1 (no sigue pidiendo trozos)',
+    r.error === 'AbortError' && r.llamadas === 1, `error=${r.error} · ${r.llamadas} llamadas · ${r.res}`);
+  ok('9 · un trozo que falla con otro error sigue sin tumbar el resto', r.chunks2 > 2 && r.kept2 === r.chunks2 - 1, `${r.kept2} de ${r.chunks2}`);
 }
 
 ok('sin errores de página en todo el recorrido', errores.length === 0, errores.slice(0, 3).join(' | '));
