@@ -337,12 +337,22 @@ function wireHistory(root) {
 
 // play/stop del cerebro, visible dentro de la Mente. La elección la persiste
 // ceo.js (misma clave que usa el clic en la elfa) → sobrevive a recargar.
+//
+// Pausar a mitad de un ciclo no es instantáneo: el ciclo se aborta, pero tiene
+// que soltar el modelo. Mientras tanto se dice «pausando…» y no «pausado»
+// —decir lo segundo con el modelo aún ocupado era mentir— y se repinta solo
+// hasta que el ciclo ha terminado de verdad (ceo.isRunning() en false).
 function wirePlayStop(root) {
   const btn = root.querySelector('#mind-playstop');
+  let repinta = null;
   const paint = () => {
     const on = ceo.isEnabled();
-    btn.textContent = on ? '⏸ pausar cerebro' : '▶ reanudar cerebro';
+    const pausando = !on && ceo.isRunning();
+    btn.textContent = on ? '⏸ pausar cerebro' : pausando ? '⏳ pausando…' : '▶ reanudar cerebro';
     btn.classList.toggle('paused', !on);
+    btn.classList.toggle('pausing', pausando);
+    clearTimeout(repinta);
+    if (pausando) repinta = setTimeout(paint, 250);
   };
   btn.onclick = () => { if (ceo.isEnabled()) ceo.disable(); else ceo.enable(); paint(); };
   paint();

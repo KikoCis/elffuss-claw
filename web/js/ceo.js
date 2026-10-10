@@ -60,6 +60,18 @@ export function setProfiles(list) {
 }
 
 let enabled = false, running = false, lastActivity = Date.now(), timer = null, lastCycleEnd = 0, cycleN = 0;
+// Una parada por ciclo: pausar o volver a usar la app la aborta, y la señal
+// llega hasta el proveedor (corta la generación) y hasta las herramientas.
+let cycleAborter = null;
+// Interrumpir el ciclo en curso. `running` NO se pone a false aquí: lo hace el
+// propio ciclo al terminar de verdad. Mientras tanto vale 'interrupt' y
+// forceCycle()/tick() no arrancan un segundo ciclo encima del que aún se está
+// desmontando — dos ciclos a la vez son dos generate() contra el mismo modelo.
+function interrupt() {
+  if (!running) return;
+  running = 'interrupt';
+  try { cycleAborter?.abort(); } catch { /* */ }
+}
 
 // MISIÓN reprogramable: el usuario puede reorientar el cerebro desde la Mente
 // («céntrate en seguridad», «optimiza mis Excel», «documenta todo»…).
@@ -122,7 +134,7 @@ export function init(opts = {}) {
   initCrossTab();
 }
 export function isThisTabLeader() { return isLeader; }
-export function noteActivity() { lastActivity = Date.now(); if (running) running = 'interrupt'; }
+export function noteActivity() { lastActivity = Date.now(); interrupt(); }
 export function isEnabled() { return enabled; }
 export function isRunning() { return !!running; }
 // Play/stop: persistido AQUÍ (fuente única) — cualquier botón que lo toque
@@ -139,7 +151,9 @@ export function enable() {
   emit('sys', { type: 'status', text: 'CEO en guardia — trabajaré cuando estés ocioso' });
 }
 export function disable() {
-  enabled = false; running = false; if (timer) clearTimeout(timer);
+  // Antes ponía running = false sin más: el ciclo seguía generando por detrás,
+  // escribía su propuesta igual, y «Pensar ahora» podía lanzar otro a la vez.
+  enabled = false; interrupt(); if (timer) clearTimeout(timer);
   try { localStorage.setItem(K('ceoEnabled'), '0'); } catch { /* */ }
   emit('sys', { type: 'status', text: 'CEO en pausa' });
 }
@@ -153,6 +167,7 @@ export async function forceCycle() {
   if (running) return false;
   // isReady() puede ser síncrona (Code: handle en memoria) o async (Claw: consulta IndexedDB) — se espera siempre.
   if (!(await ws?.isReady()) || !getProvider()) { emit('ceo', { type: 'paused', text: 'Necesito un espacio de trabajo abierto y un modelo cargado.' }); return false; }
+  if (running) return false;   // otro ciclo arrancó mientras se esperaba a isReady()
   try { await runCycle(); } finally { lastCycleEnd = Date.now(); }
   return true;
 }
@@ -162,7 +177,7 @@ async function tick() {
   const idle = Date.now() - lastActivity;
   const rested = Date.now() - lastCycleEnd > COOLDOWN_MS;
   const mightRun = isLeader && !running && !isBusy() && idle >= IDLE_MS && rested && getProvider();
-  if (mightRun && await ws?.isReady()) {
+  if (mightRun && await ws?.isReady() && !running) {
     try { await runCycle(); } catch { /* siguiente ciclo */ }
     lastCycleEnd = Date.now();
   }
@@ -172,23 +187,45 @@ async function tick() {
 // helper: corre el agente con el proveedor actual sobre un prompt, emitiendo
 // tokens/herramientas a un canal. Devuelve el texto final. Las tool-calls pasan
 // SIEMPRE por el mismo runTool que usa el chat normal (Agent.handle real).
-async function think(channel, task) {
+// `signal` es la parada del ciclo: llega al proveedor como 4º argumento de
+// chat() (antes este envoltorio lo tiraba, y el proveedor nunca se enteraba de
+// que había que parar) y además para el agente.
+async function think(channel, task, signal = null) {
   const prov = getProvider();
   if (!prov) return '';
-  const a = new Agent({ chat: (h, s, cb) => prov.chat(h, s, cb) });
+  if (signal?.aborted) throw new Error('interrumpido');
+  const a = new Agent({ chat: (h, s, cb, sig) => prov.chat(h, s, cb, sig) });
+  const stop = () => { try { a.stop?.(); } catch { /* */ } };
+  signal?.addEventListener('abort', stop, { once: true });
   let out = '';
-  await a.handle(task, ev => {
-    if (running === 'interrupt') throw new Error('interrumpido');
-    if (ev.type === 'token') { out += ev.text; emit(channel, { type: 'token', text: ev.text }); }
-    else if (ev.type === 'tool') emit(channel, { type: 'tool', text: humanizeTool(ev.call.tool, ev.call.args), tool: ev.call.tool, path: ev.call.args?.path || null });
-    else if (ev.type === 'tool_result') emit(channel, { type: 'tool_result', tool: ev.tool, text: String(ev.result || '').replace(/\s+/g, ' ').trim().slice(0, 100) });
-    else if (ev.type === 'text') { out = ev.text; }
-  });
+  try {
+    await a.handle(task, ev => {
+      // Parado: se ignora lo que llegue, sin lanzar. Lanzar desde aquí metía una
+      // excepción en mitad del agente (y de su proveedor), y un agente que no
+      // distingue la parada la reportaba a telemetría como fallo del modelo.
+      if (running === 'interrupt' || signal?.aborted) return;
+      if (ev.type === 'token') { out += ev.text; emit(channel, { type: 'token', text: ev.text }); }
+      else if (ev.type === 'tool') emit(channel, { type: 'tool', text: humanizeTool(ev.call.tool, ev.call.args), tool: ev.call.tool, path: ev.call.args?.path || null });
+      else if (ev.type === 'tool_result') emit(channel, { type: 'tool_result', tool: ev.tool, text: String(ev.result || '').replace(/\s+/g, ' ').trim().slice(0, 100) });
+      else if (ev.type === 'text') { out = ev.text; }
+    }, { signal });
+  } finally { signal?.removeEventListener('abort', stop); }
+  if (signal?.aborted) throw new Error('interrumpido');
   return out;
 }
 
 async function runCycle() {
   running = true;
+  const aborter = (cycleAborter = new AbortController());
+  try { await cycle(aborter.signal); }
+  finally {
+    // Solo aquí: hasta que el ciclo ha terminado de verdad, sigue «en marcha».
+    running = false;
+    if (cycleAborter === aborter) cycleAborter = null;
+  }
+}
+
+async function cycle(signal) {
   cycleN++;
   emit('ceo', { type: 'cycle', n: cycleN, text: 'Nuevo ciclo: reviso el espacio de trabajo y reparto el trabajo…' });
 
@@ -202,10 +239,11 @@ async function runCycle() {
     `entendible por un humano. Sé breve. No modifiques nada existente: solo la propuesta.`;
   const proposals = await Promise.all(getProfiles().map(async d => {
     emit(d.id, { type: 'open', name: d.name, focus: d.focus });
-    try { const p = await think(d.id, brief(d)); emit(d.id, { type: 'done', text: p }); return { dept: d.name, text: p }; }
+    try { const p = await think(d.id, brief(d), signal); emit(d.id, { type: 'done', text: p }); return { dept: d.name, text: p }; }
     catch { emit(d.id, { type: 'done', text: '(interrumpido)' }); return null; }
   }));
-  if (running === 'interrupt') { running = false; emit('ceo', { type: 'paused', text: 'Vuelves tú — dejo lo mío y te cedo el mando.' }); return; }
+  // Interrumpido: NO se escribe nada. Ni propuesta a medias ni fichero vacío.
+  if (running === 'interrupt' || signal.aborted) { emit('ceo', { type: 'paused', text: 'Vuelves tú — dejo lo mío y te cedo el mando.' }); return; }
 
   const valid = proposals.filter(Boolean).filter(p => p.text && p.text.length > 8);
   const md = `# Propuestas de mejora — ciclo ${cycleN}\n\n**Misión:** ${getMission()}\n\n` +
@@ -217,12 +255,12 @@ async function runCycle() {
   const path = `${getSoulDir()}/${stamp}-${topic}.md`;
   try {
     await rotateSoul();
+    if (signal.aborted) { emit('ceo', { type: 'paused', text: 'Vuelves tú — dejo lo mío y te cedo el mando.' }); return; }
     await ws.write({ path, content: md });
     emit('ceo', { type: 'built', text: `Propuesta guardada en ${path}`, path, md, proposals: valid });
   } catch (e) {
     emit('ceo', { type: 'built', text: 'Propuesta lista (no pude escribir el fichero)', md, proposals: valid });
   }
-  running = false;
 }
 
 // Rotación: si hay demasiados ficheros sueltos, los MÁS ANTIGUOS se consolidan

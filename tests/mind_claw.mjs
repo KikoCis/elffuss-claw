@@ -89,6 +89,76 @@ await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' }); await p.waitForTime
 const enAfterReload = await p.evaluate(async () => (await import('/js/ceo.js')).isEnabled());
 ok('tras recargar, sigue PAUSADO (persistido bajo el namespace de Claw)', !enAfterReload);
 
+// ── pausar A MITAD de un ciclo ───────────────────────────────────────────────
+// Antes, pausar ponía running=false con el ciclo vivo: el modelo seguía
+// generando hasta el final, la Mente decía «pausado» y «Pensar ahora» podía
+// arrancar un segundo ciclo encima. Ahora pausar ABORTA a los agentes del ciclo
+// (la señal llega al proveedor) y la Mente dice «pausando…» hasta que el ciclo
+// ha terminado de verdad. El proveedor de prueba tarda un poco en soltar tras
+// abortar, como un motor real, para que ese estado intermedio se pueda ver.
+await p.click('#btn-mind'); await p.waitForTimeout(600);
+if (/reanudar/.test(await p.locator('#mind-playstop').innerText())) { await p.click('#mind-playstop'); await p.waitForTimeout(150); }
+ok('reanudado desde la Mente para la prueba de pausa', /pausar/.test(await p.locator('#mind-playstop').innerText()));
+const nodosAntes = await p.evaluate(() => document.querySelectorAll('.mind-node-label').length);
+await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  const mind = await import('/js/mind.js');
+  const st = (window.__pausa = { llamadas: 0, abortadas: 0, terminadas: 0, built: 0, paused: 0 });
+  ceo.init({
+    provider: () => ({
+      // El agente pasa { signal, onPrefill } como 4º argumento de chat().
+      chat: async (h, s, cb, opts) => {
+        const signal = opts && typeof opts.aborted === 'boolean' ? opts : opts?.signal;
+        st.llamadas++;
+        for (let i = 0; i < 600; i++) {
+          if (signal?.aborted) { st.abortadas++; await new Promise(r => setTimeout(r, 700)); break; }
+          cb('pensando '); await new Promise(r => setTimeout(r, 25));
+        }
+        st.terminadas++;
+        return 'Propuesta que NO debe guardarse: el ciclo se pausó a mitad y no tiene que forjarse nada.';
+      },
+    }),
+    isBusy: () => false,
+    onEvent: (ch, ev) => {
+      mind.pushThought(ch, ev);
+      if (ch === 'ceo' && ev.type === 'built') st.built++;
+      if (ch === 'ceo' && ev.type === 'paused') st.paused++;
+    },
+  });
+  const t0 = Date.now();
+  while (!ceo.isThisTabLeader() && Date.now() - t0 < 5000) await new Promise(r => setTimeout(r, 100));
+  window.__ciclo = ceo.forceCycle();          // sin await: se pausa mientras corre
+});
+const generando = await p.evaluate(async () => {
+  for (let i = 0; i < 200 && window.__pausa.llamadas < 3; i++) await new Promise(r => setTimeout(r, 25));
+  return window.__pausa.llamadas;
+});
+ok('el ciclo arranca: los 3 perfiles generan a la vez', generando === 3, `${generando} generando`);
+await p.click('#mind-playstop');
+const enPausa = await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  return { texto: document.getElementById('mind-playstop').textContent, corriendo: ceo.isRunning(),
+    activo: ceo.isEnabled(), segundo: await ceo.forceCycle() };
+});
+ok('al pausar a mitad, la Mente dice «pausando…» mientras el ciclo suelta el modelo', /pausando/.test(enPausa.texto) && enPausa.corriendo && !enPausa.activo,
+  JSON.stringify(enPausa));
+ok('mientras se pausa, «Pensar ahora» no arranca otro ciclo encima', enPausa.segundo === false);
+const trasPausa = await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  const btn = document.getElementById('mind-playstop');
+  for (let i = 0; i < 200 && !/reanudar/.test(btn.textContent); i++) await new Promise(r => setTimeout(r, 50));
+  await window.__ciclo;
+  return { texto: btn.textContent, corriendo: ceo.isRunning(), ...window.__pausa,
+    log: document.getElementById('mind-log-body').innerText.slice(-600) };
+});
+ok('cuando el ciclo termina de verdad, el botón pasa a «reanudar»', /reanudar/.test(trasPausa.texto) && !trasPausa.corriendo, trasPausa.texto);
+ok('la parada llegó a CADA generación en curso (señal abortada en el proveedor)', trasPausa.abortadas === 3 && trasPausa.terminadas === 3,
+  `${trasPausa.abortadas} abortadas de ${trasPausa.llamadas}`);
+ok('el ciclo pausado no forja ninguna propuesta', trasPausa.built === 0 && trasPausa.paused === 1
+  && await p.evaluate(() => document.querySelectorAll('.mind-node-label').length) === nodosAntes,
+  `built=${trasPausa.built} paused=${trasPausa.paused}`);
+ok('la Mente cuenta que dejó el ciclo', /dejo lo mío|cortado el ciclo/.test(trasPausa.log), trasPausa.log.slice(-160));
+
 await p.screenshot({ path: OUT + '/mind_claw.png' });
 console.log('captura → mind_claw.png');
 console.log(fails ? `\n❌ ${fails} FALLO(S)` : '\n✅ CEREBRO CEO EN CLAW OK — perfiles propios + fs.js multi-carpeta + tool-calling real');
