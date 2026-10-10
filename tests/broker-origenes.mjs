@@ -34,6 +34,10 @@ const ACEPTA = [
   'https://copilot.elffuss.utopiaia.com', 'https://translator.elffuss.utopiaia.com', 'https://t2t.elffuss.utopiaia.com',
   'https://models.elffuss.utopiaia.com', 'https://m1.elffuss.utopiaia.com',
   'https://elffuss-claw.utopiaia.com', 'https://elffuss-code.utopiaia.com',
+  // Burn My Computer sigue embebiendo la caché compartida (commit 2125fb0). La
+  // copia de broker/ no lo aceptaba y la de server/ sí, y esta prueba no lo veía
+  // porque el origen no estaba en ninguna de las dos listas.
+  'https://burn-my-computer.utopiaia.com',
   'http://localhost', 'http://localhost:8642',
   'https://socio.example',                       // añadido por ?allow=
 ];
@@ -49,7 +53,10 @@ const RECHAZA = [
   'https://key.elffuss.com', 'https://key.elffuss.utopiaia.com',
   'https://www.elffuss.com', 'https://otra.elffuss.com', 'https://x.claw.elffuss.com',
   'https://models.git.elffuss.com', 'https://mx.elffuss.com',
+  'https://burn-my-computer.utopiaia.com.evil.net', 'http://burn-my-computer.utopiaia.com',
+  'https://x.burn-my-computer.utopiaia.com',
 ];
+const veredictos = {};   // página → { origen: acepta? }
 for (const pagina of ['server/broker/index.html', 'broker/index.html']) {
   const html = readFileSync(join(RAIZ, pagina), 'utf8');
   const ini = html.indexOf('const extra =');
@@ -61,6 +68,16 @@ for (const pagina of ['server/broker/index.html', 'broker/index.html']) {
   const malRechazados = ACEPTA.filter(o => !allowed(o));
   ok(`${pagina}: acepta las webs de Elffuss de los dos dominios`, !malRechazados.length, malRechazados.join(' '));
   ok(`${pagina}: no acepta git, key, el resto de utopiaia.com ni imitaciones`, !malAceptados.length, malAceptados.join(' '));
+  veredictos[pagina] = Object.fromEntries([...ACEPTA, ...RECHAZA].map(o => [o, allowed(o)]));
+}
+// Las dos copias tienen que decir LO MISMO de cada origen. Si alguien toca una y
+// se olvida de la otra, esto falla aunque el origen nuevo no esté en las listas
+// de arriba como aceptado o rechazado a propósito.
+{
+  const [a, b] = ['server/broker/index.html', 'broker/index.html'].map(p => veredictos[p] || {});
+  const distintos = Object.keys(a).filter(o => a[o] !== b[o]);
+  ok('las dos copias del broker aceptan exactamente los mismos orígenes', Object.keys(a).length > 0 && !distintos.length,
+    distintos.map(o => `${o} (server/: ${a[o]}, broker/: ${b[o]})`).join(' '));
 }
 
 // ── 2. Un `document` de mentira para el SDK del broker ───────────────────────
