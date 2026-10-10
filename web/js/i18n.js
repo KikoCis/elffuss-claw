@@ -145,6 +145,8 @@ const L = {
     proposalRun: '▶ Ejecutar esta propuesta', proposalQueued: '▶ enviado a la cola…',
     proposalNeedsModel: 'Para ejecutar una propuesta hace falta un modelo cargado: en modo Básico se ejecutaría como órdenes sueltas.',
     pickModel: 'Elegir modelo',
+    newChat: 'Nueva conversación', chatRestored: 'Conversación restaurada',
+    chatCleared: 'Conversación nueva: la anterior se ha borrado', undoGone: 'Ya no hay nada que deshacer',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -286,6 +288,8 @@ const L = {
     proposalRun: '▶ Run this proposal', proposalQueued: '▶ sent to the queue…',
     proposalNeedsModel: 'Running a proposal needs a loaded model: in Basic mode it would run as loose commands.',
     pickModel: 'Pick a model',
+    newChat: 'New conversation', chatRestored: 'Conversation restored',
+    chatCleared: 'New conversation: the previous one was deleted', undoGone: 'There is nothing to undo any more',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
@@ -624,6 +628,10 @@ export function applyI18n() {
   $('#tabs')?.setAttribute('aria-label', t.tabsLabel || L.en.tabsLabel);
   const ph = $('#prompt'); if (ph) ph.placeholder = t.ph;
   set('#btn-perms', t.perms);
+  // Botones de solo icono: su nombre accesible, en el idioma de la página (antes
+  // era el title en español en todos los idiomas).
+  const nombre = (sel, key) => { const e = $(sel); const v = t[key] || L.en[key]; if (e && v) { e.title = v; e.setAttribute('aria-label', v); } };
+  nombre('#btn-clear', 'newChat');
   set('#vista-empty p', t.empty); // simplifica: solo la 1ª línea
   const emptyP = $('#vista-empty p'); if (emptyP) emptyP.innerHTML = `${t.empty}<br><i>${t.tryit}</i>`;
   set('#splash .l1', t.s1); set('#splash .l2', t.s2); set('#splash .l3', t.s3);

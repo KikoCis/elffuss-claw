@@ -768,6 +768,8 @@ function usageCard() {
 }
 let onFreeModelCb = () => {};
 export function setOnFreeModel(fn) { onFreeModelCb = fn; }
+let onWipeCb = async () => { await workspace.wipe({ confirm: 'BORRAR' }); location.reload(); };
+export function setOnWipe(fn) { onWipeCb = fn; }
 
 // ---------- espacio de trabajo (carpeta en disco, inventario, limpieza) ----------
 const kb = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n > 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
@@ -829,12 +831,17 @@ function workspaceCard() {
       inv.appendChild(line);
     }
     const danger = el('div', 'row');
-    danger.appendChild(btn(tr('wsWipe'), 'ghost', async () => {
+    const wipe = btn(tr('wsWipe'), 'ghost', async () => {
       if (!window.confirm(tr('wsWipeConfirm'))) return;
-      await workspace.wipe({ confirm: 'BORRAR' });
-      toast(tr('wsWiped'));
-      await paint();
-    }));
+      wipe.disabled = true;
+      // Lo hace el kernel: para el turno en marcha, borra y RECARGA. Borrar solo
+      // el IndexedDB dejaba la conversación en pantalla y en memoria, y el
+      // siguiente mensaje la volvía a guardar entera; skills, bóveda abierta y
+      // app actual también seguían vivas hasta recargar.
+      try { await onWipeCb(); }
+      catch (e) { wipe.disabled = false; toast('⚠️ ' + (e?.message || e)); }
+    });
+    danger.appendChild(wipe);
     inv.appendChild(danger);
   };
   paint().catch(() => { state.textContent = '—'; });
@@ -1134,7 +1141,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
 
   // iconos vectoriales (sin emojis)
   $('model-ico').innerHTML = UI.code;
-  $('btn-clear').innerHTML = UI.clear;
+  $('btn-clear').innerHTML = UI.newChat || UI.clear;
   setWorking(working);   // icono, título y aria del botón enviar/parar
   $('btn-slash').innerHTML = UI.slash;
 

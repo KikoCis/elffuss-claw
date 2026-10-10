@@ -607,40 +607,97 @@ async function restoreHistory() {
       else ui.addMsg('assistant', m.content);
     }
   }
-  ui.toast('Conversación restaurada (para empezar de cero)');
+  // «restaurada» y, al lado, cómo empezar de cero (antes el aviso decía
+  // «Conversación restaurada (para empezar de cero)», que se leía al revés).
+  ui.toast(t('chatRestored'), { accion: { label: t('newChat'), run: () => nuevaConversacion() } });
 }
 
-document.getElementById('btn-clear').addEventListener('click', async e => {
-  const boton = e.currentTarget;
-  if (boton.getAttribute('aria-busy') === 'true') return;   // ya se está borrando
-  // PARAR PRIMERO. Un turno en marcha guarda el histórico al terminar: si lo
-  // hacía DESPUÉS de este borrado, la conversación «borrada» volvía al recargar.
-  // Subir la época hace que ese turno ya no guarde, y se espera (con tope) a que
-  // el turno abortado suelte el modelo antes de recargar. Es una época y no una
-  // bandera porque la recarga puede no llegar a ocurrir (si el navegador
-  // pregunta antes de salir y le dices que no): los turnos nuevos tienen que
-  // seguir guardando.
+// PARAR PRIMERO. Un turno en marcha guarda el histórico al terminar: si lo
+// hacía DESPUÉS de un borrado, la conversación «borrada» volvía al recargar.
+// Subir la época hace que ese turno ya no guarde, y se espera (con tope) a que
+// el turno abortado suelte el modelo antes de recargar. Es una época y no una
+// bandera porque la recarga puede no llegar a ocurrir (si el navegador
+// pregunta antes de salir y le dices que no): los turnos nuevos tienen que
+// seguir guardando. `limpiando` (para lo que guarda fuera de un turno, como el
+// aviso del cerebro) se suelta solo si la página sigue viva tras recargar.
+//
+// `boton` es el que se pulsó (🧹) y `aviso`, qué decir mientras el turno suelta
+// el modelo. Que se note YA que el clic ha llegado: hasta que el turno soltaba
+// el modelo (o vencía el tope) no cambiaba nada —ni el botón, ni un aviso— y la
+// conversación seguía a la vista. Sale de la vista al momento: se va a borrar
+// igual, y si la recarga no llega a ocurrir, lo que se ve coincide con lo que
+// queda guardado. aria-disabled y no disabled, por el foco (ver setStopping).
+async function pararParaBorrar({ boton = null, aviso = '' } = {}) {
   epocaHistorial++;
   limpiando = true;
   stopCurrent();
-  // Y que se note YA que el clic ha llegado: hasta que el turno soltaba el
-  // modelo (o vencía el tope) no cambiaba nada —ni el botón, ni un aviso— y la
-  // conversación seguía a la vista. Sale de la vista al momento: se va a borrar
-  // igual, y si la recarga no llega a ocurrir, lo que se ve coincide con lo que
-  // queda guardado. aria-disabled y no disabled, por el foco (ver setStopping).
-  boton.setAttribute('aria-busy', 'true');
-  boton.setAttribute('aria-disabled', 'true');
-  ui.toast(t('clearing'));
-  ui.announce(t('clearing'));
+  if (boton) {
+    boton.setAttribute('aria-busy', 'true');
+    boton.setAttribute('aria-disabled', 'true');
+  }
+  if (aviso) { ui.toast(aviso); ui.announce(aviso); }
   ui.clearLog();
   await Promise.race([pumpFin, new Promise(r => setTimeout(r, 3000))]);
+}
+// Si el navegador pregunta antes de salir y le dicen que no, la página sigue
+// aquí: se suelta `limpiando` y el botón vuelve a estar disponible.
+function recargar(boton = null) {
+  location.reload();
+  setTimeout(() => {
+    limpiando = false;
+    boton?.removeAttribute('aria-busy');
+    boton?.removeAttribute('aria-disabled');
+  }, 3000);
+}
+
+// Avisos que tienen que verse DESPUÉS de recargar (🧹 y «Borrar todo»).
+const AVISO_KEY = 'elffuss.avisoTrasRecargar';
+function avisarTrasRecargar(aviso) { try { sessionStorage.setItem(AVISO_KEY, JSON.stringify(aviso)); } catch { /* — */ } }
+function avisoPendiente() {
+  try { const a = JSON.parse(sessionStorage.getItem(AVISO_KEY) || 'null'); sessionStorage.removeItem(AVISO_KEY); return a; }
+  catch { return null; }
+}
+
+// 🧹 Nueva conversación. Sin confirmación, pero con «Deshacer»: la conversación
+// que se va se guarda aparte (kv/historyBackup) y, tras recargar, un aviso
+// ofrece recuperarla. Esa copia vive hasta la siguiente carga de la página.
+async function nuevaConversacion() {
+  const boton = document.getElementById('btn-clear');
+  if (boton?.getAttribute('aria-busy') === 'true') return;   // ya se está borrando
+  await pararParaBorrar({ boton, aviso: t('clearing') });
+  const actual = await db.get('kv', 'history').catch(() => null);
+  if (actual?.length) {
+    await db.set('kv', 'historyBackup', actual).catch(() => {});
+    avisarTrasRecargar({ tipo: 'limpiado' });
+  }
   await db.del('kv', 'history').catch(() => {});
   await db.del('kv', 'queue').catch(() => {});
   agent.history = [];
-  location.reload();
-  // Si el navegador pregunta antes de salir y le dicen que no, la página sigue
-  // aquí: el botón vuelve a estar disponible.
-  setTimeout(() => { boton.removeAttribute('aria-busy'); boton.removeAttribute('aria-disabled'); }, 1500);
+  recargar(boton);
+}
+async function deshacerNuevaConversacion() {
+  const copia = await db.get('kv', 'historyBackup').catch(() => null);
+  if (!copia?.length) { ui.toast(t('undoGone')); return; }
+  await pararParaBorrar();
+  await db.set('kv', 'history', copia).catch(() => {});
+  await db.del('kv', 'historyBackup').catch(() => {});
+  await db.del('kv', 'queue').catch(() => {});
+  recargar();
+}
+document.getElementById('btn-clear').addEventListener('click', () => nuevaConversacion());
+
+// «Borrar todo del navegador» (Ajustes). Lo mismo que 🧹 —parar primero, que
+// nada vuelva a escribir— y RECARGAR: lo que vive en memoria (la conversación,
+// las skills, la bóveda abierta, la app actual) también se va.
+ui.setOnWipe(async () => {
+  await pararParaBorrar();
+  await workspace.wipe({ confirm: 'BORRAR' });
+  for (const k of ['queue', 'lastDone', 'mindLog', 'historyBackup']) await db.del('kv', k).catch(() => {});
+  mindLog.olvidar();
+  try { localStorage.removeItem('elffuss.promptHistory'); } catch { /* — */ }
+  agent.history = [];
+  avisarTrasRecargar({ tipo: 'borrado' });
+  recargar();
 });
 
 async function changeModel(id) {
@@ -733,7 +790,16 @@ ui.setOnFreeModel(async () => {
   try { await mod?.unload?.(); } catch { /* mejor esfuerzo */ }
 });
 refreshModelOptions();
-restoreHistory().then(restoreQueue);
+const avisoAlCargar = avisoPendiente();
+restoreHistory().then(restoreQueue).then(() => {
+  if (avisoAlCargar?.tipo === 'limpiado') {
+    ui.toast(t('chatCleared'), { accion: { label: t('undo'), run: deshacerNuevaConversacion } });
+  } else {
+    // Sin el aviso, ya no hay nada que deshacer: la copia se va.
+    db.del('kv', 'historyBackup').catch(() => {});
+    if (avisoAlCargar?.tipo === 'borrado') ui.toast(t('wsWiped'));
+  }
+});
 
 // Direcciones (#/apps/reloj, #/tareas/t1…, ver rutas.js): la que trae la página
 // al abrirse, y las que lleguen después con «Atrás», un enlace o a mano.
