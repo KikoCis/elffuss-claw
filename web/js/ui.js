@@ -35,6 +35,19 @@ export function addMsg(cls, text) {
   return div;
 }
 
+// Una línea de la conversación que escucha el copiloto (viene del Translator):
+// quién habla y qué dice, con su estilo, no como un mensaje del usuario.
+export function addTranscripcion(quien, texto) {
+  const div = document.createElement('div');
+  div.className = 'msg transcript';
+  const q = document.createElement('b');
+  q.textContent = quien + ': ';
+  div.append(q, document.createTextNode(texto));
+  $('log').appendChild(div);
+  $('log').scrollTop = $('log').scrollHeight;
+  return div;
+}
+
 function shortArgs(args = {}) {
   const s = Object.entries(args)
     .map(([k, v]) => `${k}=${String(v).slice(0, 40)}`).join(' · ');
@@ -321,6 +334,11 @@ function mostrarPermiso(scope, meta, detail) {
 // ---------- visualizador ----------
 const isMobile = () => matchMedia('(max-width: 700px)').matches;
 
+// Cuándo abrió el USUARIO una app a mano (panel Apps o su dirección): el
+// tablero del copiloto no la tapa durante un rato (ver kernel.js).
+let aperturaManualT = 0;
+export const aperturaManual = () => aperturaManualT;
+
 // `ruta`: es una app guardada (apps.create/open) y su dirección es #/apps/<nombre>.
 // El tablero del copiloto también se pinta aquí, pero no es una app guardada.
 export function renderApp(name, html, { ruta = false } = {}) {
@@ -392,7 +410,7 @@ export async function navegar(ruta) {
   }
   if (seccion === 'apps' && detalle) {
     const app = (await apps.allApps()).find(a => a.name === detalle);
-    if (app) { await apps.open({ name: app.name }); rutas.reflejar('apps', app.name); return; }
+    if (app) { aperturaManualT = Date.now(); await apps.open({ name: app.name }); rutas.reflejar('apps', app.name); return; }
     toast(tr('appMissing', { name: detalle }));
     return verPanel('apps');
   }
@@ -467,7 +485,9 @@ export async function refreshApps() {
     panel.appendChild(card(
       el('b', null, app.name),
       el('span', 'muted', new Date(app.created).toLocaleString(uiLang())),
-      btn(tr('open'), 'primary', () => renderApp(app.name, app.html)),
+      // Por apps.open(): así la app abierta es ESTA también para el modelo
+      // (CONTEXTO AHORA), no solo en pantalla.
+      btn(tr('open'), 'primary', () => { aperturaManualT = Date.now(); apps.open({ name: app.name }).catch(e => toast('⚠️ ' + e.message)); }),
       btn('🗑', 'ghost', async () => { await apps.removeApp({ name: app.name }); refreshApps(); }),
     ));
   }

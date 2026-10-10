@@ -103,6 +103,9 @@ main {
 .msg.user { background: var(--accent2); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
 .msg.assistant { background: var(--bg3); border: 1px solid var(--line); align-self: flex-start; border-bottom-left-radius: 4px; }
 .msg.err { border-color: #a03050; }
+/* lo que se oye en la llamada del copiloto: no es un mensaje del usuario */
+.msg.transcript { align-self: flex-start; background: none; border-left: 3px solid var(--accent2); border-radius: 4px; color: var(--muted); font-size: .86rem; padding: 4px 10px; }
+.msg.transcript b { color: var(--fg); font-weight: 600; }
 .msg.thinking {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   background: var(--bg3); border: 1px dashed var(--line);

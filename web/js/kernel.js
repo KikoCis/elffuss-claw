@@ -1252,14 +1252,23 @@ function copilotInitState() { copilotData = {}; copilotTranscript = []; }
 function renderCopilotBoard() {
   try { ui.renderApp(copilotSkill.icon + ' ' + copilotSkill.name, surfaceHtml(copilotSkill)); } catch { /* */ }
 }
+// Una app que el USUARIO acaba de abrir (Apps › Abrir, o su dirección) manda
+// sobre el tablero un rato: antes el vigilante la tapaba con el tablero a los
+// pocos segundos, y «Abrir» parecía no hacer nada.
+const COPILOTO_RESPETA_MS = 60000;
+const vistaLibreParaTablero = () => Date.now() - ui.aperturaManual() > COPILOTO_RESPETA_MS;
+const tableroALaVista = () => {
+  const f = document.getElementById('appframe');
+  return !!f && !f.hidden && (f.srcdoc || '').includes(copilotSkill.name);
+};
 function copilotPostState(advice) {
   // El visor de Claw es uno solo: si otra cosa (una app del agente, el cerebro
   // autónomo…) lo ocupa, la superficie desaparecía. Se re-monta sola.
-  const f0 = document.getElementById('appframe');
-  if (!f0 || f0.hidden || !(f0.srcdoc || '').includes(copilotSkill.name)) renderCopilotBoard();
+  if (!tableroALaVista() && vistaLibreParaTablero()) renderCopilotBoard();
   const frame = document.getElementById('appframe');
   const msg = { type: 'surface-state', id: copilotSkill.id, data: copilotData, advice: advice || '' };
-  try { frame?.contentWindow?.postMessage(msg, '*'); } catch { /* */ }
+  // Solo al tablero: si en el visor hay otra app, los datos de la llamada no son suyos.
+  if (tableroALaVista()) { try { frame?.contentWindow?.postMessage(msg, '*'); } catch { /* */ } }
   // Proyección a la app que abrió el copiloto: pantalla partida de verdad.
   if (window.__copilotOpener && window.opener) {
     try { window.opener.postMessage({ kind: 'surface-state', ...msg }, window.__copilotOpener); } catch { /* */ }
@@ -1292,6 +1301,7 @@ function copilotEmit(text, { applyRules = false, isGemma = false } = {}) {
   if (show && window.__copilotOpener && window.opener) {
     try { window.opener.postMessage({ kind: 'copilot-advice', text: show }, window.__copilotOpener); } catch { /* */ }
   }
+  return show;
 }
 window.__copilotEmit = copilotEmit;
 
@@ -1319,7 +1329,9 @@ function _phone(t) {
   return sp.length >= 7 ? sp : null;
 }
 const _EMAIL_RE = /[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/i;
-const _NAME_RE = /\b(?:me llamo|mi nombre es|soy|le habla|habla)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,2})/;
+// El disparador acepta mayúscula inicial («Me llamo Ana», que es como empieza
+// una frase en una transcripción); el nombre sigue teniendo que ir en mayúscula.
+const _NAME_RE = /\b(?:[Mm]e llamo|[Mm]i nombre es|[Ss]oy|[Ll]e habla|[Hh]abla)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,2})/;
 const _NAME_STOP = /^(de|del|la|el|un|una|responsable|comercial|gerente|director|jefe)\b/i;
 const _INTERES_RE = /\b(me interesa|nos interesa|interesad|me viene bien|suena bien|me gustar[ií]a)\b/i;
 const _COMPRA_RE = /\b(quiero contratar|queremos contratar|quiero comprar|lo contrato|me lo quedo|adelante|cerramos|firmamos|hacemos el pedido)\b/i;
@@ -1385,7 +1397,9 @@ Si no hay nada útil que decir: CONSEJO: —`;
   try {
     const out = await agent.provider.chat(msgs, sys, () => {});
     copilotHist.push({ role: 'assistant', content: String(out).slice(0, 400) });
-    ui.addMsg('assistant', String(out).slice(0, 300));
+    // En el chat va SOLO el consejo, no las tres líneas crudas del contrato
+    // (CONSEJO/ACCION/DATOS; en Básico, el texto de ayuda): se lee sin descifrar.
+    console.debug('[copiloto] salida del modelo:', String(out).slice(0, 300));
     // La transcripción se apunta ANTES de emitir: la gramática la usa para anclar
     // los datos (lo que nadie dijo no entra) y para cazar el consejo que solo es
     // eco del interlocutor.
@@ -1393,7 +1407,8 @@ Si no hay nada útil que decir: CONSEJO: —`;
     // applyRules → corrección determinista dentro del emit: los datos
     // regex-ables mandan sobre el modelo y, en cerebro ligero, los objetivos
     // salen SOLO de reglas. El consejo se compone ya con el tablero corregido.
-    copilotEmit(out, { applyRules: true, isGemma: activeModel.startsWith('litert') });
+    const consejo = copilotEmit(out, { applyRules: true, isGemma: activeModel.startsWith('litert') });
+    if (consejo && consejo !== '—') ui.addMsg('assistant', '💡 ' + consejo);
   } catch (e) {
     ui.addMsg('assistant err', 'copiloto: ' + (e?.message || e));
   } finally { copilotBusy = false; }
@@ -1426,6 +1441,8 @@ Si no hay nada útil que decir: CONSEJO: —`;
       try {
         if (!skills.installed().some(s => s.name === sk.name)) {
           await skills.createSkill({ name: sk.name, description: sk.desc, instructions: audioSkillMd(sk) });
+          // Se dice: es una skill nueva en TUS skills, y se puede quitar.
+          ui.toast(t('copilotSkillInstalled', { name: sk.name }), { accion: { label: t('see'), run: () => rutas.ir('skills', sk.name) } });
         }
       } catch { /* */ }
       copilotInitState();
@@ -1436,13 +1453,15 @@ Si no hay nada útil que decir: CONSEJO: —`;
       window.__copilotBoardWatch = setInterval(() => {
         const f = document.getElementById('appframe');
         if (document.hidden) return;
-        if (!f || f.hidden || !(f.srcdoc || '').includes(sk.name)) { renderCopilotBoard(); copilotPostState(''); }
+        if ((!f || f.hidden || !(f.srcdoc || '').includes(sk.name)) && vistaLibreParaTablero()) { renderCopilotBoard(); copilotPostState(''); }
       }, 5000);
       setTimeout(() => { if (activeModel === 'rules') copilotPostState('Cargando el cerebro… empiezo en cuanto esté listo.'); }, 800);
       copilotHist = [];
     } else if (m.kind === 'transcript' && m.text) {
       const line = '[' + (m.speaker || 'interlocutor') + '] ' + String(m.text).slice(0, 400);
-      ui.addMsg('user', line);
+      // Lo que se dice en la llamada no es lo que escribe el usuario: va con su
+      // propio estilo y quién habla, no como una burbuja suya.
+      ui.addTranscripcion(m.speaker || 'interlocutor', String(m.text).slice(0, 400));
       copilotTurn(line);
     }
   });

@@ -158,6 +158,7 @@ const L = {
     mobDesktop: 'Ábrelo en un ordenador y sí funciona: ahí es donde vive.',
     mobAnyway: 'Descargarlo igualmente ({size})', mobLoading: 'Descargando… mientras, el modo básico te atiende.',
     mobFailed: '⚠️ No ha cargado en este teléfono. Puedes reintentarlo, o seguir en modo básico.', mobRetry: 'Reintentar',
+    see: 'Ver', copilotSkillInstalled: 'He instalado la skill «{name}» para el copiloto. Está en tus Skills y la puedes quitar.',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -312,6 +313,7 @@ const L = {
     mobDesktop: 'Open it on a computer and it works: that is where it lives.',
     mobAnyway: 'Download it anyway ({size})', mobLoading: 'Downloading… meanwhile, basic mode is here for you.',
     mobFailed: '⚠️ It did not load on this phone. You can retry, or stay in basic mode.', mobRetry: 'Retry',
+    see: 'See', copilotSkillInstalled: 'I installed the “{name}” skill for the copilot. It is in your Skills and you can remove it.',
 },
   uk: {
     welcome: "Операційна система з душею, що живе у твоєму браузері. Тут застосунки не встановлюють — їх створюють на твій запит, і вони з’являються праворуч. Можу працювати з твоїми теками (за дозволом), зберігати зашифровані секрети, планувати завдання й гортати за тебе. Усе лишається на твоєму пристрої.",
