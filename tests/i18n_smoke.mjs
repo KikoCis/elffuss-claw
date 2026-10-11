@@ -109,7 +109,16 @@ for (const locale of ['en-US', 'es-ES']) {
   console.log('  placeholder:', JSON.stringify(ph));
   const rt = await page.evaluate(async () => {
     const i = await import('/js/i18n.js');
-    return { welcome: i.t('welcome', { name: 'Proj' }), writing: i.t('writing', { n: 3 }), ready: i.t('modelReady') };
+    return { welcome: i.t('welcome', { name: 'Proj' }), writing: i.t('writing', { n: 3 }), ready: i.t('modelReady'), ph: i.t('ph') };
+  });
+  // Hard Work encendido y apagado: la caja vuelve a su texto, en el idioma de la
+  // página. Antes se quedaba en «Pídele código a Elffuss…» fijo y en español
+  // (Code e4415eb; 43f95b7 cambió ph y no esa línea).
+  const phTrasHardWork = await page.evaluate(() => {
+    const b = document.getElementById('btn-hardwork');
+    if (!b) return null;
+    b.click(); b.click();
+    return document.getElementById('prompt').placeholder;
   });
   // landing (estático, vía applyI18n): tagline, botón, placeholders, un tooltip
   const land = {
@@ -141,8 +150,12 @@ for (const locale of ['en-US', 'es-ES']) {
     ok('tooltip search EN', land.searchTitle === 'Search (Cmd/Ctrl+P)', land.searchTitle || '');
     ok('palette cmds EN', palCmds.includes('New conversation') && palCmds.includes('Search the code…'), JSON.stringify(palCmds));
     ok('palette hint EN', palHint === 'command', palHint);
-    ok('history/git i18n EN', hist.head === 'Conversation history' && hist.empty === 'No saved conversations yet.' && hist.gCommit === 'Ask Elffuss to commit' && /didn’t load/.test(hist.fallback), JSON.stringify(hist));
-    ok('placeholder EN («Ask Elffuss for code»)', /Ask Elffuss for code/i.test(ph || ''), ph || '');
+    // gCommit: «Draft the commit message» desde Code 67e2551 (rama de integración de Code).
+    ok('history/git i18n EN', hist.head === 'Conversation history' && hist.empty === 'No saved conversations yet.' && hist.gCommit === 'Draft the commit message' && /didn’t load/.test(hist.fallback), JSON.stringify(hist));
+    // El placeholder cambió a propósito en Code 43f95b7 (la caja pasó a área de
+    // texto con @ para adjuntar): se compara con su propia clave y su idioma.
+    ok('placeholder EN = t(ph) («… attaches a file»)', ph === rt.ph && /attaches a file/.test(ph || ''), ph || '');
+    ok('placeholder EN tras encender y apagar Hard Work = t(ph)', phTrasHardWork === rt.ph, String(phTrasHardWork));
     ok('welcome EN {name}', /Project “Proj” open/.test(rt.welcome), rt.welcome);
     ok('writing EN {n} chars', rt.writing === 'Elffuss writes · 3 chars', rt.writing);
     ok('modelReady EN', rt.ready === 'AI model ready', rt.ready);
@@ -151,8 +164,9 @@ for (const locale of ['en-US', 'es-ES']) {
     ok('landing tagline ES', /Abre tu carpeta de código/.test(land.tag), land.tag);
     ok('tooltip search ES', land.searchTitle === 'Buscar (Cmd/Ctrl+P)', land.searchTitle || '');
     ok('palette cmds ES', palCmds.includes('Nueva conversación') && palCmds.includes('Buscar en el código…'), JSON.stringify(palCmds));
-    ok('history/git i18n ES', hist.head === 'Historial de conversaciones' && hist.empty === 'Sin conversaciones guardadas todavía.' && hist.gCommit === 'Pídele a Elffuss que commitee', JSON.stringify(hist));
-    ok('placeholder ES («Pídele código»)', /Pídele código a Elffuss/i.test(ph || ''), ph || '');
+    ok('history/git i18n ES', hist.head === 'Historial de conversaciones' && hist.empty === 'Sin conversaciones guardadas todavía.' && hist.gCommit === 'Redactar el mensaje de commit', JSON.stringify(hist));
+    ok('placeholder ES = t(ph) («… adjunta un archivo»)', ph === rt.ph && /adjunta un archivo/.test(ph || ''), ph || '');
+    ok('placeholder ES tras encender y apagar Hard Work = t(ph)', phTrasHardWork === rt.ph, String(phTrasHardWork));
     ok('welcome ES {name}', /Proyecto «Proj» abierto/.test(rt.welcome), rt.welcome);
     ok('writing ES car.', rt.writing === 'Elffuss escribe · 3 car.', rt.writing);
   }
