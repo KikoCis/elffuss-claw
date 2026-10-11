@@ -21,6 +21,7 @@
 //
 //   PROMPT=corto MODELO=file:///tmp/qwen38-27b.gguf node tests/demo-corto27.mjs
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 import { createServer } from 'http';
 import { createReadStream, statSync, readFileSync, mkdirSync } from 'fs';
 import { Readable } from 'stream';
@@ -97,7 +98,7 @@ const log = s => console.log(`[${seg()}s] ${s}`);
 mkdirSync(VIDEODIR, { recursive: true });
 log(`prompt ${CORTO ? 'CORTO (compacto forzado)' : 'LARGO (app tal cual)'} · modelo desde ${ORIGEN.startsWith('file') ? 'disco local' : 'producción'} · ${MAXTOK} tokens de tope`);
 
-const ARGS = ['--enable-unsafe-webgpu', '--use-angle=metal'];
+const ARGS = ['--enable-unsafe-webgpu', ...CHROME_ARGS];
 const b = await chromium.launch({ args: ARGS }).catch(() => chromium.launch({ channel: 'chrome', args: ARGS }));
 const ctx = await b.newContext({
   locale: 'es-ES',

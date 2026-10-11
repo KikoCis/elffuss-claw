@@ -4,6 +4,7 @@
 // Doubles as an e2e smoke test: loads the real Gemma-4 model on WebGPU and
 // exercises app.create end to end.
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 import { mkdirSync } from 'node:fs';
 const REC = process.env.REC || new URL('../../elffuss-assets/_recording', import.meta.url).pathname;
 const OUT = process.env.OUT || REC + '/videos';
@@ -24,7 +25,7 @@ async function waitIdle(p, maxMs = 180000) {
 const PROFILE = process.env.PROFILE || REC + '/profile-claw-gemma';
 mkdirSync(PROFILE, { recursive: true });
 const ctx = await chromium.launchPersistentContext(PROFILE, {
-  args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-webgpu', '--use-angle=metal',
+  args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-webgpu', ...CHROME_ARGS,
     // WebGPU LLM inference issues long GPU dispatches; Chromium's GPU watchdog
     // otherwise kills the GPU process mid-inference/-load → "Target page…closed".
     '--disable-gpu-watchdog', '--disable-gpu-process-crash-limit'],

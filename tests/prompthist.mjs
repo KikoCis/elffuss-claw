@@ -1,10 +1,11 @@
 // Historial del prompt del chat en Claw: ↑/↓ recuperan lo enviado.
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 const BASE = process.env.BASE || 'http://localhost:8788';
 let fails = 0;
 const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
 
-const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', ...CHROME_ARGS] });
 const ctx = await b.newContext();
 // Ya «bienvenido»: el splash de primera visita es un diálogo modal con el foco
 // en «Entrar», y el primer Enter era para él (no se enviaba «hola uno»).

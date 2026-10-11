@@ -9,6 +9,7 @@
 // el hook de test: con 1 GiB de verdad habría que bajar gigabytes para tocar
 // una sola frontera.
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 import { writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -33,7 +34,7 @@ process.on('exit', cleanup);
 // El Chromium que descarga playwright y el que pide la versión instalada no
 // siempre coinciden (y una limpieza de disco se lleva la caché por delante).
 // El Chrome del sistema sirve igual para esto.
-const ARGS = { args: ['--enable-unsafe-webgpu', '--use-angle=metal'] };
+const ARGS = { args: ['--enable-unsafe-webgpu', ...CHROME_ARGS] };
 const b = await chromium.launch(ARGS).catch(() => chromium.launch({ ...ARGS, channel: 'chrome' }));
 const ctx = await b.newContext();
 await ctx.addInitScript(() => {

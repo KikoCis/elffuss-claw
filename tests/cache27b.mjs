@@ -8,13 +8,14 @@
 //
 // Ejecutar:  BASE=http://localhost:8642 node tests/cache27b.mjs
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 const BASE = process.env.BASE || 'http://localhost:8642';
 const URL_MODELO = BASE + (process.env.MODELO || '/models/qwen38-27b.gguf');
 let fails = 0;
 const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
 const GB = n => (n / 2 ** 30).toFixed(2) + ' GB';
 
-const ARGS = { args: ['--enable-unsafe-webgpu', '--use-angle=metal'] };
+const ARGS = { args: ['--enable-unsafe-webgpu', ...CHROME_ARGS] };
 const b = await chromium.launch(ARGS).catch(() => chromium.launch({ ...ARGS, channel: 'chrome' }));
 const ctx = await b.newContext();
 // Conceder almacenamiento DURABLE. No es maquillaje del test: a un origen no

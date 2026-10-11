@@ -5,12 +5,13 @@
 //   BASE=https://claw.elffuss.com node e2e.mjs   (o local con serve.py)
 //   npm i && npm test
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 
 const BASE = process.env.BASE || 'https://claw.elffuss.com';
 let fails = 0;
 const ok = (name, cond, extra = '') => { console.log((cond ? '✅' : '❌') + ' ' + name + (extra ? '  — ' + extra : '')); if (!cond) fails++; };
 
-const browser = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+const browser = await chromium.launch({ args: ['--enable-unsafe-webgpu', ...CHROME_ARGS] });
 
 async function fresh(locale = 'es-ES', grants = ['apps', 'tasks', 'vault', 'web', 'memory', 'fs']) {
   const ctx = await browser.newContext({ locale });

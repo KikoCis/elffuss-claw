@@ -12,6 +12,7 @@
 //   node tests/local27.mjs            # ~7,6 GB por la red, unos minutos
 //   MODELO=file:///ruta/al.gguf node tests/local27.mjs    # si lo tienes en disco
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 import { createServer } from 'http';
 import { createReadStream, statSync, readFileSync } from 'fs';
 import { Readable } from 'stream';
@@ -101,7 +102,7 @@ const ok = (n, c, extra = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (
 // CHROMELOG=1 saca por stderr lo que dice el propio navegador. Cuando el que se
 // muere es él, es la única voz que queda: desde fuera solo se ve que ya no está.
 // Va con DEBUG=pw:browser, que es quien enseña ese stderr.
-const ARGS = ['--enable-unsafe-webgpu', '--use-angle=metal',
+const ARGS = ['--enable-unsafe-webgpu', ...CHROME_ARGS,
   ...(process.env.CHROMELOG ? ['--enable-logging=stderr'] : [])];
 const b = await chromium.launch({ args: ARGS })
   .catch(() => chromium.launch({ channel: 'chrome', args: ARGS }));

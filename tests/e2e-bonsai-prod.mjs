@@ -27,6 +27,7 @@
 // Variables: SITIO, OUTDIR, PERFIL, FRESCO, MAXTOK, P1, P2, CARGA_MAX_MIN,
 // RESP_MAX_MIN, ESPERA_INQUILINOS_MIN, IGNORA_INQUILINOS.
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, renameSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -133,7 +134,7 @@ resultado.perfilFresco = !existsSync(PERFIL);
 log(`perfil ${resultado.perfilFresco ? 'NUEVO (bajará el modelo entero)' : 'reutilizado (puede tenerlo guardado)'}`);
 
 // ── Navegador ────────────────────────────────────────────────────────────────
-const ARGS = ['--enable-unsafe-webgpu', '--use-angle=metal'];
+const ARGS = ['--enable-unsafe-webgpu', ...CHROME_ARGS];
 const DIR_VIDEO = join(OUTDIR, `.video-${sello}`);
 const opciones = {
   headless: false, args: ARGS, locale: 'es-ES',

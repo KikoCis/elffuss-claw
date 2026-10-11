@@ -14,6 +14,7 @@
 //
 // Pesado de GPU: coger antes el cerrojo de ~/.gpu_coordination/gpu-lock.sh.
 import { chromium } from 'playwright';
+import { CHROME_ARGS } from './chrome-args.mjs';
 import { createServer } from 'http';
 import { readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
@@ -49,7 +50,7 @@ const server = createServer((req, res) => {
 await new Promise(r => server.listen(PUERTO, r));
 console.log(`litert.js: ${REV ? 'commit ' + REV : 'el de ahora'} · modelo ${MODELO}`);
 
-const ctx = await chromium.launchPersistentContext(PERFIL, { channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+const ctx = await chromium.launchPersistentContext(PERFIL, { channel: 'chrome', args: ['--enable-unsafe-webgpu', ...CHROME_ARGS] });
 const p = ctx.pages()[0] || await ctx.newPage();
 p.on('console', m => { if (/\[litert\]|\[elffuss\]/.test(m.text())) console.log('   consola:', m.text().slice(0, 220)); });
 await p.goto(`http://localhost:${PUERTO}/__prueba.html`);
