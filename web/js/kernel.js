@@ -426,6 +426,10 @@ async function pump() {
 async function vaciarCola() {
   await bootPromise; // no procesar hasta que el cerebro inicial esté resuelto
   while (queue.length) {
+    // Un cerebro cargándose (elegido en el selector): el turno siguiente es suyo,
+    // no del anterior con la cabecera diciendo «Cargando» (ver changeModel).
+    await cargaEnCurso;
+    if (!queue.length) break;
     const item = queue[0];
     // El intento se cuenta y se GUARDA antes de procesar: si el turno mata la
     // pestaña, esto es lo único que queda para saber que ya se intentó —
@@ -825,9 +829,30 @@ function pintarFicha(id) { ui.setFichaModelo(FICHAS[id] || null, etiquetaDe(id))
 const ERRORES_CARGA = { 'falta la clave de API (config avanzada)': 'errApiKeyMissing', 'proveedor sin configurar': 'errProviderUnset' };
 const errorLegible = e => { const m = e?.message || String(e); return ERRORES_CARGA[m] ? t(ERRORES_CARGA[m]) : m; };
 
+// Cambiar de cerebro con un turno en marcha: ese turno se PARA primero, y se
+// dice. Antes la cabecera pasaba a «Básico» (o a «Cargando») al momento mientras
+// el cerebro anterior seguía escribiendo la respuesta, y un paso más de ese
+// turno iría ya con el nuevo. Lo que espera en la cola no se cancela: lo
+// contesta el cerebro nuevo, porque la cola espera a que termine de cargar
+// (cargaEnCurso, ver vaciarCola) antes de empezar el turno siguiente.
+let cargaEnCurso = Promise.resolve();
+function pararTurnoPorCambio() {
+  if (!busy) return;
+  try { turnCtl?.abort(); } catch { /* — */ }
+  ui.setStopping();
+  burbujaTurno?.stopping?.();
+  ui.toast(t('stoppedForModel'));
+}
 // `volviendo`: es la vuelta al cerebro que funcionaba tras un fallo (no se
-// intenta volver otra vez si también falla).
-async function changeModel(id, { volviendo = false } = {}) {
+// intenta volver otra vez si también falla), dentro de un cambio ya en marcha.
+function changeModel(id, opciones = {}) {
+  if (opciones.volviendo) return cambiarModelo(id, opciones);
+  pararTurnoPorCambio();
+  const carga = cambiarModelo(id, opciones);
+  cargaEnCurso = carga.then(() => {}, () => {});
+  return carga;
+}
+async function cambiarModelo(id, { volviendo = false } = {}) {
   const previo = activeModel;         // el que estaba funcionando
   if (id === 'rules') { // modo básico
     agent.setProvider(rules);

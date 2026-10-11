@@ -27,7 +27,11 @@
 //   · ■ devuelve el botón «Ejecutar esta propuesta» si cancela su mensaje o para
 //     su turno;
 //   · una propuesta que espera en la cola y le llega el turno con el cerebro ya
-//     en Básico no se ejecuta (tampoco tras recargar): lo dice y el botón vuelve.
+//     en Básico no se ejecuta (tampoco tras recargar): lo dice y el botón vuelve;
+//   · cambiar de cerebro con un turno en marcha lo para primero y lo dice (la
+//     cabecera ya no dice «Básico» mientras el anterior sigue escribiendo); lo
+//     que esperaba en la cola no se cancela: lo contesta el cerebro nuevo, que
+//     la cola espera a que termine de cargar.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop-ui.mjs
 import { chromium } from 'playwright';
@@ -487,6 +491,51 @@ const cerebroLento = () => p.evaluate(() => {
     && (await enC2()).apps.length === 0 && (await enC2()).herramientas.length === 0, JSON.stringify(await enC2()));
   ok('14 · sin errores de página (tras recargar)', errores2.length === 0, errores2.slice(0, 3).join(' | '));
   await c2.close();
+}
+
+// ── 15 · cambiar de cerebro con un turno en marcha ──────────────────────────
+{
+  await p.evaluate(async () => (await import('/js/db.js')).set('kv', 'history', []));
+  ok('15 · el cerebro de prueba está cargado', await listo());
+  const estado = () => p.evaluate(() => ({ dot: document.getElementById('model-status').className, sel: document.getElementById('model-select').value }));
+  const avisos15 = () => p.$$eval('#toasts .toast-txt', ts => ts.map(t => t.textContent));
+  // a Básico: el turno se para y lo que esperaba lo contesta Básico
+  const n0 = peticiones.length;
+  await escribir('escribe una novela larguísima');
+  await hasta(() => peticiones.length > n0 && peticiones.at(-1).enviados > 3);
+  const larga = peticiones.at(-1);
+  await escribir('hola');
+  await p.selectOption('#model-select', 'rules');
+  ok('15 · elegir Básico con un turno en marcha lo para (el servidor ve la respuesta cortada) y lo dice', await hasta(() => larga.cortada)
+    && await hasta(async () => (await avisos15()).some(t => /Paro la respuesta en curso para cambiar de cerebro/.test(t))), JSON.stringify(await avisos15()));
+  ok('15 · …sin pintar un error: «(Parado.)»', await hasta(async () =>
+    (await p.locator('.msg.assistant.muted').allTextContents()).some(t => t.includes('(Parado.)'))) && await p.locator('.msg.assistant.err').count() === 0);
+  ok('15 · …y lo que esperaba en la cola no se cancela: lo contesta Básico', await hasta(async () =>
+    await p.locator('.msg.user.cancelled').count() === 0 && await p.locator('.msg.user.queued').count() === 0
+    && /modo básico/i.test(await p.locator('#log .msg.assistant').last().innerText().catch(() => ''))), await p.locator('#log').innerText().then(t => t.slice(-200)));
+  ok('15 · …sin que el cerebro anterior lo reciba', !peticiones.slice(n0).some(x => x.ultimo.trim() === 'hola'));
+  ok('15 · la cabecera dice Básico y el anterior ya no escribe', (await estado()).dot === 'dot off' && larga.cortada);
+  await hasta(async () => !(await boton()).stop);
+
+  // a otro cerebro que tarda en cargar: lo que esperaba lo contesta el NUEVO
+  await p.selectOption('#model-select', 'ext:ollama');
+  await hasta(() => p.evaluate(() => document.getElementById('model-status').classList.contains('on') && !document.getElementById('model-select').disabled));
+  await p.route('**/js/providers/onnx.js', r => r.fulfill({ contentType: 'text/javascript',
+    body: 'export function configure(){} export async function load(){ await new Promise(r => setTimeout(r, 1500)); }' +
+      ' export async function chat(h, s, cb){ cb && cb("respuesta del nuevo"); return "respuesta del nuevo"; }' }));
+  const n1 = peticiones.length;
+  await escribir('escribe otra novela larguísima');
+  await hasta(() => peticiones.length > n1 && peticiones.at(-1).enviados > 3);
+  const otra = peticiones.at(-1);
+  await escribir('y luego saluda');
+  await p.selectOption('#model-select', 'onnx:qwen3.5-0.8b');
+  ok('15 · elegir otro cerebro con un turno en marcha también lo para', await hasta(() => otra.cortada));
+  ok('15 · …y lo que esperaba espera a que cargue y lo contesta el nuevo, no el anterior', await hasta(async () =>
+    (await p.locator('#log .msg.assistant').allTextContents()).some(t => t.includes('respuesta del nuevo')), { veces: 200 })
+    && !peticiones.slice(n1).some(x => /y luego saluda/.test(x.ultimo)) && await p.locator('.msg.user.cancelled').count() === 0,
+    JSON.stringify(peticiones.slice(n1).map(x => x.ultimo.slice(0, 30))));
+  await hasta(async () => !(await boton()).stop);
+  await p.unroute('**/js/providers/onnx.js');
 }
 
 if (OUT) { await p.screenshot({ path: OUT + '/stop-ui.png' }); console.log('captura → stop-ui.png'); }

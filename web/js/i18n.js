@@ -396,6 +396,7 @@ const L = {
     ceoProf_memo: 'Memoria',
     ceoProfFocus_memo: 'qué hechos útiles sobre el usuario merece la pena recordar a partir de lo visto, y qué recordado ya no aplica',
     ceoMissionDefault: 'Revisar tu espacio (carpetas, apps, tareas, memoria) y proponer mejoras concretas y accionables.',
+    stoppedForModel: 'Paro la respuesta en curso para cambiar de cerebro.',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -768,6 +769,7 @@ const L = {
     ceoProf_memo: 'Memory',
     ceoProfFocus_memo: 'which useful facts about the user are worth remembering from what was seen, and what is remembered that no longer applies',
     ceoMissionDefault: 'Review your space (folders, apps, tasks, memory) and propose concrete, actionable improvements.',
+    stoppedForModel: 'Stopping the current answer to switch brains.',
 },
   uk: {
     claim: "застосунків не існує: їх створюють",
@@ -1336,6 +1338,7 @@ const L = {
     ceoProf_memo: "Пам’ять",
     ceoProfFocus_memo: "які корисні факти про користувача варто запам’ятати з побаченого, а що із запам’ятованого вже не актуальне",
     ceoMissionDefault: "Переглянути твій простір (теки, застосунки, завдання, пам’ять) і запропонувати конкретні, дієві покращення.",
+    stoppedForModel: "Зупиняю поточну відповідь, щоб змінити мозок.",
   },
 
   fr: {
@@ -1905,6 +1908,7 @@ const L = {
     ceoProf_memo: "Mémoire",
     ceoProfFocus_memo: "quels faits utiles sur l’utilisateur valent la peine d’être retenus d’après ce qui a été vu, et ce qui, parmi le retenu, ne s’applique plus",
     ceoMissionDefault: "Passer en revue ton espace (dossiers, apps, tâches, mémoire) et proposer des améliorations concrètes et applicables.",
+    stoppedForModel: "J’arrête la réponse en cours pour changer de cerveau.",
   },
 
   de: {
@@ -2474,6 +2478,7 @@ const L = {
     ceoProf_memo: "Gedächtnis",
     ceoProfFocus_memo: "welche nützlichen Fakten über den Nutzer sich aus dem Gesehenen zu merken lohnen, und was vom Gemerkten nicht mehr zutrifft",
     ceoMissionDefault: "Deinen Bereich durchsehen (Ordner, Apps, Aufgaben, Gedächtnis) und konkrete, umsetzbare Verbesserungen vorschlagen.",
+    stoppedForModel: "Ich stoppe die laufende Antwort, um das Gehirn zu wechseln.",
   },
 
   pt: {
@@ -3043,6 +3048,7 @@ const L = {
     ceoProf_memo: "Memória",
     ceoProfFocus_memo: "que factos úteis sobre o utilizador vale a pena lembrar a partir do que se viu, e o que, do lembrado, já não se aplica",
     ceoMissionDefault: "Rever o teu espaço (pastas, apps, tarefas, memória) e propor melhorias concretas e aplicáveis.",
+    stoppedForModel: "Paro a resposta em curso para mudar de cérebro.",
   },
 
 };
