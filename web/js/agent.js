@@ -447,7 +447,7 @@ export class Agent {
       if (permitir && !permitir(call.tool)) {
         result = `ERROR: aquí solo puedes leer; «${call.tool}» cambiaría cosas y no está permitida. Propón ese cambio en texto.`;
       } else {
-        try { result = await hastaQueParen(runTool(call.tool, call.args), signal); }
+        try { result = await hastaQueParen(runTool(call.tool, call.args, { signal }), signal); }
         catch (e) {
           // Parado con la herramienta en marcha: el turno acaba aquí y no apunta
           // nada de este paso (la herramienta puede acabar por detrás).

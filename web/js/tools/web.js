@@ -1,6 +1,10 @@
 // Navegación: fetch directo si el sitio lo permite (CORS); si no, cae al
 // proxy del servidor (/proxy?url=…) que sirve server/serve.py o el nginx
 // de producción.
+//
+// Cada herramienta recibe la señal de parada del turno ({ signal }, ver
+// tools/index.js): con ■, la descarga en curso se corta en vez de seguir por
+// detrás hasta el final.
 import { require as requirePerm } from '../permissions.js';
 import { t } from '../i18n.js';
 
@@ -14,35 +18,40 @@ function toText(html) {
   return text || html.slice(0, MAX);
 }
 
+const parado = (e, signal) => signal?.aborted || e?.name === 'AbortError';
+
 // GET a través del proxy CORS del servidor (o directo si el sitio lo permite).
-async function proxyGet(url) {
+async function proxyGet(url, { signal } = {}) {
   let lastErr;
   for (const target of [url, '/proxy?url=' + encodeURIComponent(url)]) {
     try {
-      const res = await fetch(target);
+      const res = await fetch(target, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
-    } catch (e) { lastErr = e; }
+    } catch (e) {
+      if (parado(e, signal)) throw e;   // ■: no se prueba el proxy
+      lastErr = e;
+    }
   }
   throw lastErr || new Error('sin respuesta');
 }
 
-export async function fetchUrl({ url } = {}) {
+export async function fetchUrl({ url } = {}, { signal } = {}) {
   if (!/^https?:\/\//.test(url || '')) throw new Error('URL inválida (usa https://…)');
   await requirePerm('web', url);
-  const text = toText(await proxyGet(url));
+  const text = toText(await proxyGet(url, { signal }));
   return `[${url}]\n` + (text.length > MAX ? text.slice(0, MAX) + '\n… (recortado)' : text);
 }
 
 // Búsqueda web REAL. Parseo TOLERANTE (independiente de clases): DuckDuckGo
 // envuelve cada resultado en un enlace con ?uddg=<url real>. Buscamos esos.
-export async function search({ query } = {}) {
+export async function search({ query } = {}, { signal } = {}) {
   if (!query) throw new Error('Falta query');
   await requirePerm('web', t('pdWebSearch', { q: query }));
   let html = '';
   for (const ep of ['https://html.duckduckgo.com/html/?q=', 'https://lite.duckduckgo.com/lite/?q=']) {
-    try { html = await proxyGet(ep + encodeURIComponent(query)); if (html.includes('uddg=') || html.includes('result')) break; }
-    catch { /* siguiente endpoint */ }
+    try { html = await proxyGet(ep + encodeURIComponent(query), { signal }); if (html.includes('uddg=') || html.includes('result')) break; }
+    catch (e) { if (parado(e, signal)) throw e; /* si no, siguiente endpoint */ }
   }
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const seen = new Set(), out = [];
@@ -63,10 +72,10 @@ export async function search({ query } = {}) {
 }
 
 // Búsqueda de IMÁGENES (Openverse, CC) → URLs para montar una galería.
-export async function images({ query } = {}) {
+export async function images({ query } = {}, { signal } = {}) {
   if (!query) throw new Error('Falta query');
   await requirePerm('web', t('pdWebImages', { q: query }));
-  const raw = await proxyGet('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(query) + '&page_size=12');
+  const raw = await proxyGet('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(query) + '&page_size=12', { signal });
   let data;
   try { data = JSON.parse(raw); } catch { throw new Error('respuesta inesperada del buscador de imágenes'); }
   const imgs = (data.results || []).map(r => ({ url: r.url, thumb: r.thumbnail || r.url, title: (r.title || '').slice(0, 60), by: r.creator || '' }))

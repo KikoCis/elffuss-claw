@@ -28,9 +28,9 @@ export const TOOLS = {
   'tasks.add':    { desc: 'Programar una tarea futura (Elffuss se enviará ese prompt)', params: { inMinutes: 'minutos desde ahora', at: 'fecha ISO (alternativa)', prompt: 'qué hacer' }, run: a => tasks.add(a) },
   'tasks.list':   { desc: 'Ver las tareas programadas', params: {}, run: () => tasks.listTasks() },
   'tasks.remove': { desc: 'Borrar una tarea programada', params: { id: 'id de la tarea' }, run: a => tasks.removeTask(a) },
-  'web.search': { desc: 'Buscar en internet (texto): devuelve títulos, enlaces y fragmentos', params: { query: 'qué buscar' }, run: a => web.search(a) },
-  'web.images': { desc: 'Buscar imágenes en internet y mostrarlas en una galería', params: { query: 'qué imágenes' }, run: a => imagesGallery(a) },
-  'web.fetch': { desc: 'Visitar una URL concreta y devolver su texto', params: { url: 'https://…' }, run: a => web.fetchUrl(a) },
+  'web.search': { desc: 'Buscar en internet (texto): devuelve títulos, enlaces y fragmentos', params: { query: 'qué buscar' }, run: (a, ctx) => web.search(a, ctx) },
+  'web.images': { desc: 'Buscar imágenes en internet y mostrarlas en una galería', params: { query: 'qué imágenes' }, run: (a, ctx) => imagesGallery(a, ctx) },
+  'web.fetch': { desc: 'Visitar una URL concreta y devolver su texto', params: { url: 'https://…' }, run: (a, ctx) => web.fetchUrl(a, ctx) },
   'skill.create': { desc: 'CREAR una skill propia: instrucciones especializadas que seguirás siempre (para automatizar/optimizar lo que el usuario pida)', params: { name: 'nombre corto', description: 'para qué sirve', instructions: 'instrucciones detalladas en markdown' }, run: a => skills.createSkill(a) },
   'skill.list':   { desc: 'Ver las skills instaladas', params: {}, run: async () => { const s = skills.installed(); return s.length ? s.map(x => `• ${x.name}: ${x.description || ''}`).join('\n') : 'No hay skills. Pídeme «créame una skill para…».'; } },
   'skill.get':    { desc: 'Leer el contenido completo de una skill instalada (útil antes de editarla)', params: { name: 'nombre de la skill' }, run: async a => { const s = await skills.get(a.name); return s ? `# ${s.name}\n${s.description || ''}\n\n${s.content || ''}` : `No existe la skill «${a.name}».`; } },
@@ -46,8 +46,8 @@ export function toolHelp() {
 }
 
 // web.images → galería HTML mostrada al instante en el visualizador.
-async function imagesGallery({ query } = {}) {
-  const res = await web.images({ query });
+async function imagesGallery({ query } = {}, ctx = {}) {
+  const res = await web.images({ query }, ctx);
   let data;
   try { data = JSON.parse(res); } catch { return res; } // era «sin imágenes»
   const cards = data.images.map(i =>
@@ -64,10 +64,15 @@ span{position:absolute;bottom:0;left:0;right:0;font-size:.6rem;color:#c9d1d9;bac
   return `Galería con ${data.images.length} imágenes de «${query}» abierta en el visualizador.`;
 }
 
-export async function runTool(name, args) {
+// `ctx` lo pone el agente: la señal de parada de su turno ({ signal }). Las
+// herramientas que hablan con la red (web.*) se la pasan a fetch, así que ■ corta
+// la descarga en curso; el resto la ignora. Antes ninguna la recibía: el turno
+// dejaba de esperar (agent.js, hastaQueParen) pero la descarga seguía por
+// detrás hasta el final. (Elffuss Code hace lo mismo con terminal.run.)
+export async function runTool(name, args, ctx = {}) {
   const tool = TOOLS[name];
   if (!tool) throw new Error(`Herramienta desconocida: ${name}`);
-  return tool.run(args || {});
+  return tool.run(args || {}, ctx);
 }
 
 // Estado real del sistema, inyectado al modelo en cada turno (CONTEXTO AHORA).
