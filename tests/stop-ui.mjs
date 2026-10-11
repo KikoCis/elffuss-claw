@@ -23,7 +23,9 @@
 //   · con un cerebro que tarda en soltar, ■ dice «Parando…» (sin más clics, sin
 //     perder el foco, anunciado en una región viva) y lo escrito se conserva;
 //   · 🧹 se nota al momento: botón ocupado, aviso y la conversación fuera de la
-//     vista, aunque el turno tarde en soltar.
+//     vista, aunque el turno tarde en soltar;
+//   · ■ devuelve el botón «Ejecutar esta propuesta» si cancela su mensaje o para
+//     su turno.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop-ui.mjs
 import { chromium } from 'playwright';
@@ -378,6 +380,37 @@ const cerebroLento = () => p.evaluate(() => {
   await hasta(() => p.evaluate(() => document.getElementById('model-status')?.classList.contains('on')));
   const hist12 = await kv('history');
   ok('12 · tras recargar, la conversación borrada no vuelve', !hist12 || !hist12.length, JSON.stringify(hist12?.map(m => m.content.slice(0, 20))));
+}
+
+// ── 13 · ■ y el botón «Ejecutar esta propuesta» ─────────────────────────────
+// Al pulsarlo se desactivaba y decía «enviado a la cola…» para siempre, aunque ■
+// cancelara ese mensaje (o parara su turno): ya no se iba a procesar y no se
+// podía volver a pulsar.
+{
+  await p.evaluate(async () => (await import('/js/db.js')).set('kv', 'history', [
+    { role: 'assistant', content: '💡 Una propuesta de prueba', ts: Date.now(), propuesta: { md: '# Propuesta\nhaz algo útil', path: null } },
+  ]));
+  await listo();
+  const prop = p.locator('#log .proposal-exec-btn').first();
+  const estadoProp = () => prop.evaluate(b => ({ desactivado: b.disabled, texto: b.textContent }));
+  await escribir('cuéntame algo larguísimo antes de la propuesta');
+  await hasta(async () => (await boton()).stop);
+  await prop.click();
+  const enCola = await estadoProp();
+  ok('13 · la propuesta, mandada a la cola detrás de un turno, desactiva su botón', enCola.desactivado && /cola/.test(enCola.texto), JSON.stringify(enCola));
+  await p.click('#send');
+  ok('13 · ■ cancela ese mensaje y el botón vuelve a estar disponible', await hasta(async () => {
+    const x = await estadoProp(); return !x.desactivado && x.texto === '▶ Ejecutar esta propuesta';
+  }), JSON.stringify(await estadoProp()));
+  await hasta(async () => !(await boton()).stop);
+  // Y si lo que se para es el turno de la propia propuesta.
+  await prop.click();
+  await hasta(async () => (await boton()).stop);
+  await p.click('#send');
+  ok('13 · ■ con la propuesta ya en marcha: el botón también vuelve', await hasta(async () => {
+    const x = await estadoProp(); return !x.desactivado && x.texto === '▶ Ejecutar esta propuesta';
+  }), JSON.stringify(await estadoProp()));
+  await hasta(async () => !(await boton()).stop);
 }
 
 if (OUT) { await p.screenshot({ path: OUT + '/stop-ui.png' }); console.log('captura → stop-ui.png'); }

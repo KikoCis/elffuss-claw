@@ -330,12 +330,15 @@ const nuevoId = () => (globalThis.crypto?.randomUUID?.() || Date.now().toString(
 // `hard`: este mensaje va por Hard Work. Se decide al ENVIARLO, no al
 // procesarlo: antes el modo era global y una vez encendido se aplicaba a todo lo
 // que llegara después —chips, tareas programadas, «Ejecutar propuesta»—.
+// Devuelve el mensaje en la cola (quien lo manda puede colgarle `alCancelar`).
 function send(text, { hard = false } = {}) {
   const el = ui.addMsg('user queued', text);
-  queue.push({ id: nuevoId(), text, el, hard });
+  const item = { id: nuevoId(), text, el, hard };
+  queue.push(item);
   persistQueue();
   if (queue.length > 1) ui.toast(t('queuedAhead', { n: queue.length - 1 }));
   pump();
+  return item;
 }
 
 // ---- parar (botón ■) ----
@@ -359,6 +362,9 @@ function stopCurrent() {
   try { turnCtl?.abort(); } catch { /* */ }
   let canceladas = 0;
   for (const it of queue) {
+    // Quien lo mandó se entera (el botón de una propuesta vuelve a estar
+    // disponible), también si es el turno en marcha, que se para.
+    try { it.alCancelar?.(); } catch { /* — */ }
     if (!it.el?.classList.contains('queued')) continue;   // el que ya está en marcha no se tacha
     ui.markCancelled(it.el);
     canceladas++;
@@ -1048,14 +1054,14 @@ function isNoteworthy(ev) {
 // Ejecutar una propuesta: el botón del aviso en el chat y «▶ Ejecutar» de la
 // Mente. En Básico NO: el motor de reglas troceaba el markdown en órdenes sueltas
 // y ejecutaba lo que encontrara (creaba una app «reloj» de una propuesta que lo
-// mencionaba). Antes solo el botón del chat lo comprobaba. Devuelve si la mandó.
+// mencionaba). Antes solo el botón del chat lo comprobaba. Devuelve el mensaje en
+// la cola, o false si no la mandó.
 function executeProposal(md) {
   if (activeModel === 'rules') {
     ui.toast(t('proposalNeedsModel'), { accion: { label: t('pickModel'), run: () => { mente?.closeMind(); ui.enfocarSelectorModelo(); } } });
     return false;
   }
-  send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md);
-  return true;
+  return send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md);
 }
 // SOLO notifica si el permiso YA está concedido — nunca lo pide aquí; pedirlo
 // vive en el «Activar» del panel ⚙ de la Mente (antes también en el clic 🧠,
@@ -1092,8 +1098,13 @@ function pintarPropuesta(m) {
   btn.textContent = t('proposalRun');
   btn.onclick = () => {
     // En Básico executeProposal explica que hace falta un modelo y no manda nada.
-    if (!executeProposal(m.propuesta.md)) return;
+    const item = executeProposal(m.propuesta.md);
+    if (!item) return;
     btn.disabled = true; btn.textContent = t('proposalQueued');
+    // Si ■ la cancela en la cola (o para su turno), el botón vuelve a estar
+    // disponible: antes se quedaba «enviada a la cola» y desactivado, aunque el
+    // mensaje ya no se iba a procesar.
+    item.alCancelar = () => { btn.disabled = false; btn.textContent = t('proposalRun'); };
   };
   div.appendChild(btn);
 }
