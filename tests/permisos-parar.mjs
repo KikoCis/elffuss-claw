@@ -14,7 +14,11 @@
 //      burbuja colgada, botón ➤) y lo que se envía después se procesa.
 //   3. Tres peticiones a la vez: se enseñan de una en una y cada una recibe SU
 //      respuesta; la que espera turno no pregunta si su ámbito ya se concedió.
-//   4. El cerebro CEO con permisos pendientes: pausarlo TERMINA el ciclo y
+//   4. El cerebro CEO. En la app solo puede leer (kernel.js le pasa una lista de
+//      solo lectura): sus perfiles no abren ningún diálogo. Con una lista que lo
+//      deja todo —la maquinaria de ceo.js y permissions.js tal cual, como la usa
+//      un anfitrión sin lista—, los permisos que piden a la vez se enseñan de uno
+//      en uno, y pausar TERMINA el ciclo aunque queden pendientes; después
 //      «Pensar ahora» vuelve a funcionar.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/permisos-parar.mjs
@@ -108,6 +112,9 @@ ok('3 · cada una recibe SU respuesta, y la tercera no pregunta (su ámbito ya s
   JSON.stringify(res3) === '["sí","no","sí"]' && !(await dialogo()).abierto, JSON.stringify(res3));
 
 // ── 4 · el cerebro CEO con permisos pendientes ───────────────────────────────
+// Primero tal como lo monta la app: init() sin `allowTool` conserva la lista de
+// solo lectura que le dio kernel.js, y memory.save (escribe) no llega a pedir
+// permiso: el modelo recibe un ERROR que se lo explica y el ciclo termina.
 await p.evaluate(async () => {
   const ceo = await import('/js/ceo.js');
   window.__ceo = { llamadas: 0, herramienta: true };
@@ -123,6 +130,21 @@ await p.evaluate(async () => {
   const t0 = Date.now();
   while (!ceo.isThisTabLeader() && Date.now() - t0 < 5000) await new Promise(r => setTimeout(r, 50));
   ceo.enable();
+  window.__ciclo0 = ceo.forceCycle();
+});
+const r40 = await p.evaluate(async () => {
+  let abierto = false;
+  const fin = await Promise.race([
+    window.__ciclo0,
+    (async () => { for (let i = 0; i < 160; i++) { abierto ||= document.getElementById('perm-dialog').open; await new Promise(r => setTimeout(r, 50)); } return 'PENDIENTE'; })(),
+  ]);
+  return { fin, abierto: abierto || document.getElementById('perm-dialog').open, llamadas: window.__ceo.llamadas };
+});
+ok('4 · con la lista de solo lectura de la app, el ciclo del CEO termina sin abrir ningún diálogo', r40.fin === true && !r40.abierto, JSON.stringify(r40));
+// Ahora con todas las herramientas permitidas: los tres perfiles piden permiso a la vez.
+await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  ceo.init({ allowTool: () => true });
   window.__ciclo = ceo.forceCycle();
 });
 ok('4 · los perfiles del CEO piden permiso a la vez', await hasta(async () => (await dialogo()).abierto));
