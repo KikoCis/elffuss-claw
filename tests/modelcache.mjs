@@ -1,58 +1,105 @@
-// Verifica la caché de modelos por service worker: descarga una vez, se sirve
-// desde Cache Storage (incluso OFFLINE) y soporta range requests. Usa un fixture
-// .litertlm determinista (byte[i] = i%256) para no bajar los GB reales.
+// Caché de modelos: se baja UNA vez a disco y después se sirve sin red.
+//
+// Era la prueba del service worker que guardaba los modelos en Cache Storage.
+// Ese service worker es inerte desde 852216e (rompía la carga de ONNX) y los
+// pesos se guardan ahora en el almacén de modelos (runtime/model-store.js): la
+// caché compartida del broker y, si no está, la OPFS de este origen. Esto prueba
+// ese camino con la OPFS: descarga una vez, sirve desde disco sin tocar la red,
+// los bytes son los del original, se lee por rangos y no deja la marca de
+// «completo» hasta que lo está.
+//
+// El fichero es de mentira (page.route, byte[i] = i % 251) y el broker se da por
+// caído, así que no sale nada a la red.
+//
+//   BASE=http://localhost:8742 node tests/modelcache.mjs
 import { chromium } from 'playwright';
-import { writeFileSync, rmSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-const BASE = process.env.BASE || 'http://localhost:8788';
-const FIX = BASE + '/__test_fixture.litertlm';
-const SIZE = 100000;
+const BASE = process.env.BASE || 'http://localhost:8742';
+const FIX = BASE + '/__modelcache_fixture.litertlm';
+const SIZE = 300000;
 let fails = 0;
 const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
 
-// fixture determinista (byte[i]=i%256) en web/, autolimpiado al terminar
-const WEB = join(dirname(fileURLToPath(import.meta.url)), '..', 'web');
-const FIXPATH = join(WEB, '__test_fixture.litertlm');
-writeFileSync(FIXPATH, Buffer.from(Array.from({ length: SIZE }, (_, i) => i % 256)));
-const cleanup = () => { try { rmSync(FIXPATH); } catch {} };
-process.on('exit', cleanup);
-
-const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+const DATOS = Buffer.from(Array.from({ length: SIZE }, (_, i) => i % 251));
+const peticiones = [];
+const b = await chromium.launch();
 const ctx = await b.newContext();
-await ctx.addInitScript(() => { try { localStorage.setItem('elffuss.model', 'rules'); } catch {} });
+await ctx.addInitScript(() => {
+  try { localStorage.setItem('elffuss.model', 'rules'); sessionStorage.setItem('elffuss.broker.down', '1'); } catch { /* */ }
+});
 const p = await ctx.newPage({ viewport: { width: 1200, height: 800 } });
-await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+await p.route('**/__modelcache_fixture.litertlm', route => {
+  const rango = route.request().headers().range || '';
+  peticiones.push(rango || 'entero');
+  const m = /bytes=(\d+)-(\d*)/.exec(rango);
+  if (!m) return route.fulfill({ status: 200, body: DATOS, headers: { 'content-type': 'application/octet-stream', 'accept-ranges': 'bytes' } });
+  const desde = +m[1], hasta = m[2] ? +m[2] : SIZE - 1;
+  return route.fulfill({ status: 206, body: DATOS.subarray(desde, hasta + 1),
+    headers: { 'content-type': 'application/octet-stream', 'accept-ranges': 'bytes', 'content-range': `bytes ${desde}-${hasta}/${SIZE}` } });
+});
+await p.goto(BASE + '/robots.txt');   // una página del mismo origen, sin arrancar la app
 
-// esperar a que el SW controle la página
-const controlled = await p.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller != null, null, { timeout: 10000 }).then(() => true).catch(() => false);
-ok('el service worker controla la página', controlled);
+const baja = () => p.evaluate(async u => {
+  const m = await import('/js/runtime/model-store.js');
+  const msgs = [];
+  const f = await m.getModelFile(u, s => msgs.push(typeof s === 'string' ? s : JSON.stringify(s)));
+  if (!f) return { nulo: true, msgs };
+  const buf = new Uint8Array(await f.arrayBuffer());
+  let malos = 0; for (let i = 0; i < buf.length; i++) if (buf[i] !== i % 251) malos++;
+  return { size: f.size, malos, primero: msgs[0] || '', ultimo: msgs.at(-1) || '' };
+}, FIX);
 
-const fetchInfo = (u, opts) => p.evaluate(async ({ u, opts }) => {
-  const r = await fetch(u, opts);
-  const buf = new Uint8Array(await r.arrayBuffer());
-  return { status: r.status, len: buf.length, cr: r.headers.get('content-range'), first: [...buf.slice(0, 4)], sample: [...buf.slice(0, 12)] };
-}, { u, opts });
+// 1) primera vez: se baja y queda en disco, entero y marcado como completo
+const r1 = await baja();
+ok('primera vez: devuelve el modelo entero', r1.size === SIZE && r1.malos === 0, JSON.stringify(r1));
+const enDisco = await p.evaluate(async () => {
+  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('elffuss-models');
+  const out = [];
+  for await (const [n, h] of dir.entries()) out.push(n + ':' + (h.kind === 'file' ? (await h.getFile()).size : 'dir'));
+  return out;
+});
+// (Claw guarda los modelos partidos en trozos: <clave>.p0, .p1… Este cabe en uno.)
+ok('queda en la OPFS del origen, con su marca de completo', enDisco.some(x => /\.litertlm(\.p0)?:/.test(x) && x.endsWith(':' + SIZE)) && enDisco.some(x => /\.done:/.test(x)), JSON.stringify(enDisco));
+ok('  …y la descarga sí pasó por la red', peticiones.length > 0, JSON.stringify(peticiones));
 
-// 1) primera descarga (el SW baja el fichero completo y lo cachea)
-const r1 = await fetchInfo(FIX);
-ok('primera petición devuelve el fichero completo', r1.status === 200 && r1.len === SIZE, `status ${r1.status}, ${r1.len}B`);
-
-// 2) OFFLINE: si está cacheado, se sigue sirviendo sin red
+// 2) segunda vez SIN RED: sale del disco y no hace ninguna petición
+peticiones.length = 0;
 await ctx.setOffline(true);
-const r2 = await fetchInfo(FIX).catch(e => ({ status: 0, err: String(e) }));
-ok('OFFLINE se sirve desde la caché (prueba de que quedó cacheado)', r2.status === 200 && r2.len === SIZE, `status ${r2.status}, ${r2.len}B`);
-
-// 3) range request servido desde el blob cacheado (bytes 10..19)
-const r3 = await fetchInfo(FIX, { headers: { Range: 'bytes=10-19' } });
-const expected = Array.from({ length: 10 }, (_, i) => (10 + i) % 256);
-ok('range request → 206 con los bytes correctos', r3.status === 206 && r3.len === 10 && JSON.stringify(r3.sample.slice(0, 10)) === JSON.stringify(expected), `status ${r3.status}, cr=${r3.cr}, bytes=${r3.sample}`);
+const r2 = await baja();
 await ctx.setOffline(false);
+ok('segunda vez sin red: sale del disco, con los mismos bytes', r2.size === SIZE && r2.malos === 0, JSON.stringify(r2));
+ok('  …sin una sola petición', peticiones.length === 0, JSON.stringify(peticiones));
+ok('  …y lo dice («desde disco, sin descargar»)', /desde disco/.test(r2.primero), r2.primero);
 
-// 4) el estimate reporta uso (>0) tras cachear
-const est = await p.evaluate(() => navigator.storage.estimate().then(e => ({ usage: e.usage, persisted: null })).catch(() => ({ usage: 0 })));
-ok('storage.estimate refleja el uso cacheado', est.usage > 0, `${(est.usage / 1024 / 1024).toFixed(1)} MB`);
+// 3) lectura por rangos desde el disco (la usa el motor por trozos)
+const trozo = await p.evaluate(async u => {
+  const m = await import('/js/runtime/model-store.js');
+  const r = await m.openRanged(u);
+  return { size: r.size, bytes: [...new Uint8Array(await r.slice(1000, 8))] };
+}, FIX);
+const esperado = Array.from({ length: 8 }, (_, i) => (1000 + i) % 251);
+ok('lectura por rangos desde el disco: los bytes justos', trozo.size === SIZE && JSON.stringify(trozo.bytes) === JSON.stringify(esperado), JSON.stringify(trozo));
 
-console.log(fails ? `\n❌ ${fails} FALLO(S)` : '\n✅ CACHÉ DE MODELOS OK — descarga 1 vez, persiste y sirve offline + ranges');
+// 4) una descarga cortada no deja la marca de completo: no se sirve a medias
+await p.evaluate(async () => (await import('/js/runtime/model-store.js')).clearAll());
+await p.unroute('**/__modelcache_fixture.litertlm');
+await p.route('**/__modelcache_fixture.litertlm', route => {
+  const rango = route.request().headers().range || '';
+  if (/bytes=0-0$/.test(rango)) return route.fulfill({ status: 206, body: DATOS.subarray(0, 1), headers: { 'content-range': `bytes 0-0/${SIZE}`, 'accept-ranges': 'bytes' } });
+  return route.abort('failed');
+});
+const r4 = await p.evaluate(async u => {
+  const m = await import('/js/runtime/model-store.js');
+  let err = null; try { await m.getModelFile(u); } catch (e) { err = String(e.message || e); }
+  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('elffuss-models');
+  const nombres = []; for await (const [n] of dir.entries()) nombres.push(n);
+  return { err, completo: nombres.some(n => n.endsWith('.done')) };
+}, FIX);
+ok('una descarga cortada falla y NO queda marcada como completa', !!r4.err && !r4.completo, JSON.stringify(r4));
+
+// 5) el uso de almacenamiento lo refleja
+const est = await p.evaluate(() => navigator.storage.estimate().then(e => e.usage || 0).catch(() => 0));
+ok('storage.estimate refleja lo guardado', est > 0, est > 0 ? 'hay uso' : 'sin uso');
+
+console.log(fails ? `\n❌ ${fails} FALLO(S)` : '\n✅ CACHÉ DE MODELOS OK — se baja una vez a disco, se sirve sin red y por rangos');
 await b.close();
 process.exit(fails ? 1 : 0);
