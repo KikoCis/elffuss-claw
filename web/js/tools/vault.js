@@ -56,7 +56,7 @@ export function lock() {
 // con Enter en la contraseña la pregunta se contestaba sola con «Denegar».
 // Las herramientas del agente (vault.set/get) siguen pidiéndolo como siempre.
 export async function unlock(master, { desdePanel = false } = {}) {
-  if (!master) throw new Error('Falta la contraseña maestra');
+  if (!master) throw new Error(t('vaultNeedMaster'));
   if (!desdePanel) await requirePerm('vault');
   let salt = await db.get('vault', '__salt');
   if (!salt) { // primera vez: crear la bóveda
@@ -65,18 +65,18 @@ export async function unlock(master, { desdePanel = false } = {}) {
     await db.set('vault', '__salt', salt);
     await db.set('vault', '__check', await encrypt('elffuss-ok'));
     armLock();
-    return 'Bóveda creada y desbloqueada. Guarda bien tu contraseña maestra: sin ella no hay recuperación.';
+    return t('vaultCreated');
   }
   const candidate = await derive(master, salt);
   try { await decrypt(await db.get('vault', '__check'), candidate); }
-  catch { throw new Error('Contraseña maestra incorrecta'); }
+  catch { throw new Error(t('vaultWrongMaster')); }
   key = candidate;
   armLock();
-  return 'Bóveda desbloqueada (se bloquea sola a los 5 min sin uso).';
+  return t('vaultUnlockedMsg');
 }
 
 function mustBeOpen() {
-  if (!key) throw new Error('La bóveda está bloqueada. Desbloquéala en la pestaña Bóveda.');
+  if (!key) throw new Error(t('vaultLockedErr'));
 }
 
 export async function setSecret({ name, secret } = {}, { desdePanel = false } = {}) {
@@ -85,7 +85,7 @@ export async function setSecret({ name, secret } = {}, { desdePanel = false } = 
   mustBeOpen();
   await db.set('vault', 's:' + name, await encrypt(secret));
   armLock();
-  return `Secreto «${name}» guardado cifrado (AES-256-GCM).`;
+  return t('vaultSaved', { name });
 }
 
 export async function getSecret({ name } = {}, { desdePanel = false } = {}) {
@@ -104,13 +104,13 @@ export async function removeSecret({ name } = {}) {
   mustBeOpen();
   await db.del('vault', 's:' + name);
   armLock();
-  return `Secreto «${name}» borrado.`;
+  return t('vaultRemoved', { name });
 }
 
 export async function listSecrets() {
   const ks = await db.keys('vault');
   const names = ks.filter(k => k.startsWith('s:')).map(k => k.slice(2));
-  return names.length ? 'Secretos guardados: ' + names.join(', ') : 'La bóveda está vacía.';
+  return names.length ? t('vaultList', { names: names.join(', ') }) : t('vaultEmptyMsg');
 }
 
 export async function secretNames() {

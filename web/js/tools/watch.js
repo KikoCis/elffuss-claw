@@ -20,25 +20,24 @@ const getAll = async () => (await db.get('kv', KEY)) || [];
 const cambiar = fn => db.update('kv', KEY, list => fn(Array.isArray(list) ? list : []));
 
 export async function add({ from, to, pattern = '*' } = {}) {
-  if (!from || !to) throw new Error('Faltan from y to (nombres de carpetas autorizadas)');
+  if (!from || !to) throw new Error(t('fsMissingFromTo'));
   await requirePerm('fs', t('pdWatch', { from, to }));
   await root(from); await root(to); // valida que existen y hay acceso
   const id = 'w' + Math.random().toString(36).slice(2, 8);
   await cambiar(list => [...list, { id, from, to, pattern, seen: {} }]);
-  return `Automatización ${id} activa: lo que dejes en «${from}» (${pattern}) lo proceso y ` +
-    `te lo dejo en «${to}» (Excel → CSV; el resto, copia). Funciona mientras Elffuss esté abierta.`;
+  return t('watchActive', { id, from, to, pattern });
 }
 
 export async function listWatches() {
   const list = await getAll();
   return list.length
-    ? list.map(w => `👁 ${w.id} · ${w.from} → ${w.to} (${w.pattern}) · ${Object.keys(w.seen).length} procesados`).join('\n')
-    : 'No hay automatizaciones. Prueba «vigila la carpeta entrada y deja lo procesado en salida».';
+    ? list.map(w => `👁 ${w.id} · ${w.from} → ${w.to} (${w.pattern}) · ` + t('watchSeen', { n: Object.keys(w.seen).length })).join('\n')
+    : t('watchNone');
 }
 
 export async function removeWatch({ id } = {}) {
   await cambiar(list => list.filter(w => w.id !== id));
-  return `Automatización ${id} eliminada.`;
+  return t('watchRemovedTool', { id });
 }
 
 export async function allWatches() { return getAll(); }

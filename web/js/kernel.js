@@ -936,6 +936,7 @@ if (!bienvenido) {
   splash.addEventListener('keydown', e => { if (e.key === 'Escape') entrar(); });
 }
 
+skills.usarTraductor(t);   // los textos de skills.js (compartido con Code) en el idioma de la página
 skills.initSkills();
 // «Autoriza una carpeta» (el chip y /carpeta): el selector nativo se abre AQUÍ,
 // en el clic. Mandándoselo al modelo se abría al final de su turno, cuando el
@@ -1134,6 +1135,7 @@ function pintarPropuesta(m) {
 // programar tareas o visitar webs queda fuera, y lo de carpetas solo si el
 // permiso ya está concedido: el cerebro no saca diálogos de permisos.
 const CEO_SOLO_LECTURA = new Set(['fs.list', 'fs.read', 'fs.watch_list', 'app.list', 'tasks.list', 'memory.list', 'skill.list', 'skill.get']);
+ceo.usarTraductor(t);   // lo que el cerebro cuenta (ceo.js, compartido con Code), en el idioma de la página
 ceo.init({
   namespace: 'elffuss',
   workspace: ceoWorkspace,

@@ -10,6 +10,32 @@ const KEY = 'skills';          // skills instaladas
 const SRC_KEY = 'skills.sources'; // repos personalizados añadidos por el usuario
 const MAX_SKILL = 12_000;      // caracteres del cuerpo que se inyectan al modelo
 
+// Textos que ve el usuario (en el chat y en la pestaña Skills). Este módulo lo
+// comparten Claw y Code, y cada una tiene su i18n: la app pasa su traductor con
+// usarTraductor(t) (t(clave, vars) → texto, o la propia clave si no la tiene).
+// Sin traductor, o sin la clave, va en español, como hasta ahora. (El bloque que
+// se le da al MODELO en el prompt no pasa por aquí.)
+const ES = {
+  skLoadFailed: 'No pude leer tus skills guardadas; no instalo para no perderlas. Recarga la página e inténtalo otra vez.',
+  skInstalledMsg: '✳ **Skill «{name}» instalada.**', skUseIt: 'Ya la sigo en cada conversación. Para usarla, pídeme por ejemplo:',
+  skExampleFallback: 'algo relacionado con «{name}»', skBadRepo: 'Usa owner/repo (o la URL de GitHub)',
+  skRateLimited: 'GitHub limitó las peticiones (60/h sin login). Reintenta en unos minutos.',
+  skRepoUnreadable: 'No pude leer el repo (¿existe y es público?)', skMdFailed: 'No pude descargar el SKILL.md',
+  skMissingNameInstr: 'Faltan name o instructions', skMissingName: 'Falta name',
+  skCreated: 'Skill «{name}» creada e instalada. Ya la sigo en cada conversación (mírala en la pestaña Skills).',
+  skNoSuch: 'No hay ninguna skill «{name}». Créala primero con skill.create.',
+  skUpdated: 'Skill «{name}» actualizada. Ya sigo la nueva versión.',
+};
+let traductor = null;
+export function usarTraductor(fn) { traductor = typeof fn === 'function' ? fn : null; }
+function tx(clave, vars) {
+  let s = null;
+  try { s = traductor?.(clave, vars); } catch { /* traductor roto: español */ }
+  if (typeof s === 'string' && s && s !== clave) return s;
+  const base = ES[clave] ?? clave;
+  return vars ? base.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '')) : base;
+}
+
 export const CATALOG_REPO = 'anthropics/skills';
 export const DEFAULT_SOURCES = [
   { repo: 'KikoCis/elffuss-claw-skills', label: 'Elffuss · Skills que funcionan en Claw (3D·Excel·web·juegos)', official: true },
@@ -50,7 +76,7 @@ export async function install(skill) {
   // leer antes de escribir. Sin esto, guardar aquí borraría las skills reales.
   if (!loaded) {
     await initSkills();
-    if (!loaded) throw new Error('No pude leer tus skills guardadas; no instalo para no perderlas. Recarga la página e inténtalo otra vez.');
+    if (!loaded) throw new Error(tx('skLoadFailed'));
   }
   cache = cache.filter(s => !(s.repo === skill.repo && s.path === skill.path) && s.name !== skill.name);
   const entry = { ...skill, content: (skill.content || '').slice(0, MAX_SKILL) };
@@ -62,10 +88,10 @@ export async function install(skill) {
 // Mensaje «cómo usarla» tras instalar: qué hace + un ejemplo de qué pedir.
 export function usageMessage(skill) {
   const desc = (skill.description || '').trim();
-  const ejemplo = firstExample(skill) || `algo relacionado con «${skill.name}»`;
-  return `✳ **Skill «${skill.name}» instalada.**\n\n` +
+  const ejemplo = firstExample(skill) || tx('skExampleFallback', { name: skill.name });
+  return tx('skInstalledMsg', { name: skill.name }) + '\n\n' +
     (desc ? desc + '\n\n' : '') +
-    `Ya la sigo en cada conversación. Para usarla, pídeme por ejemplo:\n\n> ${ejemplo}`;
+    tx('skUseIt') + `\n\n> ${ejemplo}`;
 }
 
 // Intenta sacar un ejemplo de uso del cuerpo del SKILL.md (líneas de ejemplo/uso).
@@ -92,7 +118,7 @@ export async function sources() {
 }
 export async function addSource(repoOrUrl, label) {
   const repo = repoOrUrl.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Usa owner/repo (o la URL de GitHub)');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error(tx('skBadRepo'));
   const custom = (await db.get('kv', SRC_KEY).catch(() => null)) || [];
   if (!custom.some(s => s.repo === repo) && !DEFAULT_SOURCES.some(s => s.repo === repo))
     custom.push({ repo, label: label || repo });
@@ -111,9 +137,9 @@ export async function listFromRepo(repo) {
   for (const b of ['main', 'master']) {
     const r = await fetch(`https://api.github.com/repos/${repo}/git/trees/${b}?recursive=1`);
     if (r.ok) { tree = await r.json(); branch = b; break; }
-    if (r.status === 403) throw new Error('GitHub limitó las peticiones (60/h sin login). Reintenta en unos minutos.');
+    if (r.status === 403) throw new Error(tx('skRateLimited'));
   }
-  if (!tree) throw new Error('No pude leer el repo (¿existe y es público?)');
+  if (!tree) throw new Error(tx('skRepoUnreadable'));
   return (tree.tree || [])
     .filter(n => /(^|\/)SKILL\.md$/i.test(n.path))
     .map(n => ({ repo, branch, path: n.path, dir: n.path.replace(/\/SKILL\.md$/i, ''), name: n.path.replace(/\/SKILL\.md$/i, '').split('/').pop() || repo }))
@@ -127,7 +153,7 @@ export async function installFromRepo(entry) {
     const r = await fetch(`https://raw.githubusercontent.com/${entry.repo}/${b}/${entry.path}`);
     if (r.ok) { md = await r.text(); break; }
   }
-  if (md == null) throw new Error('No pude descargar el SKILL.md');
+  if (md == null) throw new Error(tx('skMdFailed'));
   const skill = parseSkill(md, entry.name);
   return install({ ...skill, repo: entry.repo, path: entry.path });
 }
@@ -146,7 +172,7 @@ export function parseSkill(md, fallbackName = 'skill') {
 // lo que el usuario quiere, y la instala al instante. Aparece en la pestaña
 // Skills y se inyecta en el prompt de los siguientes turnos.
 export async function createSkill({ name, description, instructions } = {}) {
-  if (!name || !instructions) throw new Error('Faltan name o instructions');
+  if (!name || !instructions) throw new Error(tx('skMissingNameInstr'));
   const skill = {
     name: String(name).slice(0, 48),
     description: (description || '').slice(0, 240),
@@ -155,20 +181,20 @@ export async function createSkill({ name, description, instructions } = {}) {
     path: 'local/' + Date.now(),
   };
   await install(skill);
-  return `Skill «${skill.name}» creada e instalada. Ya la sigo en cada conversación (mírala en la pestaña Skills).`;
+  return tx('skCreated', { name: skill.name });
 }
 
 // Editar una skill YA instalada: reemplaza sus instrucciones (o las añade con append),
 // conservando su origen. Para ajustar el script/argumentos de una skill existente.
 export async function editSkill({ name, description, instructions, append } = {}) {
-  if (!name) throw new Error('Falta name');
+  if (!name) throw new Error(tx('skMissingName'));
   const s = cache.find(x => x.name.toLowerCase() === String(name).toLowerCase());
-  if (!s) throw new Error(`No hay ninguna skill «${name}». Créala primero con skill.create.`);
+  if (!s) throw new Error(tx('skNoSuch', { name }));
   let content = s.content || '';
   if (instructions != null) content = append ? (content + '\n' + instructions) : String(instructions);
   const updated = { ...s, description: description != null ? String(description).slice(0, 240) : s.description, content: content.slice(0, MAX_SKILL) };
   await install(updated);
-  return `Skill «${s.name}» actualizada. Ya sigo la nueva versión.`;
+  return tx('skUpdated', { name: s.name });
 }
 
 // Bloque para el systemPrompt (síncrono, desde la caché).

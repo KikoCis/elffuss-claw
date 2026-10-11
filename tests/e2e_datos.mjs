@@ -19,7 +19,9 @@ const check = (name, ok, extra = '') =>
   { console.log((ok ? '✅' : '❌') + ' ' + name + (extra ? '  ' + extra : '')); if (!ok) fails++; };
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext();
+// En español: las comprobaciones leen los avisos del chat («Automatización …
+// activa»), que van en el idioma de la página.
+const ctx = await browser.newContext({ locale: 'es-ES' });
 await ctx.addInitScript(() => {
   localStorage.setItem('elffuss.model', 'rules');       // determinista, sin GPU
   localStorage.setItem('elffuss.welcomed', '1');        // sin splash

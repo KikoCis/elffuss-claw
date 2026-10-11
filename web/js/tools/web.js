@@ -66,7 +66,7 @@ export async function fetchUrl({ url } = {}, { signal } = {}) {
   if (!/^https?:\/\//.test(url || '')) throw new Error(t('webBadUrl'));
   await requirePerm('web', url);
   const text = toText(await proxyGet(url, { signal }));
-  return `[${url}]\n` + (text.length > MAX ? text.slice(0, MAX) + '\n' + t('webCut') : text);
+  return `[${url}]\n` + (text.length > MAX ? text.slice(0, MAX) + '\n' + t('cutMark') : text);
 }
 
 // Búsqueda web REAL. Parseo TOLERANTE (independiente de clases): DuckDuckGo

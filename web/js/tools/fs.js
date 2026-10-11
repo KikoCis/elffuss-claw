@@ -10,10 +10,10 @@ const MAX_READ = 200_000; // caracteres
 export async function pickFolder() {
   await requirePerm('fs', t('pdPickFolder'));
   if (!window.showDirectoryPicker)
-    throw new Error('Este navegador no soporta File System Access (usa Chrome o Edge)');
+    throw new Error(t('fsNoApi'));
   const handle = await window.showDirectoryPicker();
   await db.set('fs', handle.name, handle);
-  return `Carpeta «${handle.name}» autorizada. Ya puedo listar, leer y escribir dentro.`;
+  return t('fsAuthorized', { name: handle.name });
 }
 
 export async function folders() { return db.keys('fs'); }
@@ -22,15 +22,15 @@ export async function root(folder) {
   await requirePerm('fs');
   const names = await db.keys('fs');
   if (!names.length)
-    throw new Error('No hay ninguna carpeta autorizada. Pídeme «autoriza una carpeta».');
+    throw new Error(t('fsNoFolder'));
   if (folder && !names.includes(folder))
-    throw new Error(`No conozco la carpeta «${folder}». Autorizadas: ${names.join(', ')}`);
+    throw new Error(t('fsUnknownFolder', { folder, names: names.join(', ') }));
   const handle = await db.get('fs', folder || names[0]);
   // (los handles OPFS no exponen queryPermission — se consideran concedidos)
   const perm = handle.queryPermission ? await handle.queryPermission({ mode: 'readwrite' }) : 'granted';
   if (perm !== 'granted' &&
       (!handle.requestPermission || await handle.requestPermission({ mode: 'readwrite' }) !== 'granted'))
-    throw new Error('El navegador denegó el acceso a la carpeta');
+    throw new Error(t('fsDenied'));
   return handle;
 }
 
@@ -59,7 +59,7 @@ async function enterDir(dir, parts) {
     catch {
       const hay = [];
       try { for await (const e of dir.values()) hay.push((e.kind === 'directory' ? '📁 ' : '📄 ') + e.name); } catch {}
-      throw new Error(`No existe la subcarpeta «${p}» en «${dir.name}». Aquí hay: ${hay.join(', ') || '(vacío)'}. Para listar la carpeta raíz, usa fs.list SIN path.`);
+      throw new Error(t('fsNoSubfolder', { sub: p, dir: dir.name, hay: hay.join(', ') || t('fsEmpty') }));
     }
   }
   return dir;
@@ -79,32 +79,32 @@ export async function list({ path = '', folder } = {}) {
   const out = [];
   for await (const entry of dir.values())
     out.push(`${entry.kind === 'directory' ? '📁' : '📄'} ${entry.name}`);
-  return out.length ? out.sort().join('\n') : '(carpeta vacía)';
+  return out.length ? out.sort().join('\n') : t('fsEmptyFolder');
 }
 
 export async function read({ path, folder } = {}) {
-  if (!path) throw new Error('Falta path');
+  if (!path) throw new Error(t('toolMissing', { arg: 'path' }));
   const { dir, name } = await walk(await root(folder), path);
   const file = await (await dir.getFileHandle(name)).getFile();
   if (/\.xlsx?$/i.test(name)) { // Excel: binario → CSV legible
     const { sheet, csv } = await xlsxToCsv(file);
-    const body = csv.length > MAX_READ ? csv.slice(0, MAX_READ) + '\n… (recortado)' : csv;
-    return `[${name} → hoja «${sheet}» como CSV]\n${body}`;
+    const body = csv.length > MAX_READ ? csv.slice(0, MAX_READ) + '\n' + t('cutMark') : csv;
+    return t('fsSheetCsv', { name, sheet }) + '\n' + body;
   }
   const text = await file.text();
   return text.length > MAX_READ
-    ? text.slice(0, MAX_READ) + `\n… (recortado, ${file.size} bytes en total)`
+    ? text.slice(0, MAX_READ) + '\n' + t('fsCutBytes', { n: file.size })
     : text;
 }
 
 export async function write({ path, content = '', folder } = {}) {
-  if (!path) throw new Error('Falta path');
+  if (!path) throw new Error(t('toolMissing', { arg: 'path' }));
   const { dir, name } = await walk(await root(folder), path, { create: true });
   const fh = await dir.getFileHandle(name, { create: true });
   const w = await fh.createWritable();
   await w.write(content);
   await w.close();
-  return `Escrito ${path} (${content.length} caracteres)`;
+  return t('fsWritten', { path, n: content.length });
 }
 
 export const globToRegex = pattern => new RegExp(
@@ -112,7 +112,7 @@ export const globToRegex = pattern => new RegExp(
 
 // Copia one-shot entre dos carpetas autorizadas (pattern tipo *.txt).
 export async function copy({ pattern = '*', from, to } = {}) {
-  if (!from || !to) throw new Error('Faltan from y to (nombres de carpetas autorizadas)');
+  if (!from || !to) throw new Error(t('fsMissingFromTo'));
   const src = await root(from), dst = await root(to);
   const rx = globToRegex(pattern);
   const copied = [];
@@ -126,6 +126,6 @@ export async function copy({ pattern = '*', from, to } = {}) {
     copied.push(entry.name);
   }
   return copied.length
-    ? `Copiados ${copied.length} archivo(s) de «${from}» a «${to}»: ${copied.join(', ')}`
-    : `Nada que copiar (patrón ${pattern} en «${from}»)`;
+    ? t('fsCopied', { n: copied.length, from, to, files: copied.join(', ') })
+    : t('fsNothingToCopy', { pattern, from });
 }

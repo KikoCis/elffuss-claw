@@ -35,6 +35,31 @@ const slug = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '
 let NS = 'elffuss';           // prefijo de las claves de localStorage
 let ws = null;                // { isReady, tree, write, read, list, remove }
 let getProvider = () => null;
+// Lo que el cerebro le cuenta al usuario (la Mente, su historial). ceo.js lo
+// comparten Claw y Code, cada una con su i18n: la app pasa su traductor con
+// usarTraductor(t) (t(clave, vars) → texto, o la propia clave si no la tiene).
+// Sin traductor, o sin la clave, va en español, como hasta ahora. (Lo que se le
+// pide al MODELO —el encargo de cada perfil, la propuesta— no pasa por aquí.)
+const ES = {
+  ceoProfilesUpdated: 'Perfiles actualizados: {names}', ceoNewMission: 'Nueva misión recibida: {mission}',
+  ceoNewSoulDir: 'Nueva carpeta-alma: {dir}/', ceoOn: 'CEO en guardia — trabajaré cuando estés ocioso', ceoOff: 'CEO en pausa',
+  ceoOtherTab: 'Otra pestaña lleva el cerebro — ábrela ahí para forzar un ciclo.',
+  ceoNeedsWs: 'Necesito un espacio de trabajo abierto y un modelo cargado.',
+  ceoCutPause: 'En pausa: corto el ciclo y no guardo nada.', ceoCutBack: 'Vuelves tú — dejo lo mío y te cedo el mando.',
+  ceoNewCycle: 'Nuevo ciclo: reviso el espacio de trabajo y reparto el trabajo…',
+  ceoSurvey: 'Panorama captado ({n} entradas). Delegando…', ceoInterrupted: '(interrumpido)',
+  ceoSaved: 'Propuesta guardada en {path}', ceoReadyNoFile: 'Propuesta lista (no pude escribir el fichero)',
+  ceoArchived: 'Consolidé {n} propuestas antiguas en archivo.md',
+};
+let traductor = null;
+export function usarTraductor(fn) { traductor = typeof fn === 'function' ? fn : null; }
+function tx(clave, vars) {
+  let s = null;
+  try { s = traductor?.(clave, vars); } catch { /* traductor roto: español */ }
+  if (typeof s === 'string' && s && s !== clave) return s;
+  const base = ES[clave] ?? clave;
+  return vars ? base.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '')) : base;
+}
 let isBusy = () => false;     // ¿el usuario tiene trabajo en cola/procesándose? → prioridad
 let defaultProfiles = GENERIC_PROFILES;
 // Qué herramientas puede usar el cerebro: (nombre) => bool, o null = todas. El
@@ -60,7 +85,7 @@ export function setProfiles(list) {
   });
   if (!profiles.length) profiles = defaultProfiles.map(p => ({ ...p }));
   try { localStorage.setItem(K('ceoProfiles'), JSON.stringify(profiles)); } catch { /* */ }
-  emit('ceo', { type: 'reprogram', text: 'Perfiles actualizados: ' + profiles.map(p => p.name).join(', '), profiles });
+  emit('ceo', { type: 'reprogram', text: tx('ceoProfilesUpdated', { names: profiles.map(p => p.name).join(', ') }), profiles });
   return profiles;
 }
 
@@ -100,7 +125,7 @@ export function getMission() { ensureMission(); return mission; }
 export function setMission(text) {
   mission = (text || '').trim() || DEFAULT_MISSION;
   try { localStorage.setItem(K('ceoMission'), mission); } catch { /* */ }
-  emit('ceo', { type: 'reprogram', text: 'Nueva misión recibida: ' + mission });
+  emit('ceo', { type: 'reprogram', text: tx('ceoNewMission', { mission }) });
   lastCycleEnd = 0; lastActivity = Date.now() - IDLE_MS; // que arranque un ciclo pronto con la nueva misión
   return mission;
 }
@@ -113,7 +138,7 @@ export function getSoulDir() { ensureSoulDir(); return soulDir; }
 export function setSoulDir(dir) {
   soulDir = (dir || '').trim().replace(/^\/+|\/+$/g, '') || DEFAULT_SOUL;
   try { localStorage.setItem(K('ceoDir'), soulDir); } catch { /* */ }
-  emit('ceo', { type: 'reprogram', text: 'Nueva carpeta-alma: ' + soulDir + '/' });
+  emit('ceo', { type: 'reprogram', text: tx('ceoNewSoulDir', { dir: soulDir }) });
   return soulDir;
 }
 
@@ -181,14 +206,14 @@ export function enable() {
   if (enabled) return;
   enabled = true; lastActivity = Date.now(); schedule();
   try { localStorage.setItem(CLAVE_DECISION(), 'on'); } catch { /* */ }
-  emit('sys', { type: 'status', text: 'CEO en guardia — trabajaré cuando estés ocioso' });
+  emit('sys', { type: 'status', text: tx('ceoOn') });
 }
 export function disable() {
   // Antes ponía running = false sin más: el ciclo seguía generando por detrás,
   // escribía su propuesta igual, y «Pensar ahora» podía lanzar otro a la vez.
   enabled = false; interrupt('pausa'); if (timer) clearTimeout(timer);
   try { localStorage.setItem(CLAVE_DECISION(), 'off'); } catch { /* */ }
-  emit('sys', { type: 'status', text: 'CEO en pausa' });
+  emit('sys', { type: 'status', text: tx('ceoOff') });
 }
 
 function schedule() { if (timer) clearTimeout(timer); timer = setTimeout(tick, TICK_MS); }
@@ -209,11 +234,11 @@ export async function whyNotThink() {
 // «Pensar ahora» — salta la espera de ociosidad. Sigue respetando el
 // semáforo: si otra pestaña es la líder, no compite por la GPU.
 export async function forceCycle() {
-  if (!isLeader) { emit('ceo', { type: 'paused', text: 'Otra pestaña lleva el cerebro — ábrela ahí para forzar un ciclo.' }); return false; }
+  if (!isLeader) { emit('ceo', { type: 'paused', text: tx('ceoOtherTab') }); return false; }
   if (running) return false;
   const e = epoca;
   // isReady() puede ser síncrona (Code: handle en memoria) o async (Claw: consulta IndexedDB) — se espera siempre.
-  if (!(await ws?.isReady()) || !getProvider()) { emit('ceo', { type: 'paused', text: 'Necesito un espacio de trabajo abierto y un modelo cargado.' }); return false; }
+  if (!(await ws?.isReady()) || !getProvider()) { emit('ceo', { type: 'paused', text: tx('ceoNeedsWs') }); return false; }
   if (running) return false;   // otro ciclo arrancó mientras se esperaba a isReady()
   if (e !== epoca) { emit('ceo', { type: 'paused', text: textoCorte() }); return false; }
   try { await runCycle(); } finally { lastCycleEnd = Date.now(); }
@@ -276,9 +301,7 @@ async function think(channel, task, signal = null) {
 }
 
 // Lo que se dice al cortar un ciclo, según quién lo cortó (ver motivoCorte).
-const textoCorte = () => motivoCorte === 'pausa'
-  ? 'En pausa: corto el ciclo y no guardo nada.'
-  : 'Vuelves tú — dejo lo mío y te cedo el mando.';
+const textoCorte = () => tx(motivoCorte === 'pausa' ? 'ceoCutPause' : 'ceoCutBack');
 
 async function runCycle() {
   running = true;
@@ -293,11 +316,11 @@ async function runCycle() {
 
 async function cycle(signal) {
   cycleN++;
-  emit('ceo', { type: 'cycle', n: cycleN, text: 'Nuevo ciclo: reviso el espacio de trabajo y reparto el trabajo…' });
+  emit('ceo', { type: 'cycle', n: cycleN, text: tx('ceoNewCycle') });
 
   let tree = '';
   try { tree = await ws.tree({ depth: 2 }); } catch { /* sin workspace */ }
-  emit('ceo', { type: 'survey', text: 'Panorama captado (' + tree.split('\n').length + ' entradas). Delegando…' });
+  emit('ceo', { type: 'survey', text: tx('ceoSurvey', { n: tree.split('\n').length }) });
 
   const brief = (d) => `MISIÓN del equipo (fijada por el usuario): ${getMission()}\n` +
     `Eres el jefe de ${d.name}. Dentro de esa misión, céntrate en: ${d.focus}. ` +
@@ -306,7 +329,7 @@ async function cycle(signal) {
   const proposals = await Promise.all(getProfiles().map(async d => {
     emit(d.id, { type: 'open', name: d.name, focus: d.focus });
     try { const p = await think(d.id, brief(d), signal); emit(d.id, { type: 'done', text: p }); return { dept: d.name, text: p }; }
-    catch { emit(d.id, { type: 'done', text: '(interrumpido)' }); return null; }
+    catch { emit(d.id, { type: 'done', text: tx('ceoInterrupted') }); return null; }
   }));
   // Interrumpido: NO se escribe nada. Ni propuesta a medias ni fichero vacío.
   if (running === 'interrupt' || signal.aborted) { emit('ceo', { type: 'paused', text: textoCorte() }); return; }
@@ -323,9 +346,9 @@ async function cycle(signal) {
     await rotateSoul();
     if (signal.aborted) { emit('ceo', { type: 'paused', text: textoCorte() }); return; }
     await ws.write({ path, content: md });
-    emit('ceo', { type: 'built', text: `Propuesta guardada en ${path}`, path, md, proposals: valid });
+    emit('ceo', { type: 'built', text: tx('ceoSaved', { path }), path, md, proposals: valid });
   } catch (e) {
-    emit('ceo', { type: 'built', text: 'Propuesta lista (no pude escribir el fichero)', md, proposals: valid });
+    emit('ceo', { type: 'built', text: tx('ceoReadyNoFile'), md, proposals: valid });
   }
 }
 
@@ -344,6 +367,6 @@ async function rotateSoul() {
     }
     await ws.write({ path: `${soul}/archivo.md`, content: archive.slice(-80000) });
     for (const name of excess) { try { await ws.remove(soul, name); } catch { /* */ } }
-    emit('ceo', { type: 'reprogram', text: `Consolidé ${excess.length} propuestas antiguas en archivo.md` });
+    emit('ceo', { type: 'reprogram', text: tx('ceoArchived', { n: excess.length }) });
   } catch { /* soulDir aún sin crear o sin permiso: nada que rotar */ }
 }

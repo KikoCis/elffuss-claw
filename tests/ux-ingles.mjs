@@ -3,7 +3,9 @@
 //   · la respuesta del modo básico, con su enlace al selector de modelo;
 //   · «What's stored» en Ajustes;
 //   · el error de la bóveda al guardar sin nombre;
-//   · el velocímetro (chip, panel y su nombre accesible), con un motor de prueba.
+//   · el velocímetro (chip, panel y su nombre accesible), con un motor de prueba;
+//   · lo que devuelven las herramientas (y se ve en el chat), lo que cuenta el
+//     cerebro (ceo.js) y los textos de skills.js.
 // Antes todo eso salía en español con la página en inglés.
 //
 //   BASE=http://localhost:8743 node tests/ux-ingles.mjs
@@ -72,5 +74,34 @@ const panel = await p.evaluate(() => ({ text: document.getElementById('speed-pan
 ok('speed panel and its accessible name in English', panel.label === 'Speed of this machine' && /tok\/s reading the prompt/.test(panel.text)
   && /3 reused/.test(panel.text) && !ESPANOL.test(panel.text), JSON.stringify(panel).slice(0, 300));
 
+// ── herramientas, cerebro y skills ──────────────────────────────────────────
+const herramientas = await p.evaluate(async () => {
+  const { runTool } = await import('/js/tools/index.js');
+  const r = async (n, a) => { try { return await runTool(n, a); } catch (e) { return 'ERROR ' + e.message; } };
+  return {
+    memoria: await r('memory.list', {}), tareas: await r('tasks.list', {}),
+    automatizaciones: await r('fs.watch_list', {}), boveda: await r('vault.list', {}), app: await r('app.open', { name: 'nada' }),
+    desconocida: await r('no.existe', {}), skill: await r('skill.get', { name: 'nada' }),
+  };
+});
+ok('tool results and errors are in English', /I do not remember anything yet/.test(herramientas.memoria) && herramientas.tareas === 'No scheduled tasks.'
+  && /^No automations\./.test(herramientas.automatizaciones)
+  && /There is no app “nada”/.test(herramientas.app) && /Unknown tool: no\.existe/.test(herramientas.desconocida)
+  && /There is no skill “nada”/.test(herramientas.skill) && !Object.values(herramientas).some(v => ESPANOL.test(v) || /No hay|No existe|Falta/.test(v)),
+  JSON.stringify(herramientas).slice(0, 400));
+const skillTxt = await p.evaluate(async () => (await import('/js/skills.js')).usageMessage({ name: 'demo', description: '' }));
+ok('the “how to use it” message of a skill is in English', /Skill “demo” installed/.test(skillTxt) && /To use it, ask me/.test(skillTxt), skillTxt);
+const cerebro = await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  const vistos = [];
+  const { onEvent } = { onEvent: (ch, ev) => vistos.push(ev.text) };
+  ceo.init({ onEvent });
+  ceo.enable(); ceo.disable();
+  return vistos;
+});
+ok('what the brain says (on watch, paused) is in English', cerebro.includes('CEO on watch — I will work while you are idle') && cerebro.includes('CEO paused'),
+  JSON.stringify(cerebro));
+
 ok('no page errors', errores.length === 0, errores.slice(0, 3).join(' | '));
+
 await fin(b, 'INGLÉS: lo rehecho en la auditoría habla inglés con la página en inglés');

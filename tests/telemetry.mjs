@@ -6,8 +6,11 @@ const BASE = process.env.BASE || 'http://localhost:8801';
 let fails = 0; const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
 
 const b = await chromium.launch();
-const ctx = await b.newContext();
-await ctx.addInitScript(() => { try { localStorage.setItem('elffuss.welcomed', '1'); } catch {} });
+// En español: la prueba busca el botón «Enviar» del feedback. Sin locale el
+// navegador va en inglés, la página también («Send»), y la prueba se caía ahí
+// sin llegar a sus dos últimas comprobaciones. Y en Básico: no necesita modelo.
+const ctx = await b.newContext({ locale: 'es-ES' });
+await ctx.addInitScript(() => { try { localStorage.setItem('elffuss.welcomed', '1'); localStorage.setItem('elffuss.model', 'rules'); } catch {} });
 const p = await ctx.newPage();
 
 const reports = [];
@@ -50,7 +53,7 @@ await p.waitForTimeout(200);
 ok('al desactivarlo, reportError() vuelve a no mandar nada', reports.length === before);
 
 await p.fill('#tel-feedback', 'esto es un feedback manual de prueba');
-await p.click('button:has-text("Enviar")');
+await p.locator('.card', { has: p.locator('#tel-feedback') }).locator('button', { hasText: 'Enviar' }).click();
 await p.waitForTimeout(300);
 ok('el feedback manual SÍ se manda aunque el automático esté apagado', reports.some(r => r.kind === 'feedback' && /feedback manual de prueba/.test(r.message)));
 ok('tras mandar el feedback manual, el automático sigue apagado', await p.evaluate(async () => (await import('/js/telemetry.js')).isEnabled()) === false);
