@@ -25,7 +25,9 @@
 //   · 🧹 se nota al momento: botón ocupado, aviso y la conversación fuera de la
 //     vista, aunque el turno tarde en soltar;
 //   · ■ devuelve el botón «Ejecutar esta propuesta» si cancela su mensaje o para
-//     su turno.
+//     su turno;
+//   · una propuesta que espera en la cola y le llega el turno con el cerebro ya
+//     en Básico no se ejecuta (tampoco tras recargar): lo dice y el botón vuelve.
 //
 //   python3 server/serve.py 8742 &   BASE=http://localhost:8742 node tests/stop-ui.mjs
 import { chromium } from 'playwright';
@@ -57,7 +59,7 @@ const servidor = createServer((req, res) => {
     peticiones.push(p);
     res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     const rapido = /rápido/.test(ultimo);
-    const total = rapido ? 3 : 2000;
+    const total = rapido ? 3 : /ritmo medio/.test(ultimo) ? 50 : 2000;
     const t = setInterval(() => {
       if (p.enviados >= total) {
         clearInterval(t);
@@ -411,6 +413,80 @@ const cerebroLento = () => p.evaluate(() => {
     const x = await estadoProp(); return !x.desactivado && x.texto === '▶ Ejecutar esta propuesta';
   }), JSON.stringify(await estadoProp()));
   await hasta(async () => !(await boton()).stop);
+}
+
+// ── 14 · una propuesta que espera en la cola y le llega el turno en Básico ──
+// Se manda con el modelo cargado, espera detrás de un turno, y entretanto el
+// cerebro pasa a Básico. Al llegarle el turno, el motor de reglas ejecutaba
+// órdenes de su texto: creaba una app «reloj». Ahora no se ejecuta, lo dice y
+// el botón vuelve. Igual tras recargar con Básico guardado (la marca de
+// propuesta se guarda con la cola).
+{
+  const MD = '# Propuesta\nhazme un reloj para controlar el tiempo de cada tarea';
+  const preparar = async () => {
+    await p.evaluate(async md => {
+      const db = await import('/js/db.js');
+      await db.set('kv', 'history', [{ role: 'assistant', content: '💡 Una propuesta de prueba', ts: Date.now(), propuesta: { md, path: null } }]);
+      for (const a of await db.all('apps')) await db.del('apps', a.name);
+    }, MD);
+    return listo();
+  };
+  const apps = () => p.evaluate(async () => (await (await import('/js/db.js')).all('apps')).map(a => a.name));
+  const herramientas = () => p.locator('#log .msg.tool').allTextContents();
+  const desde = peticiones.length;   // las de la sección 13 no cuentan
+  const alModelo = () => peticiones.slice(desde).filter(x => /Implementa esta propuesta/.test(x.ultimo)).length;
+  const reposo = () => hasta(async () => !(await boton()).stop && await p.locator('#log .msg.thinking').count() === 0, { veces: 300 });
+
+  ok('14 · el cerebro de prueba está cargado', await preparar());
+  const prop = p.locator('#log .proposal-exec-btn').first();
+  await escribir('cuéntame algo a ritmo medio');
+  await hasta(async () => (await boton()).stop);
+  await prop.click();
+  const cola = await kv('queue');
+  ok('14 · la propuesta espera en la cola, guardada como propuesta', Array.isArray(cola) && cola.length === 2 && cola[1].propuesta === true && !cola[0].propuesta,
+    JSON.stringify(cola?.map(q => [q.text.slice(0, 24), q.propuesta])));
+  await p.selectOption('#model-select', 'rules');
+  ok('14 · al llegarle el turno en Básico no se ejecuta: ni herramientas ni app', await reposo()
+    && (await apps()).length === 0 && (await herramientas()).length === 0 && alModelo() === 0,
+    JSON.stringify({ apps: await apps(), herramientas: await herramientas(), alModelo: alModelo() }));
+  ok('14 · …su mensaje queda tachado y el aviso dice que hace falta un modelo, con «Elegir modelo»', await hasta(async () =>
+    await p.locator('.msg.user.cancelled', { hasText: 'Implementa esta propuesta' }).count() === 1
+    && await p.locator('#toasts .toast', { hasText: 'hace falta un modelo cargado' }).locator('.toast-accion', { hasText: 'Elegir modelo' }).count() >= 1));
+  ok('14 · …y el botón de la propuesta vuelve (en Básico se ve «Elegir modelo» en su sitio)', await prop.evaluate(b => !b.disabled && b.textContent === '▶ Ejecutar esta propuesta')
+    && await p.locator('#log .proposal-needs-model').first().isVisible());
+  ok('14 · la cola guardada queda vacía', await hasta(async () => { const q = await kv('queue'); return Array.isArray(q) && q.length === 0; }));
+
+  // …y tras recargar con Básico guardado y la propuesta aún en la cola (otro
+  // contexto: el de arriba vuelve a guardar Ollama en cada carga).
+  const c2 = await b.newContext({ locale: 'es-ES' });
+  await c2.addInitScript(() => {
+    try {
+      localStorage.setItem('elffuss.welcomed', '1');
+      localStorage.setItem('elffuss.grants', JSON.stringify(['fs', 'apps', 'vault', 'tasks', 'web', 'memory']));
+      localStorage.setItem('elffuss.model', 'rules');
+    } catch {}
+  });
+  const q = await c2.newPage({ viewport: { width: 1400, height: 900 } });
+  const errores2 = [];
+  q.on('pageerror', e => { if (!/allow-same-origin/.test(e.message)) errores2.push(e.message); });
+  await q.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await q.waitForFunction(() => !!window.elffuss?.agent);
+  await q.evaluate(async md => {
+    const db = await import('/js/db.js');
+    await db.set('kv', 'history', [{ role: 'assistant', content: '💡 Una propuesta de prueba', ts: Date.now(), propuesta: { md, path: null } }]);
+    await db.set('kv', 'queue', [{ id: 'prop-1', text: 'Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md, intentos: 0, hard: false, propuesta: true }]);
+  }, MD);
+  await q.reload({ waitUntil: 'domcontentloaded' });
+  await q.waitForFunction(() => !!window.elffuss?.agent);
+  const enC2 = async () => ({
+    apps: await q.evaluate(async () => (await (await import('/js/db.js')).all('apps')).map(a => a.name)),
+    herramientas: await q.locator('#log .msg.tool').allTextContents(),
+    tachada: await q.locator('.msg.user.cancelled', { hasText: 'Implementa esta propuesta' }).count(),
+  });
+  ok('14 · tras recargar con Básico, la propuesta que esperaba en la cola tampoco se ejecuta', await hasta(async () => (await enC2()).tachada === 1)
+    && (await enC2()).apps.length === 0 && (await enC2()).herramientas.length === 0, JSON.stringify(await enC2()));
+  ok('14 · sin errores de página (tras recargar)', errores2.length === 0, errores2.slice(0, 3).join(' | '));
+  await c2.close();
 }
 
 if (OUT) { await p.screenshot({ path: OUT + '/stop-ui.png' }); console.log('captura → stop-ui.png'); }

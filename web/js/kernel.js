@@ -321,12 +321,14 @@ const bootPromise = new Promise(r => { bootReady = r; });
 // cola. El id es lo que distingue un mensaje de otro igual (ver restoreQueue).
 // `hard` es la elección de Hard Work, que va CON el mensaje (ver send) también
 // tras recargar: guardando solo el texto, un mensaje de Hard Work que esperaba
-// detrás de otro turno se procesaba como chat normal al recargar.
+// detrás de otro turno se procesaba como chat normal al recargar. `propuesta`
+// marca una propuesta del cerebro mandada a ejecutar, también tras recargar
+// (ver vaciarCola: en Básico no se ejecuta).
 // Las colas guardadas por versiones anteriores son de strings sueltos o sin
 // id; restoreQueue las sigue aceptando.
 const persistQueue = () =>
   db.set('kv', 'queue', queue.map(paraGuardar)).catch(() => {});
-const paraGuardar = q => ({ id: q.id, text: q.text, intentos: q.intentos || 0, hard: !!q.hard });
+const paraGuardar = q => ({ id: q.id, text: q.text, intentos: q.intentos || 0, hard: !!q.hard, propuesta: !!q.propuesta });
 // Lo pendiente ahora mismo (el turno en marcha y lo que espera detrás), en el
 // formato de la cola guardada.
 const pendientesAhora = () => queue.map(paraGuardar);
@@ -337,9 +339,10 @@ const nuevoId = () => (globalThis.crypto?.randomUUID?.() || Date.now().toString(
 // procesarlo: antes el modo era global y una vez encendido se aplicaba a todo lo
 // que llegara después —chips, tareas programadas, «Ejecutar propuesta»—.
 // Devuelve el mensaje en la cola (quien lo manda puede colgarle `alCancelar`).
-function send(text, { hard = false } = {}) {
+// `propuesta`: es una propuesta del cerebro (ver executeProposal).
+function send(text, { hard = false, propuesta = false } = {}) {
   const el = ui.addMsg('user queued', text);
-  const item = { id: nuevoId(), text, el, hard };
+  const item = { id: nuevoId(), text, el, hard, propuesta };
   queue.push(item);
   persistQueue();
   if (queue.length > 1) ui.toast(t('queuedAhead', { n: queue.length - 1 }));
@@ -433,6 +436,19 @@ async function vaciarCola() {
     // este mensaje (aún estaba marcado en cola). No se procesa: process()
     // crearía un controlador nuevo que nadie aborta y la parada se perdería.
     if (queue[0] !== item) continue;
+    // Una propuesta del cerebro que llega a su turno en Básico no se ejecuta: se
+    // mandó con un modelo cargado, esperó en la cola, y entretanto el cerebro pasó
+    // a Básico (elegido a mano, «Liberar el modelo», el vigilante de RAM, o una
+    // recarga con Básico guardado). El motor de reglas haría órdenes sueltas de su
+    // texto: creaba una app «reloj» de una propuesta que lo mencionaba. El botón
+    // solo lo miraba al pulsarlo; aquí se mira al procesarla, como Hard Work.
+    if (item.propuesta && activeModel === 'rules') {
+      rechazarPropuesta(item);
+      const j = queue.indexOf(item);
+      if (j >= 0) queue.splice(j, 1);
+      await persistQueue();
+      continue;
+    }
     item.el?.classList.remove('queued');
     if (item.intentos > MAX_INTENTOS) {
       item.el?.remove();
@@ -616,7 +632,7 @@ async function restoreQueue() {
   if (!pending.length) { db.set('kv', 'queue', []).catch(() => {}); return; }
   for (const it of pending) {
     const el = ui.addMsg('user queued', it.text);
-    queue.push({ id: it.id || nuevoId(), text: it.text, intentos: it.intentos || 0, el, hard: !!it.hard });
+    queue.push({ id: it.id || nuevoId(), text: it.text, intentos: it.intentos || 0, el, hard: !!it.hard, propuesta: !!it.propuesta });
   }
   ui.toast(t('queueRestored', { n: pending.length }));
   pump();
@@ -1070,10 +1086,20 @@ function isNoteworthy(ev) {
 // la cola, o false si no la mandó.
 function executeProposal(md) {
   if (activeModel === 'rules') {
-    ui.toast(t('proposalNeedsModel'), { accion: { label: t('pickModel'), run: () => { mente?.closeMind(); ui.enfocarSelectorModelo(); } } });
+    avisoPropuestaSinModelo();
     return false;
   }
-  return send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md);
+  return send('Implementa esta propuesta de mejora usando las herramientas disponibles:\n\n' + md, { propuesta: true });
+}
+function avisoPropuestaSinModelo() {
+  ui.toast(t('proposalNeedsModel'), { accion: { label: t('pickModel'), run: () => { mente?.closeMind(); ui.enfocarSelectorModelo(); } } });
+}
+// La propuesta que esperaba en la cola y llega en Básico (ver vaciarCola): su
+// mensaje queda tachado, el botón que la mandó vuelve, y se dice por qué.
+function rechazarPropuesta(item) {
+  ui.markCancelled(item.el);
+  try { item.alCancelar?.(); } catch { /* — */ }
+  avisoPropuestaSinModelo();
 }
 // SOLO notifica si el permiso YA está concedido — nunca lo pide aquí; pedirlo
 // vive en el «Activar» del panel ⚙ de la Mente (antes también en el clic 🧠,
