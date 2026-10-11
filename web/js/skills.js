@@ -37,14 +37,23 @@ function tx(clave, vars) {
 }
 
 export const CATALOG_REPO = 'anthropics/skills';
+// `clave`: el texto de la etiqueta en el i18n de la app (ver etiquetaO); `label`
+// es el español, el de siempre si la app no tiene esa clave.
 export const DEFAULT_SOURCES = [
-  { repo: 'KikoCis/elffuss-claw-skills', label: 'Elffuss · Skills que funcionan en Claw (3D·Excel·web·juegos)', official: true },
-  { repo: 'bbgnsurftech/claude-skills-collection', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
-  { repo: 'anthropics/skills', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
-  { repo: 'anthropics/claude-plugins-official', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
-  { repo: 'earthtojake/text-to-cad', label: 'Text-to-CAD · CAD/STEP/DXF (Python, solo referencia)', official: true },
-  { repo: 'scottstts/Threejs-Awesome-Graphics-Agent-Skills', label: '3D en el navegador · Three.js (funciona en Claw)', official: true },
+  { repo: 'KikoCis/elffuss-claw-skills', clave: 'skSrc_elffuss', label: 'Elffuss · Skills que funcionan en Claw (3D·Excel·web·juegos)', official: true },
+  { repo: 'bbgnsurftech/claude-skills-collection', clave: 'skSrc_comunidad', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
+  { repo: 'anthropics/skills', clave: 'skSrc_anthropic', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
+  { repo: 'anthropics/claude-plugins-official', clave: 'skSrc_plugins', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
+  { repo: 'earthtojake/text-to-cad', clave: 'skSrc_cad', label: 'Text-to-CAD · CAD/STEP/DXF (Python, solo referencia)', official: true },
+  { repo: 'scottstts/Threejs-Awesome-Graphics-Agent-Skills', clave: 'skSrc_threejs', label: '3D en el navegador · Three.js (funciona en Claw)', official: true },
 ];
+// La etiqueta de una fuente de serie en el idioma de la página, si la app la
+// tiene (en inglés salían las seis en español); si no, la de siempre.
+function etiquetaO(clave, porDefecto) {
+  let s = null;
+  try { s = clave ? traductor?.(clave) : null; } catch { /* traductor roto */ }
+  return typeof s === 'string' && s && s !== clave ? s : porDefecto;
+}
 
 let cache = []; // instaladas, en memoria (para que el systemPrompt sea síncrono)
 
@@ -114,7 +123,7 @@ export async function get(name) {
 // ---- fuentes (repos) ----
 export async function sources() {
   const custom = (await db.get('kv', SRC_KEY).catch(() => null)) || [];
-  return [...DEFAULT_SOURCES, ...custom];
+  return [...DEFAULT_SOURCES.map(s => ({ ...s, label: etiquetaO(s.clave, s.label) })), ...custom];
 }
 export async function addSource(repoOrUrl, label) {
   const repo = repoOrUrl.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');

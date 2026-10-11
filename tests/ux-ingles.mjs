@@ -7,7 +7,9 @@
 //   · lo que devuelven las herramientas (y se ve en el chat), lo que cuenta el
 //     cerebro (ceo.js) y los textos de skills.js;
 //   · el tablero del copiloto (lo que enseña; la skill y su contrato con el
-//     modelo no cambian).
+//     modelo no cambian);
+//   · las fuentes de serie de Skills, la ayuda de los modelos externos en
+//     Ajustes, y los perfiles y la misión de serie de la Mente.
 // Antes todo eso salía en español con la página en inglés.
 //
 //   BASE=http://localhost:8743 node tests/ux-ingles.mjs
@@ -48,6 +50,32 @@ ok('“What’s stored” names the stores in English', await hasta(async () => 
   const t = await tarjeta.innerText().catch(() => '');
   return /Generated apps/.test(t) && /Conversation/.test(t) && /Vault \(encrypted\)/.test(t) && !/Apps generadas|Bóveda/.test(t);
 }), await tarjeta.innerText().catch(() => ''));
+
+// ── Skills: las fuentes de serie ────────────────────────────────────────────
+await p.click('#tabs button[data-tab="skills"]');
+const etiquetasFuentes = () => p.$$eval('#panel-skills .skills-fuentes .card > .row > b', bs => bs.map(b => b.textContent));
+await hasta(async () => (await etiquetasFuentes()).length === 6);
+const fuentes = await etiquetasFuentes();
+ok('the six built-in Skills sources are labelled in English', fuentes.length === 6 && fuentes.includes('Community · Mega collection (1000+ skills)')
+  && fuentes.includes('3D in the browser · Three.js (works in Claw)') && !fuentes.some(f => /Comunidad|navegador|funciona|oficial|solo referencia/.test(f)),
+  JSON.stringify(fuentes));
+
+// ── Settings › External models: la ayuda de cada proveedor ─────────────────
+await p.click('#tabs button[data-tab="ajustes"]');
+await p.locator('#panel-ajustes .ext-block > summary').click();
+const ext = await p.locator('#panel-ajustes .ext-block').innerText();
+ok('Settings › External models: the provider help texts are in English', /Your sk-… key\. It stays in your browser/.test(ext)
+  && /Ollama on your machine/.test(ext) && /The header for direct browser access/.test(ext)
+  && !/Tu clave|Se queda|Arráncalo|Se envía/.test(ext), ext.slice(0, 400));
+
+// ── la Mente: perfiles y misión de serie ────────────────────────────────────
+const mente = await p.evaluate(async () => {
+  const ceo = await import('/js/ceo.js');
+  return { perfiles: ceo.getProfiles().map(x => [x.name, x.focus]), mision: ceo.getMission() };
+});
+ok('the Mind’s default departments, their focus and the mission are in English', mente.perfiles.map(x => x[0]).join() === 'Organization,Productivity,Memory'
+  && /authorized files and folders/.test(mente.perfiles[0][1]) && /^Review your space/.test(mente.mision)
+  && !JSON.stringify(mente).match(/Organización|Productividad|carpetas|Revisar/), JSON.stringify(mente).slice(0, 300));
 
 // ── Vault: guardar sin nombre ───────────────────────────────────────────────
 await p.click('#tabs button[data-tab="vault"]');

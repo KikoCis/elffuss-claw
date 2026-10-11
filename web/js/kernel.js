@@ -1162,11 +1162,16 @@ function pintarPropuesta(m) {
 // permiso ya está concedido: el cerebro no saca diálogos de permisos.
 const CEO_SOLO_LECTURA = new Set(['fs.list', 'fs.read', 'fs.watch_list', 'app.list', 'tasks.list', 'memory.list', 'skill.list', 'skill.get']);
 ceo.usarTraductor(t);   // lo que el cerebro cuenta (ceo.js, compartido con Code), en el idioma de la página
+// Los perfiles y la misión de serie, también en el idioma de la página: en inglés
+// salían «Organización», «Productividad», «Memoria», su foco y la misión en
+// español, y con ellos los nombres accesibles de la Mente («Go to Organización»).
+// Lo que el usuario haya guardado desde la Mente se queda como lo escribió.
+const tSi = (clave, porDefecto) => { const s = t(clave); return s && s !== clave ? s : porDefecto; };
 ceo.init({
   namespace: 'elffuss',
   workspace: ceoWorkspace,
-  defaultProfiles: CEO_DEFAULT_PROFILES,
-  defaultMission: 'Revisar tu espacio (carpetas, apps, tareas, memoria) y proponer mejoras concretas y accionables.',
+  defaultProfiles: CEO_DEFAULT_PROFILES.map(p => ({ ...p, name: tSi('ceoProf_' + p.id, p.name), focus: tSi('ceoProfFocus_' + p.id, p.focus) })),
+  defaultMission: tSi('ceoMissionDefault', 'Revisar tu espacio (carpetas, apps, tareas, memoria) y proponer mejoras concretas y accionables.'),
   // En Básico no hay cerebro que poner a pensar: el motor de reglas contestaba
   // con su texto de ayuda, sacaba diálogos de permiso y creaba apps «boceto».
   provider: () => (activeModel === 'rules' ? null : agent.provider),

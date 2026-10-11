@@ -1225,7 +1225,10 @@ export function refreshSettings() {
     toggle.setAttribute('aria-label', tr('provEnableL', { label: c.label }));
     head.append(title, toggle);
     wrap.appendChild(head);
-    wrap.appendChild(el('span', 'muted', c.help || ''));
+    // La ayuda de cada proveedor en el idioma de la página (settings.js la tiene
+    // en español, que es lo que sale si no hay traducción).
+    const kAyuda = 'provHelp_' + id, ayuda = tr(kAyuda);
+    wrap.appendChild(el('span', 'muted', ayuda !== kAyuda ? ayuda : (c.help || '')));
 
     const model = el('input');
     model.placeholder = tr('modelPh');
