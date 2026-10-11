@@ -16,23 +16,32 @@ export async function load() {
     throw new Error('falta la clave de API (config avanzada)');
 }
 
-// El 4º argumento de chat() puede ser la señal misma o un objeto que la lleva
-// dentro, { signal, onPrefill }, que es lo que pasa el agente (rlm.js pasa la
-// señal sola). Se aceptan las dos formas, como en el motor propio: se reconoce
-// por la forma y no por la clase, igual que allí.
-const senalDe = x => (x && typeof x.aborted === 'boolean') ? x
-  : (x && x.signal && typeof x.signal.aborted === 'boolean') ? x.signal : null;
-
 // `signal` corta la petición de verdad: fetch la aborta y la conexión se cierra,
 // así que el proveedor deja de generar (y de cobrar) en cuanto se pulsa parar.
 // Antes chat() la recibía pero no la pasaba: openaiChat usaba un `signal` que no
 // existía en su ámbito y CADA llamada a un proveedor OpenAI-compatible
 // reventaba con «signal is not defined».
-export async function chat(history, system, onToken = () => {}, signal = null) {
-  signal = senalDe(signal);   // pasarle a fetch el objeto { signal, … } lanzaba TypeError
+//
+// El 4º argumento es la señal sola o `{ signal, onPrefill }` (ver senalDe). Sin
+// normalizarlo, el objeto de opciones llegaba a fetch como si fuera la señal y
+// CADA llamada reventaba con un TypeError.
+export async function chat(history, system, onToken = () => {}, opciones = null) {
+  const signal = senalDe(opciones);
   return cfg.kind === 'anthropic'
     ? anthropicChat(history, system, onToken, signal)
     : openaiChat(history, system, onToken, signal);
+}
+
+// El 4º argumento de chat() llega de dos formas y las dos valen, igual que en
+// chat() del motor propio: la señal de parar sola, o un objeto de opciones que
+// la lleva dentro (`{ signal, onPrefill }`, el que manda el agente cuando pinta
+// la espera del motor). Lo que este proveedor no usa, como onPrefill, se ignora.
+// La señal se reconoce por la forma y no por la clase, como en el motor: una de
+// otro reino (un iframe, un worker) no es `instanceof` de la de esta página.
+function senalDe(x) {
+  if (!x || typeof x !== 'object') return null;
+  if (typeof x.aborted === 'boolean') return x;
+  return x.signal && typeof x.signal.aborted === 'boolean' ? x.signal : null;
 }
 
 // Parado a media respuesta: AbortError, como el de fetch, con lo generado hasta

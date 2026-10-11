@@ -54,8 +54,13 @@ export async function unload() {
 }
 
 // Solo para tests/stop.mjs: probar chat() con un motor de mentira que imita el
-// cerrojo y la interrupción de MLC, sin GPU.
-export function __usarMotor(m) { motor = m; cargadoKey = actual.key; }
+// cerrojo y la interrupción de MLC, sin GPU. Inerte si la prueba no lo pide a
+// propósito (globalThis.__ELFFUSS_PRUEBAS__), como los de onnx.js y litert.js:
+// en la app de verdad no cambia el motor cargado por nada.
+export function __usarMotor(m) {
+  if (!globalThis.__ELFFUSS_PRUEBAS__) throw new Error('__usarMotor es solo para pruebas');
+  motor = m; cargadoKey = actual.key;
+}
 
 // El 4º argumento de chat() puede ser la señal misma o un objeto que la lleva
 // dentro, { signal, onPrefill }, que es lo que pasa el agente (rlm.js pasa la

@@ -278,6 +278,9 @@ await p.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 })
   const r = await p.evaluate(async () => {
     const W = await import('/js/providers/webllm.js');
     const log = { interrupciones: 0, terminados: 0, trozos: 0, esperasCerrojo: 0 };
+    // Sin pedirlo, el gancho se niega: en la app no cambia el motor cargado.
+    try { W.__usarMotor({}); log.sinPedir = 'no lanzó'; } catch (e) { log.sinPedir = e.message; }
+    globalThis.__ELFFUSS_PRUEBAS__ = true;
     let cerrojo = false, bandera = false, alCrear = null;
     // Como MLC 0.2.85: el cerrojo se coge al crear la petición y se suelta al
     // terminar el generador; la bandera de interrupción se pone a false cuando
@@ -320,8 +323,9 @@ await p.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 })
     // y la siguiente petición, sin parar, no se queda esperando el cerrojo
     let error = null, s3 = '';
     try { s3 = await W.chat([{ role: 'user', content: 'otra' }], 'sis', () => {}); } catch (e) { error = e.message; }
-    return { a, b2, s3len: s3.length, error, esperas: log.esperasCerrojo };
+    return { a, b2, s3len: s3.length, error, esperas: log.esperasCerrojo, sinPedir: log.sinPedir };
   });
+  ok('8 · webllm: sin pedirlo, el gancho __usarMotor se niega (en la app no cambia el motor)', /solo para pruebas/.test(r.sinPedir || ''), r.sinPedir);
   ok('8 · webllm: parar llama a interruptGenerate() y no pinta más tokens', r.a.interrupciones >= 1 && r.a.tokens === r.a.tokensAlParar && r.a.trozos < 60,
     `interrupciones ${r.a.interrupciones} · tokens ${r.a.tokensAlParar}→${r.a.tokens} · trozos ${r.a.trozos}`);
   ok('8 · webllm: el flujo se lee hasta el final (el generador termina y suelta el cerrojo)', r.a.terminados === 1, `terminados ${r.a.terminados}`);

@@ -28,6 +28,10 @@ await p.waitForTimeout(1000);
 const r = await p.evaluate(async () => {
   const onnx = await import('/js/providers/onnx.js');
   if (typeof onnx.__usarGenerador !== 'function') return { sinGancho: true };
+  // Sin pedirlo, el gancho se niega: en la app no cambia el modelo cargado.
+  let sinPedir = null;
+  try { onnx.__usarGenerador(() => {}, class {}); } catch (e) { sinPedir = e.message; }
+  globalThis.__ELFFUSS_PRUEBAS__ = true;
   const N = 30;
   // Igual que Callable/StoppingCriteria de transformers.js: la instancia se
   // llama como función y devuelve un booleano por secuencia del lote.
@@ -74,11 +78,12 @@ const r = await p.evaluate(async () => {
     res.clase = typeof tf.InterruptableStoppingCriteria;
     if (res.clase === 'function') res.real = await prueba(tf.InterruptableStoppingCriteria);
   } catch (e) { res.cdn = String(e?.message || e).slice(0, 120); }
-  return { N, ...res };
+  return { N, sinPedir, ...res };
 });
 
 if (r.sinGancho) { ok('onnx.js expone __usarGenerador para la prueba', false); }
 else {
+  ok('sin pedirlo, el gancho __usarGenerador se niega (en la app no cambia el modelo)', /solo para pruebas/.test(r.sinPedir || ''), r.sinPedir || 'no lanzó');
   ok('con criterio de parada: la generación se corta (no llega al final)', r.local.pasos <= 4 && r.local.pasos < r.N, `${r.local.pasos} pasos de ${r.N}`);
   ok('  …chat() rechaza con AbortError y lo generado en «partial»', r.local.err?.name === 'AbortError' && r.local.err?.partial === 'p0 p1 p2', JSON.stringify(r.local.err));
   ok('  …y no entrega ni un token más tras parar', r.local.toks === 3, `${r.local.toks} tokens`);
