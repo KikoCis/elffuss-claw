@@ -7,6 +7,7 @@ import * as web from './web.js';
 import * as memory from './memory.js';
 import * as watch from './watch.js';
 import * as skills from '../skills.js';
+import { t } from '../i18n.js';
 
 export { fs, apps, vault, tasks, web, memory, watch };
 
@@ -61,7 +62,7 @@ img{width:100%;height:140px;object-fit:cover;display:block}
 span{position:absolute;bottom:0;left:0;right:0;font-size:.6rem;color:#c9d1d9;background:linear-gradient(transparent,#000a);padding:8px 6px 4px}
 </style></head><body><h2>🔎 ${query}</h2><div class="grid">${cards}</div></body></html>`;
   await apps.create({ name: 'imágenes ' + query, html });
-  return `Galería con ${data.images.length} imágenes de «${query}» abierta en el visualizador.`;
+  return t('webGallery', { n: data.images.length, q: query });
 }
 
 // `ctx` lo pone el agente: la señal de parada de su turno ({ signal }). Las
