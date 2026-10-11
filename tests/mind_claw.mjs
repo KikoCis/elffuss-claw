@@ -2,24 +2,40 @@
 // perfiles propios de Claw, adaptador sobre fs.js (multi-carpeta), tool-calling
 // REAL (fs.read de verdad) y play/stop persistente vía el botón ▶/⏸ de la Mente (abrirla no lo enciende).
 import { chromium } from 'playwright';
+import { createServer } from 'node:http';
 const OUT = (process.env.SCRATCH || '/tmp/elffuss-test');
 const BASE = process.env.BASE || 'http://localhost:8798';
 let fails = 0; const ok = (n, c, e = '') => { console.log((c ? '✅' : '❌') + ' ' + n + (e ? '  — ' + e : '')); if (!c) fails++; };
+
+// Un cerebro de verdad para el chat, aunque sea de prueba: un servidor local
+// compatible con OpenAI que contesta «ok». En modo Básico «Ejecutar esta
+// propuesta» ya no manda nada (explica que hace falta un modelo: ux-fix 7ba79f9,
+// lo comprueba ux-mente.mjs), así que con el motor de reglas esta prueba ya no
+// podría ver la propuesta llegar al chat.
+const llm = createServer((req, res) => {
+  const c = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type, authorization' };
+  if (req.method === 'OPTIONS') { res.writeHead(204, c); res.end(); return; }
+  req.resume();
+  req.on('end', () => { res.writeHead(200, { ...c, 'Content-Type': 'text/event-stream' }); res.write('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'); res.end(); });
+});
+await new Promise(r => llm.listen(0, '127.0.0.1', r));
+const PROVEEDOR = JSON.stringify({ ollama: { enabled: true, baseURL: `http://127.0.0.1:${llm.address().port}/v1`, model: 'falso', apiKey: 'ollama' } });
 
 const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 // En español: la Mente sigue el idioma del navegador (antes estaba siempre en
 // español) y esta prueba lee sus textos.
 const ctx = await b.newContext({ locale: 'es-ES' });
-await ctx.addInitScript(() => {
+await ctx.addInitScript(proveedor => {
   try {
-    localStorage.setItem('elffuss.model', 'rules');
+    localStorage.setItem('elffuss.model', 'ext:ollama');
+    localStorage.setItem('elffuss.providers', proveedor);
     localStorage.setItem('elffuss.welcomed', '1');
     // ámbitos ya concedidos: sin esto, cualquier tool real (fs, apps, tareas…)
     // se queda colgada esperando un clic en el modal de permisos — incluida la
     // que dispara «Ejecutar esta propuesta» al mandarla al chat real.
     localStorage.setItem('elffuss.grants', JSON.stringify(['fs', 'apps', 'vault', 'tasks', 'web', 'memory']));
   } catch {}
-});
+}, PROVEEDOR);
 const p = await ctx.newPage({ viewport: { width: 1500, height: 900 } });
 p.on('console', m => { if (m.type() === 'error' && !/allow-same-origin|soundcloud|widget|encrypted-media|permissions policy/i.test(m.text())) console.log('   err:', m.text().slice(0, 160)); });
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
@@ -36,6 +52,8 @@ await p.evaluate(async (mark) => {
   await db.set('fs', 'proyecto-prueba', opfs);
 }, MARK);
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' }); await p.waitForTimeout(1500);
+const cerebro = await p.waitForFunction(() => document.getElementById('model-status')?.classList.contains('on'), null, { timeout: 15000 }).then(() => true, () => false);
+ok('el chat tiene un cerebro (el de prueba, no el modo Básico)', cerebro && await p.evaluate(() => localStorage.getItem('elffuss.model') === 'ext:ollama'));
 
 await p.click('#btn-mind');
 // La Mente (y three.js) se carga al abrirla: se espera a que esté montada.
@@ -191,4 +209,5 @@ await p.screenshot({ path: OUT + '/mind_claw.png' });
 console.log('captura → mind_claw.png');
 console.log(fails ? `\n❌ ${fails} FALLO(S)` : '\n✅ CEREBRO CEO EN CLAW OK — perfiles propios + fs.js multi-carpeta + tool-calling real');
 await b.close();
+llm.close();
 process.exit(fails ? 1 : 0);
