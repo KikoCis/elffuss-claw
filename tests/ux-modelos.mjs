@@ -107,8 +107,10 @@ export async function clearShared(o) {
 }`;
   const { ctx: c2 } = await contexto(b, { grants: ['apps'] });
   await servirBroker(c2, DOBLE);
+  // origenesAlmacen() del registro puede devolver la lista o una promesa de
+  // ella: el doble devuelve una promesa, que es el caso que se perdía.
   await c2.route('**/js/engine/registro.js', route => route.fulfill({ contentType: 'text/javascript',
-    body: "export const MODELS = {}; export async function disponible() { return false; } export function origenesAlmacen() { return ['https://m1.elffuss.com/', 'https://m2.elffuss.com/']; }" }));
+    body: "export const MODELS = {}; export async function disponible() { return false; } export async function origenesAlmacen() { return ['https://m1.elffuss.com/', 'https://m2.elffuss.com/']; }" }));
   const { p: q, errores: errQ } = await pagina(c2);
   await q.evaluate(async () => {
     const c = await caches.open('transformers-cache');

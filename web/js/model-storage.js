@@ -20,12 +20,16 @@ import * as broker from './runtime/model-broker.js';
 const DIR_MODELOS = 'elffuss-models';   // el de runtime/model-store.js
 
 // Orígenes de broker con pesos: los que dice el registro del motor (si está
-// desplegado: llega por rsync) y el broker por defecto.
+// desplegado: llega por rsync) y el broker por defecto, que va siempre: guarda
+// los modelos de otros hosts (Gemma de LiteRT, el Qwen del motor).
+// origenesAlmacen() puede devolver la lista o una promesa de ella: se espera
+// (como en el model-cache.js de Elffuss Code). Sin esperarla, una promesa no se
+// podía recorrer y se quedaba solo el broker por defecto, sin avisar.
 export async function origenesDeBroker() {
   const o = new Set([broker.BROKER_URL]);
   try {
     const r = await import('./engine/registro.js');
-    for (const x of (r.origenesAlmacen?.() || [])) o.add(x);
+    for (const x of ((await r.origenesAlmacen?.()) || [])) o.add(x);
   } catch { /* sin motor: solo el broker por defecto */ }
   return [...o];
 }
