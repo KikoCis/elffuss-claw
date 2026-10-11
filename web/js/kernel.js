@@ -392,8 +392,9 @@ function avisoParado(thinking) {
   const n = canceladasEnParada;
   canceladasEnParada = 0;
   const aviso = n ? t('stoppedQueued', { n }) : t('stopped');
+  // Se anuncia una vez: el chat (#log) es una región viva y este aviso entra en
+  // él. Escribirlo además en #stop-status lo leía dos veces seguidas.
   ui.addMsg('assistant muted', aviso);
-  ui.announce(aviso);
 }
 
 // Mientras haya cola o turno, el botón de enviar es ■. El finally garantiza que
@@ -654,7 +655,7 @@ async function pararParaBorrar({ boton = null, aviso = '' } = {}) {
     boton.setAttribute('aria-busy', 'true');
     boton.setAttribute('aria-disabled', 'true');
   }
-  if (aviso) { ui.toast(aviso); ui.announce(aviso); }
+  if (aviso) ui.toast(aviso);       // #toasts es una región viva: se anuncia una vez
   ui.clearLog();
   await Promise.race([pumpFin, new Promise(r => setTimeout(r, 3000))]);
 }

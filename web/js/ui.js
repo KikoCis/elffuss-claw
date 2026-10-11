@@ -204,10 +204,13 @@ export function markCancelled(el) {
   el.append(s);
 }
 
-// Región viva (#stop-status) para lo que no se oye de otro modo: parar con el
-// ratón o con Enter deja el foco en otro sitio, el botón solo lo dice en su
-// etiqueta y el chat no es una región viva. Se vacía y se escribe en otra
-// tarea para que el mismo texto dos veces seguidas se vuelva a leer.
+// Región viva (#stop-status) para lo que no se oye de otro modo: «Parando…».
+// Parar con el ratón o con Enter deja el foco en otro sitio, el botón solo lo
+// dice en su etiqueta y la burbuja de «pensando» está oculta a los lectores (cambia
+// en cada token). Lo que entra en el chat (#log) o en un aviso (#toasts) NO pasa
+// por aquí: esas dos ya son regiones vivas, y repetirlo aquí lo leía dos veces.
+// Se vacía y se escribe en otra tarea para que el mismo texto dos veces seguidas
+// se vuelva a leer.
 let anuncio = null;
 export function announce(texto) {
   const r = $('stop-status');

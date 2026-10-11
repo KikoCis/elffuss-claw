@@ -75,7 +75,8 @@
       <button type="button" id="btn-hardwork" class="cbtn hardwork" title="Hard Work (RLM): trabaja tu carpeta autorizada ENTERA por partes — lee, resume y responde sobre material que no cabe en el modelo. Tarda, pero abarca todo.">⛏ <span class="hw-txt">Hard Work</span></button>
       <button type="submit" id="send" title="Enviar"></button>
     </form>
-    <!-- Avisos de ■ para lectores de pantalla («Parando…», «(Parado.)»): ui.announce(). -->
+    <!-- «Parando…» para lectores de pantalla (ui.announce). «(Parado.)» entra en #log y
+         los avisos en #toasts, que ya son regiones vivas: no se repiten aquí. -->
     <div id="stop-status" class="sr-only" role="status" aria-live="polite"></div>
   </section>
 

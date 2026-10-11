@@ -345,7 +345,14 @@ const cerebroLento = () => p.evaluate(() => {
   ok('11 · otro clic mientras se para no hace nada', await p.evaluate(() => document.getElementById('send').classList.contains('is-stopping')));
   await p.evaluate(() => window.__lento.soltar?.());
   ok('11 · cuando suelta, vuelve a ➤ «Enviar»', await hasta(async () => { const x = await boton(); return !x.stop && x.title === 'Enviar' && x.aria === 'Enviar'; }));
-  ok('11 · y la región viva anuncia «(Parado.)»', await hasta(() => p.evaluate(() => document.getElementById('stop-status')?.textContent === '(Parado.)')));
+  // «(Parado.)» lo anuncia el chat, que es una región viva (role=log), y solo él:
+  // repetido en #stop-status un lector de pantalla lo leía dos veces seguidas.
+  ok('11 · «(Parado.)» entra en el chat, que es una región viva', await hasta(() => p.evaluate(() => {
+    const log = document.getElementById('log');
+    return log.getAttribute('role') === 'log' && log.getAttribute('aria-live') === 'polite'
+      && [...log.querySelectorAll('.msg.assistant.muted')].some(m => m.textContent === '(Parado.)');
+  })));
+  ok('11 · …y no se repite en #stop-status (un solo anuncio)', await p.evaluate(() => document.getElementById('stop-status')?.textContent !== '(Parado.)'));
   ok('11 · lo que llegó a escribir se queda, apagado', (await p.locator('.msg.assistant.muted.partial').allTextContents()).some(t => t.includes('palabra3')));
   await p.evaluate(() => window.elffuss.agent.setProvider(window.__provAntes));
 }
