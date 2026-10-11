@@ -33,6 +33,12 @@ p.on('pageerror', e => { if (!/allow-same-origin/.test(e.message)) errores.push(
 await p.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
 const listo = () => p.evaluate(() => document.getElementById('model-select').value === 'ext:ollama' && document.getElementById('model-status').classList.contains('on'));
 ok('Ollama (de prueba) cargado', await hasta(listo));
+// Un cerebro que carga al momento no deja puesto el escaparate de descarga
+// («Preparando tu sistema operativo…»): su módulo llegaba DESPUÉS de que la
+// carga terminara, y se montaba para quedarse.
+ok('un cerebro que carga al momento no deja el escaparate de descarga en la Vista', await hasta(() => p.evaluate(() =>
+  !document.getElementById('loading-stage') && !document.getElementById('vista-empty').hidden)),
+  await p.evaluate(() => document.getElementById('loading-stage') ? 'escaparate puesto' : 'sin placeholder'));
 ok('el selector se llama «Cerebro (modelo de IA)» y el punto dice su estado', await p.getAttribute('#model-select', 'aria-label') === 'Cerebro (modelo de IA)'
   && await p.getAttribute('#model-status', 'aria-label') === 'Modelo listo');
 

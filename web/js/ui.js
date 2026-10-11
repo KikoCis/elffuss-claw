@@ -761,9 +761,19 @@ function _pct(p) {
 // El escaparate se monta en la Vista SOLO si ya la estás mirando. Antes cada
 // cambio de cerebro —también uno remoto, que ni descarga— te llevaba a la Vista
 // (estando en Ajustes, saltabas a la Vista) y en el móvil te sacaba del chat.
+//
+// El módulo del escaparate se importa al vuelo, y un cerebro que carga al
+// momento (un proveedor externo) llamaba a modelProgress(null) antes de que
+// llegara: no había escaparate que quitar, y al llegar se montaba y se quedaba
+// para siempre con «Preparando tu sistema operativo…». `_finCargas` cuenta las
+// cargas terminadas: si cambió mientras se esperaba, no se monta (o se quita).
+let _finCargas = 0;
 async function _showStage(p) {
+  const pedido = _finCargas;
   const st = await _loadStage();
+  if (pedido !== _finCargas) return;
   if (!st.isMounted()) await st.show($('panel-vista'), $('vista-empty'));
+  if (pedido !== _finCargas) { st.hide($('vista-empty'), $('appframe').hidden !== false); return; }
   st.setProgress(_pct(p));
 }
 const mirandoLaVista = () => tabActiva() === 'vista' && (!isMobile() || document.body.classList.contains('show-viz'));
@@ -772,6 +782,7 @@ export function modelProgress(p) {
   const box = $('model-progress');
   const appHidden = $('appframe').hidden !== false;   // ¿aún no hay app abierta?
   if (p == null) {                                     // carga terminada
+    _finCargas++;                                      // (ver _showStage)
     box.hidden = true;
     _stage?.hide?.($('vista-empty'), appHidden);
     return;
