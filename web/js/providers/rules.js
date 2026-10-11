@@ -1,7 +1,7 @@
 // «Modo básico»: cerebro determinista sin modelo — cubre las demos clave sin
 // descargar nada. Para lenguaje libre, carga un modelo en el selector de modelo.
 // `tr` y no `t`: dentro de chat() `t` es el texto en minúsculas.
-import { t as tr } from '../i18n.js';
+import { t as tr, chipEnEspanol } from '../i18n.js';
 export const name = 'Básico (sin modelo)';
 export async function load() {}
 
@@ -81,7 +81,10 @@ const HELP = () => tr('basicHelp');
 
 export async function chat(history) {
   const last = history[history.length - 1];
-  const text = (last?.content || '').trim();
+  // Una sugerencia de la página (chip) en otro idioma se entiende como la misma
+  // en español, que es como entiende las órdenes este motor. Solo el texto exacto
+  // de una sugerencia: lo que se escribe a mano sigue tal cual.
+  const text = (chipEnEspanol(last?.content) || last?.content || '').trim();
 
   // Tras una herramienta: convertir su resultado en la respuesta…
   if (text.startsWith('[resultado')) {

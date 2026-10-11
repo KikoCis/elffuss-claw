@@ -3063,6 +3063,20 @@ export function t(key, vars) {
 
 const CHIP_ACCIONES = [null, null, 'carpeta', null, null, null];
 
+// Una sugerencia (chip) tal cual, en cualquiera de los idiomas → la misma en
+// español, o null si no es una. El modo Básico (providers/rules.js) entiende
+// órdenes en español: en inglés, francés o alemán casi todos los chips caían en
+// su texto de ayuda en vez de hacer lo que dicen.
+export function chipEnEspanol(texto) {
+  const x = String(texto ?? '').trim().toLowerCase();
+  if (!x) return null;
+  for (const idioma of Object.values(L)) {
+    const i = (idioma.chips || []).findIndex(c => c.trim().toLowerCase() === x);
+    if (i >= 0) return L.es.chips[i];
+  }
+  return null;
+}
+
 export function applyI18n() {
   const code = uiLang();
   const t = L[code] || L.en;

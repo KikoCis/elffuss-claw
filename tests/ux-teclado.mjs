@@ -11,7 +11,9 @@
 //     busca en lo que hace cada uno.
 //   · «?» fuera de la caja enseña los atajos; «/» fuera de la caja abre el menú.
 //   · Chips: botones, seis, sin repetidos, en el idioma de la página; «Autoriza
-//     una carpeta» abre el selector en el propio clic.
+//     una carpeta» abre el selector en el propio clic. En modo Básico, en inglés,
+//     francés y alemán cada chip hace lo que dice (antes casi todos caían en el
+//     texto de ayuda: el modo Básico entiende órdenes en español).
 //
 //   BASE=http://localhost:8743 node tests/ux-teclado.mjs
 import { navegador, contexto, pagina, ok, hasta, espera, fin } from './ux-comun.mjs';
@@ -134,6 +136,34 @@ ok('un chip normal se manda como mensaje', await hasta(async () => /Hazme un rel
   await e.keyboard.press('Enter');
   ok('…y Enter en /settings abre Settings', await hasta(() => e.evaluate(() => document.getElementById('panel-ajustes').classList.contains('active'))));
   await c2.close();
+}
+
+// ── chips en modo Básico, en otros idiomas ───────────────────────────────────
+// La red se corta: example.com contesta aquí y el proxy del servidor no se usa.
+const ESPERADO = [/app\.create \(name=reloj/, /app\.create \(name=notas/, null, /skill\.create/, /web\.images/, /web\.fetch \(url=https:\/\/example\.com/];
+for (const locale of ['en-US', 'fr-FR', 'de-DE']) {
+  const { ctx: c3 } = await contexto(b, { locale, grants: ['apps', 'web', 'fs', 'memory', 'tasks', 'vault'],
+    rutas: async (url, route) => {
+      if (!/^https:\/\/example\.com\//.test(url)) return false;
+      await route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Example</h1>' }); return true;
+    } });
+  const { p: q, errores: err3 } = await pagina(c3);
+  await q.route('**/proxy?url=**', r => r.fulfill({ status: 502, body: 'sin red en la prueba' }));
+  const textos = await q.$$eval('#chips .chip', cs => cs.map(c => c.textContent.trim()));
+  const malos = [];
+  for (let i = 0; i < textos.length; i++) {
+    if (!ESPERADO[i]) continue;                     // «Autoriza una carpeta» abre el selector
+    const antes = await q.locator('#log .msg').count();
+    await q.locator('#chips .chip').nth(i).click();
+    await hasta(() => q.evaluate(n => document.querySelectorAll('#log .msg').length > n + 1
+      && !document.querySelector('#log .msg.thinking') && !document.getElementById('send').classList.contains('is-stop'), antes));
+    const nuevos = await q.evaluate(n => [...document.querySelectorAll('#log .msg')].slice(n).map(m => m.className + ' | ' + m.textContent.trim().slice(0, 90)), antes);
+    const ayuda = nuevos.some(x => /Basic mode|mode Basique|Basismodus|modo básico/i.test(x));
+    if (ayuda || !nuevos.some(x => /\btool\b/.test(x.split(' | ')[0]) && ESPERADO[i].test(x))) malos.push({ chip: textos[i], nuevos: nuevos.slice(0, 3) });
+  }
+  ok(`${locale}: en modo Básico cada chip hace lo que dice (ninguno cae en el texto de ayuda)`, !malos.length, JSON.stringify(malos).slice(0, 400));
+  ok(`${locale}: …sin errores de página`, err3.length === 0, err3.slice(0, 3).join(' | '));
+  await c3.close();
 }
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
