@@ -1757,49 +1757,71 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   // Enter ejecuta el marcado; un «/» suelto nunca se manda al modelo. Después
   // de ejecutar, la caja queda limpia y con el foco.
   const verPanel = tab => { selectTab(tab, { push: true }); if (isMobile()) flipTo('viz'); };
+  // Cada comando tiene su nombre en español y en inglés. Se ENSEÑA el de la
+  // página (español en español, inglés en los demás) y, escribiendo, valen los
+  // dos: en inglés, /settings, /tasks o /clear no encontraban nada. Si ningún
+  // nombre empieza así, se busca en lo que hace cada uno (su pista).
   const cmds = [
-    { label: '/reloj', hint: tr('cmClock'), run: () => onSend(tr('pClock')) },
-    { label: '/carpeta', hint: tr('cmFolder'), run: () => onPickFolder() },     // el selector nativo se abre en el gesto
-    { label: '/skills', hint: tr('cmSkills'), run: () => verPanel('skills') },
-    { label: '/modelo', hint: tr('cmModel'), run: () => enfocarSelectorModelo(), foco: false },
-    { label: '/ajustes', hint: tr('cmSettings'), run: () => verPanel('ajustes') },
-    { label: '/tareas', hint: tr('cmTasks'), run: () => verPanel('tareas') },
-    { label: '/vault', hint: tr('cmVault'), run: () => verPanel('vault') },
-    { label: '/limpiar', hint: tr('cmClear'), run: () => $('btn-clear').click() },
-    { label: '/atajos', hint: tr('cmKeys'), run: () => mostrarAtajos(), foco: false },
+    { label: '/reloj', en: '/clock', hint: tr('cmClock'), run: () => onSend(tr('pClock')) },
+    { label: '/carpeta', en: '/folder', hint: tr('cmFolder'), run: () => onPickFolder() },     // el selector nativo se abre en el gesto
+    { label: '/skills', en: '/skills', hint: tr('cmSkills'), run: () => verPanel('skills') },
+    { label: '/modelo', en: '/model', hint: tr('cmModel'), run: () => enfocarSelectorModelo(), foco: false },
+    { label: '/ajustes', en: '/settings', hint: tr('cmSettings'), run: () => verPanel('ajustes') },
+    { label: '/tareas', en: '/tasks', hint: tr('cmTasks'), run: () => verPanel('tareas') },
+    { label: '/vault', en: '/vault', hint: tr('cmVault'), run: () => verPanel('vault') },
+    { label: '/limpiar', en: '/clear', hint: tr('cmClear'), run: () => $('btn-clear').click() },
+    { label: '/atajos', en: '/shortcuts', hint: tr('cmKeys'), run: () => mostrarAtajos(), foco: false },
   ];
+  const nombreCmd = c => (uiLang() === 'es' ? c.label : c.en);
   const cmdMenu = $('cmd-menu');
   const slash = $('btn-slash');
   const caja = $('prompt');
-  cmdMenu.setAttribute('role', 'menu');
   cmdMenu.setAttribute('aria-label', tr('cmdMenuL'));
   slash.setAttribute('aria-haspopup', 'menu');
   slash.setAttribute('aria-controls', 'cmd-menu');
   slash.setAttribute('aria-expanded', 'false');
   slash.title = tr('cmdMenuL');
   slash.setAttribute('aria-label', tr('cmdMenuL'));
+  // Dos formas, dos patrones de ARIA. Escribiendo «/» el foco se queda en la caja:
+  // la caja es un combobox (aria-controls, aria-expanded) y el menú una lista
+  // (listbox) con su opción marcada (aria-selected), que la caja señala con
+  // aria-activedescendant. Antes la caja señalaba elementos de un role=menu que
+  // no era suyo, y los lectores de pantalla lo anunciaban mal o nada. Con el botón
+  // «/» el foco entra en el menú: ese sí es un role=menu con menuitems.
+  caja.setAttribute('role', 'combobox');
+  caja.setAttribute('aria-autocomplete', 'list');
+  caja.setAttribute('aria-controls', 'cmd-menu');
+  caja.setAttribute('aria-expanded', 'false');
   const sinTilde = x => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  let visibles = [], activo = -1;
+  let visibles = [], activo = -1, comoLista = false;
   const filas = () => [...cmdMenu.querySelectorAll('.cmd-item')];
   const marcar = i => {
     const fs = filas();
     activo = fs.length ? (i + fs.length) % fs.length : -1;
-    fs.forEach((f, j) => f.classList.toggle('activo', j === activo));
-    if (activo >= 0) { caja.setAttribute('aria-activedescendant', fs[activo].id); fs[activo].scrollIntoView({ block: 'nearest' }); }
+    fs.forEach((f, j) => {
+      f.classList.toggle('activo', j === activo);
+      if (comoLista) f.setAttribute('aria-selected', j === activo ? 'true' : 'false');
+    });
+    if (activo >= 0 && comoLista) caja.setAttribute('aria-activedescendant', fs[activo].id);
     else caja.removeAttribute('aria-activedescendant');
+    if (activo >= 0) fs[activo].scrollIntoView({ block: 'nearest' });
   };
   const pintarMenu = (filtro = '/') => {
     const f = sinTilde(filtro);
-    visibles = cmds.filter(c => sinTilde(c.label).startsWith(f));
+    const porNombre = cmds.filter(c => [c.label, c.en].some(n => sinTilde(n).startsWith(f)));
+    const palabra = f.replace(/^\//, '');
+    visibles = porNombre.length || palabra.length < 3 ? porNombre
+      : cmds.filter(c => sinTilde(c.hint).split(/[^\p{L}\p{N}]+/u).some(w => w.startsWith(palabra)));
+    cmdMenu.setAttribute('role', comoLista ? 'listbox' : 'menu');
     cmdMenu.replaceChildren();
     visibles.forEach((c, i) => {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'cmd-item';
       row.id = 'cmd-' + i;
-      row.setAttribute('role', 'menuitem');
+      row.setAttribute('role', comoLista ? 'option' : 'menuitem');
       row.tabIndex = -1;
-      const b = document.createElement('b'); b.textContent = c.label;
+      const b = document.createElement('b'); b.textContent = nombreCmd(c);
       const h = document.createElement('span'); h.textContent = c.hint;
       row.append(b, h);
       row.onclick = () => ejecutar(c);
@@ -1808,15 +1830,19 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
     if (!visibles.length) cmdMenu.appendChild(el('div', 'cmd-vacio', tr('cmNone')));
     marcar(0);
   };
-  const abrirMenu = (filtro = '/') => {
+  // `lista`: abierto escribiendo (el foco sigue en la caja); si no, con el botón.
+  const abrirMenu = (filtro = '/', { lista = true } = {}) => {
+    comoLista = lista;
     pintarMenu(filtro);
     cmdMenu.hidden = false;
-    slash.setAttribute('aria-expanded', 'true');
+    slash.setAttribute('aria-expanded', lista ? 'false' : 'true');
+    caja.setAttribute('aria-expanded', lista ? 'true' : 'false');
   };
   const cerrarMenu = ({ foco = null } = {}) => {
     if (cmdMenu.hidden) return;
     cmdMenu.hidden = true;
     slash.setAttribute('aria-expanded', 'false');
+    caja.setAttribute('aria-expanded', 'false');
     caja.removeAttribute('aria-activedescendant');
     activo = -1;
     foco?.focus();
@@ -1829,7 +1855,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   };
   slash.addEventListener('click', () => {
     if (!cmdMenu.hidden) { cerrarMenu({ foco: slash }); return; }
-    abrirMenu('/');
+    abrirMenu('/', { lista: false });
     filas()[0]?.focus();
   });
   // Dentro del menú (abierto con el botón): flechas, Inicio/Fin, Escape.
