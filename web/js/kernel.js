@@ -912,6 +912,7 @@ if (!bienvenido) {
     try { localStorage.setItem('elffuss.welcomed', '1'); } catch { /* — */ }
     galaxy?.burst(); // las estrellas salen despedidas al entrar
     splash.style.opacity = '0';
+    splash.removeAttribute('aria-modal');   // ya no es modal: se desvanece y se va
     cerrarModal({ devolverFoco: false });
     document.getElementById('prompt')?.focus();
     setTimeout(() => { splash.hidden = true; galaxy?.stop(); }, 800);

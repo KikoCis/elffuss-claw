@@ -3,6 +3,9 @@
 //     y Tab no se escapa al selector de modelo de detrás.
 //   · «Entrar» con Enter la cierra, la recuerda y deja el foco en la caja.
 //   · Con «reducir movimiento», «Entrar» se ve desde el principio.
+//   · Los atajos globales («?» y «/») no actúan detrás de la bienvenida: antes
+//     «?» abría la lista de atajos encima y «/» escribía en la caja inerte de
+//     detrás con su menú abierto. Tras entrar, funcionan.
 //
 //   BASE=http://localhost:8743 node tests/ux-splash.mjs
 import { navegador, contexto, ok, hasta, fin, BASE } from './ux-comun.mjs';
@@ -27,12 +30,25 @@ ok('lo de detrás está inerte', e1.inerte);
 await p.keyboard.press('Tab');
 ok('Tab no se escapa al selector de modelo de detrás', await p.evaluate(() => !document.activeElement?.closest('header, main')));
 await p.focus('#splash-enter');
+await p.keyboard.press('?');
+await p.keyboard.press('/');
+await p.waitForTimeout(200);
+const atajos = await p.evaluate(() => ({
+  lista: !!document.getElementById('atajos')?.open, caja: document.getElementById('prompt').value,
+  menu: !document.getElementById('cmd-menu')?.hidden, foco: document.activeElement?.id,
+}));
+ok('con la bienvenida a la vista, «?» y «/» no actúan detrás', !atajos.lista && atajos.caja === '' && !atajos.menu && atajos.foco === 'splash-enter', JSON.stringify(atajos));
+await p.focus('#splash-enter');
 await p.keyboard.press('Enter');
 ok('Enter en «Entrar» la cierra y el foco va a la caja de texto', await hasta(async () => {
   const e = await p.evaluate(() => ({ foco: document.activeElement?.id, inerte: document.querySelector('header').inert, ok: localStorage.getItem('elffuss.welcomed') }));
   return e.foco === 'prompt' && !e.inerte && e.ok === '1';
 }));
 ok('…y desaparece', await hasta(() => p.evaluate(() => document.getElementById('splash').hidden)));
+await p.click('#log');
+await p.keyboard.press('?');
+ok('tras entrar, «?» sí enseña la lista de atajos', await hasta(() => p.evaluate(() => !!document.getElementById('atajos')?.open)));
+await p.keyboard.press('Escape');
 
 {
   const c2 = await b.newContext({ reducedMotion: 'reduce' });

@@ -1646,11 +1646,16 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   document.addEventListener('click', e => { if (!e.target.closest('#cmd-menu, #btn-slash, #prompt')) cerrarMenu(); });
 
   // Atajos globales fuera de un campo de texto: «/» va a la caja con el menú
-  // abierto y «?» enseña la lista de atajos.
+  // abierto y «?» enseña la lista de atajos. No con una capa modal a la vista
+  // (el splash de bienvenida, la Mente): antes, con el splash abierto y el foco
+  // en «Entrar», «?» abría la lista de atajos encima y «/» escribía en la caja
+  // inerte de detrás y dejaba su menú abierto, todo ello aún ahí al entrar.
+  const capaModal = () => [...document.querySelectorAll('[aria-modal="true"]')]
+    .some(el => !el.hidden && el.getClientRects().length > 0);
   document.addEventListener('keydown', e => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target;
-    if (t?.closest?.('input, textarea, select, [contenteditable], dialog, #mind-overlay')) return;
+    if (t?.closest?.('input, textarea, select, [contenteditable], dialog, #mind-overlay, [aria-modal="true"]') || capaModal()) return;
     if (e.key === '/') { e.preventDefault(); if (isMobile()) flipTo('chat'); caja.focus(); caja.value = '/'; abrirMenu('/'); }
     else if (e.key === '?') { e.preventDefault(); mostrarAtajos(); }
   });
