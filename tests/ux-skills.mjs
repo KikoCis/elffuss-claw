@@ -7,6 +7,11 @@
 //     al momento y deja «Deshacer»; se puede ver lo que se le da al modelo.
 //   · «Añadir repo» lo enseña al momento, vacía el campo y se puede quitar (✕).
 //   · #/skills/<nombre> señala la skill y abre su texto.
+//   · Con el teclado el foco no cae a <body>: «Explorar» e «Instalar» lo
+//     conservan (ocupados con aria-disabled, no disabled), y tras «Quitar», ✕ o
+//     «Deshacer» va al botón de lo que queda en su sitio o de lo devuelto.
+//   · El botón de una skill instalada se llama «Instalada ✓: <nombre>», y al
+//     quitarla la lista abierta vuelve a ofrecer «Instalar» (y al deshacer, no).
 //
 //   BASE=http://localhost:8743 node tests/ux-skills.mjs
 import { navegador, contexto, pagina, ok, hasta, avisos, fin, BASE } from './ux-comun.mjs';
@@ -30,15 +35,22 @@ const { ctx, fuera } = await contexto(b, {
   },
 });
 const { p, errores } = await pagina(ctx);
+const foco = () => p.evaluate(() => {
+  const a = document.activeElement;
+  return !a || a === document.body ? 'BODY' : (a.getAttribute('aria-label') || a.textContent || a.id).trim().slice(0, 80);
+});
+const conTeclado = async loc => { await loc.focus(); await p.keyboard.press('Enter'); };
 await p.click('#tabs button[data-tab="skills"]');
 const contador = () => p.locator('#panel-skills .skills-instaladas > .muted').first().innerText();
 ok('empieza con «Instaladas: 0»', (await contador()) === 'Instaladas: 0');
 
 const tarjeta = p.locator(`#panel-skills [data-ruta="repo:${REPO}"]`);
 const explorar = tarjeta.locator('button', { hasText: /Explorar|Ocultar/ });
-await explorar.click();
+await conTeclado(explorar);
 ok('«Explorar» abre la lista DENTRO de la tarjeta del repo', await hasta(async () =>
   /reloj-bonito/.test(await tarjeta.locator('.repo-skills').innerText()) && await explorar.getAttribute('aria-expanded') === 'true'));
+ok('…y con el teclado el foco sigue en el botón cuando acaba de cargar', await hasta(async () =>
+  (await foco()) === 'Ocultar' && await explorar.getAttribute('aria-busy') === null), await foco());
 const md = tarjeta.locator('.repo-skills a', { hasText: 'SKILL.md' }).first();
 ok('cada skill enlaza a su SKILL.md (pestaña nueva, sin referrer)', /github\.com\/KikoCis\/elffuss-claw-skills\/blob\/main\/skills\/(notas|reloj-bonito)\/SKILL\.md/.test(await md.getAttribute('href'))
   && await md.getAttribute('rel') === 'noopener noreferrer');
@@ -49,9 +61,17 @@ await explorar.click();
 
 const tarjetaSkill = tarjeta.locator('.repo-skills .card', { hasText: 'reloj-bonito' });
 const instalar = tarjetaSkill.locator('button', { hasText: 'Instala' });
-await instalar.click();
+ok('antes de instalar, el botón se llama «Instalar: reloj-bonito»', await instalar.getAttribute('aria-label') === 'Instalar: reloj-bonito');
+await conTeclado(instalar);
 ok('«Instalar» deja el botón desactivado en «Instalada ✓»', await hasta(async () =>
   (await instalar.innerText()) === 'Instalada ✓' && await instalar.isDisabled()));
+ok('…su nombre accesible dice lo mismo («Instalada ✓: reloj-bonito»)', await instalar.getAttribute('aria-label') === 'Instalada ✓: reloj-bonito',
+  await instalar.getAttribute('aria-label'));
+ok('…y con el teclado el foco sigue en él (no cae a <body>)', (await foco()) === 'Instalada ✓: reloj-bonito', await foco());
+await instalar.click({ force: true });
+await p.waitForTimeout(150);
+ok('…ya instalada, pulsarlo no hace nada', (await instalar.innerText()) === 'Instalada ✓'
+  && (await p.evaluate(async () => (await (await import('/js/db.js')).get('kv', 'skills')) || [])).length === 1);
 ok('…el contador sube y la skill aparece en lo instalado', (await contador()) === 'Instaladas: 1'
   && await p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonito"]').count() === 1);
 ok('…y el chat explica cómo usarla', /Skill «reloj-bonito» instalada/.test(await p.locator('#log').innerText()));
@@ -66,13 +86,22 @@ const inst = p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonit
 await inst.locator('summary').click();
 ok('se puede ver lo que se le da al modelo', /Crea un reloj grande/.test(await inst.locator('.skill-text').innerText()));
 
-await inst.locator('button[aria-label="Quitar la skill «reloj-bonito»"]').click();
+await conTeclado(inst.locator('button[aria-label="Quitar la skill «reloj-bonito»"]'));
 ok('«Quitar» la quita al momento y el contador baja', await hasta(async () =>
   await p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonito"]').count() === 0 && (await contador()) === 'Instaladas: 0'));
 ok('…sin tocar las demás skills guardadas', (await p.evaluate(async () => (await (await import('/js/db.js')).get('kv', 'skills')) || [])).length === 0);
+ok('…con el foco en el contador (no queda ninguna), no en <body>', (await foco()) === 'Instaladas: 0', await foco());
+ok('…y la lista abierta vuelve a ofrecer «Instalar» (antes seguía «Instalada ✓» y desactivado)', await hasta(async () =>
+  (await instalar.innerText()) === 'Instalar' && !(await instalar.isDisabled()) && await instalar.getAttribute('aria-label') === 'Instalar: reloj-bonito'),
+  JSON.stringify({ texto: await instalar.innerText(), aria: await instalar.getAttribute('aria-label') }));
 const deshacer = p.locator('#toasts .toast', { hasText: 'quitada' }).locator('.toast-accion');
-await deshacer.click();
+await conTeclado(deshacer);
 ok('«Deshacer» la devuelve', await hasta(async () => await p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonito"]').count() === 1));
+ok('…con el foco en su «Quitar»', await hasta(async () => (await foco()) === 'Quitar la skill «reloj-bonito»'), await foco());
+ok('…y la lista vuelve a decir «Instalada ✓»', (await instalar.innerText()) === 'Instalada ✓' && await instalar.isDisabled());
+await explorar.click();
+await explorar.click();
+ok('cerrar y reabrir la lista no la deja vieja', (await instalar.innerText()) === 'Instalada ✓' && await instalar.isDisabled());
 
 // ── añadir y quitar un repo ─────────────────────────────────────────────────
 await p.fill('#panel-skills form input', 'https://github.com/alguien/sus-skills');
@@ -80,8 +109,10 @@ await p.press('#panel-skills form input', 'Enter');
 const nueva = p.locator('#panel-skills [data-ruta="repo:alguien/sus-skills"]');
 ok('«Añadir repo» lo enseña al momento y vacía el campo', await hasta(async () => await nueva.count() === 1)
   && (await p.inputValue('#panel-skills form input')) === '' && (await avisos(p)).some(t => /añadido/.test(t)));
-await nueva.locator('button[aria-label="Quitar el repo alguien/sus-skills"]').click();
+await conTeclado(nueva.locator('button[aria-label="Quitar el repo alguien/sus-skills"]'));
 ok('✕ quita un repo añadido', await hasta(async () => await nueva.count() === 0));
+ok('…con el foco en el «Explorar» del repo que queda en su sitio (no en <body>)', await hasta(async () =>
+  (await foco()) === 'Explorar' && await p.evaluate(() => !!document.activeElement.closest('#panel-skills .skills-fuentes .card'))), await foco());
 ok('los repos de serie no tienen ✕', await tarjeta.locator('button[aria-label^="Quitar el repo"]').count() === 0);
 
 // ── dirección de una skill ──────────────────────────────────────────────────

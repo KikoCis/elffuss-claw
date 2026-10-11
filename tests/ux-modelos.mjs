@@ -79,14 +79,19 @@ const card = p.locator('#panel-ajustes .card', { hasText: 'Modelo descargado' })
 ok('Ajustes cuenta los pesos (no el origen entero)', await hasta(async () => /0\.01 GB en caché/.test(await card.innerText())), await card.innerText());
 const boton = card.locator('button', { hasText: 'Vaciar caché del modelo' });
 await p.evaluate(() => {
-  // ver el botón desactivado mientras trabaja
+  // ver el botón ocupado mientras trabaja (aria-disabled: con disabled el foco
+  // caía a <body> nada más pulsarlo)
   const b = [...document.querySelectorAll('#panel-ajustes button')].find(x => /Vaciar caché del modelo/.test(x.textContent));
   window.__visto = [];
-  new MutationObserver(() => window.__visto.push(b.disabled)).observe(b, { attributes: true, attributeFilter: ['disabled'] });
+  new MutationObserver(() => window.__visto.push(b.getAttribute('aria-disabled'))).observe(b, { attributes: true, attributeFilter: ['aria-disabled'] });
 });
-await boton.click();
-ok('el botón se desactiva mientras vacía y dice cuánto liberó', await hasta(async () => (await avisos(p)).filter(t => /Liberados 6 MB/.test(t)).length >= 1)
-  && (await p.evaluate(() => window.__visto)).includes(true));
+await boton.focus();
+await p.keyboard.press('Enter');
+ok('el botón queda ocupado mientras vacía y dice cuánto liberó', await hasta(async () => (await avisos(p)).filter(t => /Liberados 6 MB/.test(t)).length >= 1)
+  && (await p.evaluate(() => window.__visto)).includes('true'));
+ok('…y con el teclado el foco sigue en él al terminar (no cae a <body>)', await hasta(() => p.evaluate(() =>
+  /Vaciar caché del modelo/.test(document.activeElement?.textContent || '') && !document.activeElement.hasAttribute('aria-disabled'))),
+  await p.evaluate(() => document.activeElement?.textContent || document.activeElement?.tagName));
 ok('y después cuenta cero', await hasta(async () => /Nada cacheado todavía/.test(await card.innerText())));
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));

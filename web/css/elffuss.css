@@ -370,6 +370,10 @@ button.ghost {
   border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: .85rem;
 }
 button.ghost:hover { color: var(--fg); border-color: var(--accent); }
+/* Ocupado o ya hecho (una skill instalada): aria-disabled en vez de disabled,
+   para que el botón no pierda el foco (ver btn en ui.js). */
+.panel button[aria-disabled="true"], .mobile-gate button[aria-disabled="true"] { opacity: .6; cursor: default; }
+.panel button[aria-busy="true"], .mobile-gate button[aria-busy="true"] { cursor: progress; }
 h3 { margin: 6px 0 12px; font-size: .95rem; }
 
 /* ---------- modal de permisos ---------- */

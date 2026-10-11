@@ -487,11 +487,39 @@ const el = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
+// Un botón ocupado (o ya hecho, como una skill instalada) se marca con
+// aria-disabled y NO con disabled: desactivar el botón que tiene el foco lo saca
+// del foco y el teclado cae a <body> (lo mismo que hace ■, ver setStopping).
+// Mientras está marcado, su clic no hace nada.
 const btn = (label, cls, onClick) => {
   const b = el('button', cls, label);
-  b.onclick = onClick;
+  b.onclick = e => { if (b.getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; } return onClick(e); };
   return b;
 };
+function ocupado(b, on, { hecho = false } = {}) {
+  if (!b) return;
+  if (on) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
+  if (on && !hecho) b.setAttribute('aria-busy', 'true'); else b.removeAttribute('aria-busy');
+}
+// Tras repintar una lista, el foco va al mismo control de la fila que ocupa
+// ahora el sitio de la que se fue (la siguiente), o de la anterior si era la
+// última; sin filas, a `respaldo` (el título de la sección, un campo…). Antes
+// caía a <body> y quien usa el teclado o un lector de pantalla volvía a empezar
+// desde arriba tras cada acción. Solo si el foco se perdió: si ya está en otra
+// parte (otro panel, el chat), no se toca; y solo si el destino está a la vista.
+const focoPerdido = () => !document.activeElement || document.activeElement === document.body;
+function enfocar(destino) {
+  if (!destino?.isConnected || !destino.getClientRects().length) return false;
+  if (!destino.matches('button, a[href], input, select, textarea, summary') && !destino.hasAttribute('tabindex')) destino.tabIndex = -1;
+  try { destino.focus(); } catch { return false; }
+  return document.activeElement === destino;
+}
+function enfocarFila(filas, i, selector, respaldo) {
+  if (!focoPerdido()) return;
+  const lista = [...filas];
+  const fila = lista.length ? lista[Math.max(0, Math.min(i, lista.length - 1))] : null;
+  if (!enfocar(fila && (selector ? fila.querySelector(selector) : fila))) enfocar(respaldo);
+}
 
 // ---------- panel apps ----------
 export async function refreshApps() {
@@ -503,26 +531,37 @@ export async function refreshApps() {
     return;
   }
   for (const app of list) {
-    panel.appendChild(card(
+    const c = card(
       el('b', null, app.name),
       el('span', 'muted', new Date(app.created).toLocaleString(uiLang())),
       // Por apps.open(): así la app abierta es ESTA también para el modelo
       // (CONTEXTO AHORA), no solo en pantalla.
       btn(tr('open'), 'primary', () => { aperturaManualT = Date.now(); apps.open({ name: app.name }).catch(e => toast('⚠️ ' + e.message)); }),
       botonBorrarApp(app),
-    ));
+    );
+    c.dataset.app = app.name;
+    panel.appendChild(c);
   }
 }
 // 🗑 con nombre propio y «Deshacer» (borraba al instante, sin vuelta atrás). Si
-// era la app abierta, el visor se vacía (ver apps.setOnRemoved en init).
+// era la app abierta, el visor se vacía (ver apps.setOnRemoved en init). El foco
+// va al 🗑 de la app que queda en su sitio y, tras «Deshacer», al de la devuelta.
 function botonBorrarApp(app) {
   const b = btn('🗑', 'ghost', async () => {
+    const panel = $('panel-apps');
+    const i = [...panel.querySelectorAll('.card[data-app]')].indexOf(b.closest('.card'));
     await apps.removeApp({ name: app.name });
-    refreshApps();
+    await refreshApps();
+    enfocarFila(panel.querySelectorAll('.card[data-app]'), i, '.borrar-app', panel.querySelector('h3'));
     toast(tr('appRemoved', { name: app.name }), { accion: { label: tr('undo'), run: async () => {
-      try { await apps.restoreApp(app); refreshApps(); } catch (e) { toast('⚠️ ' + e.message); }
+      try {
+        await apps.restoreApp(app);
+        await refreshApps();
+        enfocarFila(panel.querySelectorAll(`.card[data-app="${CSS.escape(app.name)}"]`), 0, '.borrar-app');
+      } catch (e) { toast('⚠️ ' + e.message); }
     } } });
   });
+  b.classList.add('borrar-app');
   b.title = tr('appDelL', { name: app.name });
   b.setAttribute('aria-label', tr('appDelL', { name: app.name }));
   return b;
@@ -538,7 +577,36 @@ function vaciarVisor() {
 }
 
 // ---------- panel tareas ----------
-export async function refreshTasks() {
+// Un repintado a la vez: «Ejecutar ahora» repinta, y la tarea que lanza también
+// (tareasCambiaron). Dos a la vez se pisaban, y el último en llegar tiraba los
+// botones en los que ya se había puesto el foco. Quien llama mientras uno está
+// en marcha espera a ese, que repinta otra vez al terminar.
+let tareasPintando = null, tareasOtraVez = false;
+export function refreshTasks() {
+  if (tareasPintando) { tareasOtraVez = true; return tareasPintando; }
+  tareasPintando = (async () => {
+    do { tareasOtraVez = false; await pintarTareas(); } while (tareasOtraVez);
+  })().finally(() => { tareasPintando = null; });
+  return tareasPintando;
+}
+// Tras quitar una tarea o una automatización, el foco va al mismo botón de la
+// fila que queda en su sitio; tras «Ejecutar ahora», al 🗑 de esa tarea (ya no
+// tiene «Ejecutar ahora»). Dónde estaba la fila se mira AL PULSAR, antes de
+// esperar nada: si otro repintado llega entretanto, la fila ya no está.
+function posicionEnTareas(boton) {
+  const fila = boton.closest('[data-ruta]');
+  const auto = !!fila?.closest('.automatizaciones');
+  const grupo = auto ? '.automatizaciones .card[data-ruta]' : '.card[data-tarea]';
+  return { auto, grupo, i: [...$('panel-tareas').querySelectorAll(grupo)].indexOf(fila), ruta: fila?.dataset.ruta };
+}
+async function repintarTareasYEnfocar({ auto, grupo, i, ruta }, { misma = false } = {}) {
+  const panel = $('panel-tareas');
+  await refreshTasks();
+  const titulo = panel.querySelector(auto ? '.automatizaciones h3' : 'h3');
+  if (misma) enfocarFila(panel.querySelectorAll(`.card[data-ruta="${CSS.escape(ruta || '')}"]`), 0, '.borrar-tarea', titulo);
+  else enfocarFila(panel.querySelectorAll(grupo), i, auto ? '.quitar-auto' : '.borrar-tarea', titulo);
+}
+async function pintarTareas() {
   const [list, watches] = await Promise.all([
     db.all('tasks').then(l => l.sort((a, b) => a.when - b.when)),
     watch.allWatches().catch(() => []),
@@ -555,20 +623,28 @@ export async function refreshTasks() {
     const fila = [estado, el('b', null, t.prompt), el('span', 'muted', new Date(t.when).toLocaleString(uiLang())), id];
     if (!t.done) {
       const ya = btn(tr('taskRunNow'), 'ghost', async () => {
-        ya.disabled = true;
+        const pos = posicionEnTareas(ya);
+        ocupado(ya, true);
         const hecha = await tasks.marcarHecha(t.id);
         if (hecha) onRunTaskCb(hecha);
-        refreshTasks();
+        await repintarTareasYEnfocar(pos, { misma: true });
       });
       ya.setAttribute('aria-label', tr('taskRunNowL', { prompt: t.prompt }));
       fila.push(ya);
     }
-    const borrar = btn('🗑', 'ghost', async () => { await tasks.removeTask({ id: t.id }); toast(tr('taskDeleted', { id: t.id })); refreshTasks(); });
+    const borrar = btn('🗑', 'ghost', async () => {
+      const pos = posicionEnTareas(borrar);
+      await tasks.removeTask({ id: t.id });
+      toast(tr('taskDeleted', { id: t.id }));
+      await repintarTareasYEnfocar(pos);
+    });
+    borrar.className = 'ghost borrar-tarea';
     borrar.title = tr('taskDelL', { prompt: t.prompt });
     borrar.setAttribute('aria-label', tr('taskDelL', { prompt: t.prompt }));
     fila.push(borrar);
     const c = card(...fila);
     c.dataset.ruta = t.id;          // #/tareas/<id>
+    c.dataset.tarea = '1';
     panel.appendChild(c);
   }
   // Automatizaciones de carpetas (fs.watch): antes no tenían interfaz; solo se
@@ -578,7 +654,13 @@ export async function refreshTasks() {
   sec.appendChild(el('h3', null, tr('watchTitle')));
   if (!watches.length) sec.appendChild(el('p', 'muted', tr('watchEmpty')));
   for (const w of watches) {
-    const x = btn('✕', 'ghost', async () => { await watch.removeWatch({ id: w.id }); toast(tr('watchRemoved', { id: w.id })); refreshTasks(); });
+    const x = btn('✕', 'ghost', async () => {
+      const pos = posicionEnTareas(x);
+      await watch.removeWatch({ id: w.id });
+      toast(tr('watchRemoved', { id: w.id }));
+      await repintarTareasYEnfocar(pos);
+    });
+    x.className = 'ghost quitar-auto';
     x.title = tr('watchDelL', { from: w.from, to: w.to });
     x.setAttribute('aria-label', x.title);
     const c = card(el('span', null, '👁'), el('b', null, `${w.from} → ${w.to}`),
@@ -704,32 +786,60 @@ export async function refreshVault() {
     ver.setAttribute('aria-pressed', 'false');
     ver.title = tr('vaultShow', { name: n });
     ver.setAttribute('aria-label', tr('vaultShowL', { name: n }));
+    // Tras borrar, el foco va al 🗑 del secreto que queda en su sitio o, si no
+    // queda ninguno, al nombre de uno nuevo.
     const borrar = btn('🗑', 'ghost', async () => {
       if (!window.confirm(tr('vaultDelConfirm', { name: n }))) return;
+      const i = [...panel.querySelectorAll('.card[data-secreto]')].indexOf(borrar.closest('.card'));
       try { await vault.removeSecret({ name: n }); toast(tr('vaultDeleted', { name: n })); }
       catch (err) { toast('⚠️ ' + err.message); }
-      refreshVault();
+      await refreshVault();
+      enfocarFila(panel.querySelectorAll('.card[data-secreto]'), i, '.borrar-secreto', panel.querySelector('#vault-name, #vault-master'));
     });
+    borrar.className = 'ghost borrar-secreto';
     borrar.title = tr('vaultDel', { name: n });
     borrar.setAttribute('aria-label', tr('vaultDel', { name: n }));
-    panel.appendChild(card(el('b', null, n), val, ver, borrar));
+    const c = card(el('b', null, n), val, ver, borrar);
+    c.dataset.secreto = n;
+    panel.appendChild(c);
   }
 }
 
 // ---------- panel permisos ----------
-export async function refreshPerms() {
+// Un repintado a la vez, como en Tareas: el panel se pinta en dos tiempos (los
+// permisos, y tras leer las carpetas, las carpetas), y dos a la vez —revocar
+// mientras se cierra un diálogo de permiso— duplicaban las carpetas.
+let permisosPintando = null, permisosOtraVez = false;
+export function refreshPerms() {
+  if (permisosPintando) { permisosOtraVez = true; return permisosPintando; }
+  permisosPintando = (async () => {
+    do { permisosOtraVez = false; await pintarPermisos(); } while (permisosOtraVez);
+  })().finally(() => { permisosPintando = null; });
+  return permisosPintando;
+}
+async function pintarPermisos() {
   const panel = $('panel-permisos');
   panel.replaceChildren(el('h3', null, tr('permsTitle')));
   const g = perms.grants();
   if (!g.length)
     panel.appendChild(el('p', 'muted', tr('permsEmpty')));
+  // Tras revocar (o quitar una carpeta), el foco va al mismo botón de la fila
+  // que queda en su sitio, o al título si ya no queda ninguna.
   for (const scope of g) {
     const meta = perms.SCOPES[scope] || {};
-    panel.appendChild(card(
+    const revocar = btn(tr('revoke'), 'ghost', async () => {
+      const i = [...panel.querySelectorAll('.card[data-permiso]')].indexOf(revocar.closest('.card'));
+      perms.revoke(scope);
+      await refreshPerms();
+      enfocarFila(panel.querySelectorAll('.card[data-permiso]'), i, 'button', panel.querySelector('h3'));
+    });
+    const c = card(
       el('b', null, `${meta.icon || ''} ${meta.label || scope}`),
       el('span', 'muted', meta.desc || ''),
-      btn(tr('revoke'), 'ghost', () => { perms.revoke(scope); refreshPerms(); }),
-    ));
+      revocar,
+    );
+    c.dataset.permiso = scope;
+    panel.appendChild(c);
   }
   const folders = await fs.folders();
   if (folders.length) {
@@ -737,10 +847,16 @@ export async function refreshPerms() {
     // Dónde escribe la Mente: en la primera carpeta (ceo-adapter.js).
     panel.appendChild(el('p', 'muted', tr('folderSoulNote', { name: folders[0] })));
     for (const f of folders) {
-      const quitar = btn(tr('remove'), 'ghost', () => quitarCarpeta(f, folders));
+      const quitar = btn(tr('remove'), 'ghost', async () => {
+        const i = [...panel.querySelectorAll('.card[data-carpeta]')].indexOf(quitar.closest('.card'));
+        if (!(await quitarCarpeta(f, folders))) return;
+        enfocarFila(panel.querySelectorAll('.card[data-carpeta]'), i, 'button',
+          panel.querySelector('.card[data-permiso] button') || panel.querySelector('h3'));
+      });
       quitar.setAttribute('aria-label', tr('folderRemoveL', { name: f }));
       const c = card(el('b', null, '📁 ' + f), quitar);
       c.dataset.ruta = f;           // #/permisos/<carpeta>
+      c.dataset.carpeta = '1';
       panel.appendChild(c);
     }
   }
@@ -753,11 +869,12 @@ async function quitarCarpeta(f, folders) {
   let txt = tr('folderRemoveConfirm', { name: f });
   if (dependientes.length) txt += '\n\n' + tr('folderRemoveWatches', { list: dependientes.map(w => `${w.from} → ${w.to}`).join(', ') });
   if (folders[0] === f) txt += '\n\n' + (folders[1] ? tr('folderRemoveSoulNext', { next: folders[1] }) : tr('folderRemoveSoulNone'));
-  if (!window.confirm(txt)) return;
+  if (!window.confirm(txt)) return false;
   for (const w of dependientes) await watch.removeWatch({ id: w.id }).catch(() => {});
   await db.del('fs', f);
   toast(tr('folderRemoved', { name: f }) + (dependientes.length ? ' · ' + tr('folderRemovedWatches', { n: dependientes.length }) : ''));
-  refreshPerms();
+  await refreshPerms();
+  return true;
 }
 
 // ---------- progreso y estado del modelo ----------
@@ -975,7 +1092,11 @@ function usageCard() {
       a.setAttribute('aria-label', a.title);
       vBrain.appendChild(a);
     }
-    freeBtn.style.display = (sel && sel.value !== 'rules') ? '' : 'none';
+    // Sin modelo cargado el botón se esconde; si tenía el foco (acaba de
+    // pulsarse), el foco pasa al título de la tarjeta y no cae a <body>.
+    const sinModelo = !(sel && sel.value !== 'rules');
+    if (sinModelo && document.activeElement === freeBtn) enfocar(card.querySelector(':scope > b'));
+    freeBtn.style.display = sinModelo ? 'none' : '';
     // refrescar solo mientras se está viendo
     clearTimeout(timer);
     if (document.querySelector('#tabs button.active')?.dataset.tab === 'ajustes') timer = setTimeout(paint, 4000);
@@ -1001,6 +1122,9 @@ function workspaceCard() {
   const inv = el('div', 'col');
   card.append(state, row, inv);
 
+  // Repintar tira los botones de la fila: si el foco estaba en uno, va al primero
+  // de la fila nueva («Guardar ahora», «Elegir carpeta»…), no a <body>.
+  const repintar = async () => { await paint(); if (focoPerdido()) enfocar(row.querySelector('button')); };
   const paint = async () => {
     const st = workspace.status();
     row.replaceChildren();
@@ -1011,22 +1135,22 @@ function workspaceCard() {
 
     if (st.supported.pick) {
       if (!st.folder) row.appendChild(btn(tr('wsPick'), 'primary', async () => {
-        try { await workspace.pick(); toast(tr('wsPicked')); await paint(); } catch (e) { toast('⚠️ ' + e.message); }
+        try { await workspace.pick(); toast(tr('wsPicked')); await repintar(); } catch (e) { toast('⚠️ ' + e.message); }
       }));
       else if (!st.ready) row.appendChild(btn(tr('wsRegrant'), 'primary', async () => {
-        try { await workspace.regrant(); toast(tr('wsPicked')); await paint(); } catch (e) { toast('⚠️ ' + e.message); }
+        try { await workspace.regrant(); toast(tr('wsPicked')); await repintar(); } catch (e) { toast('⚠️ ' + e.message); }
       }));
       else {
         row.appendChild(btn(tr('wsSaveNow'), 'primary', async () => {
-          try { const r = await workspace.save({ reason: 'manual' }); toast(r.ok ? tr('wsSaved', { n: r.wrote.length }) : '⚠️ ' + (r.errors[0]?.error || '')); await paint(); }
-          catch (e) { toast('⚠️ ' + (e.message === 'needs-regrant' ? tr('wsNeedsPerm', { name: st.folder }) : e.message)); await paint(); }
+          try { const r = await workspace.save({ reason: 'manual' }); toast(r.ok ? tr('wsSaved', { n: r.wrote.length }) : '⚠️ ' + (r.errors[0]?.error || '')); await repintar(); }
+          catch (e) { toast('⚠️ ' + (e.message === 'needs-regrant' ? tr('wsNeedsPerm', { name: st.folder }) : e.message)); await repintar(); }
         }));
         const auto = el('label', 'row');
         const chk = el('input'); chk.type = 'checkbox'; chk.checked = workspace.autosaveEnabled();
         chk.onchange = () => { workspace.autosave({ enabled: chk.checked }); toast(chk.checked ? tr('wsAutoOn') : tr('wsAutoOff')); };
         auto.append(chk, el('span', 'muted', tr('wsAuto')));
         row.appendChild(auto);
-        row.appendChild(btn(tr('wsForget'), 'ghost', async () => { await workspace.forget(); await paint(); }));
+        row.appendChild(btn(tr('wsForget'), 'ghost', async () => { await workspace.forget(); await repintar(); }));
       }
     }
     // copia descargable: funciona en TODOS los navegadores (Safari/Firefox incluidos)
@@ -1050,13 +1174,13 @@ function workspaceCard() {
     const danger = el('div', 'row');
     const wipe = btn(tr('wsWipe'), 'ghost', async () => {
       if (!window.confirm(tr('wsWipeConfirm'))) return;
-      wipe.disabled = true;
+      ocupado(wipe, true);                 // aria-disabled: sin perder el foco (ver btn)
       // Lo hace el kernel: para el turno en marcha, borra y RECARGA. Borrar solo
       // el IndexedDB dejaba la conversación en pantalla y en memoria, y el
       // siguiente mensaje la volvía a guardar entera; skills, bóveda abierta y
       // app actual también seguían vivas hasta recargar.
       try { await onWipeCb(); }
-      catch (e) { wipe.disabled = false; toast('⚠️ ' + (e?.message || e)); }
+      catch (e) { ocupado(wipe, false); toast('⚠️ ' + (e?.message || e)); }
     });
     danger.appendChild(wipe);
     inv.appendChild(danger);
@@ -1141,14 +1265,14 @@ export function refreshSettings() {
   // Lo mismo que el chip 💾 (model-storage.js): cuenta solo pesos, y vacía los de
   // este origen y los del almacén compartido de CADA broker con modelos (antes
   // el modelo grande, guardado en los brokers de sus hosts, no se tocaba).
+  // Ocupado con aria-disabled, no disabled: con disabled el foco caía a <body>
+  // nada más pulsarlo (ver btn).
   const clearBtn = btn(tr('storeClear'), 'ghost', async () => {
-    clearBtn.disabled = true;
-    clearBtn.setAttribute('aria-busy', 'true');
+    ocupado(clearBtn, true);
     info.textContent = tr('storeClearing');
     try { avisarLiberado(await modelos.vaciar()); }
     catch (e) { toast(tr('diskFail', { err: e?.message || e })); }
-    clearBtn.disabled = false;
-    clearBtn.removeAttribute('aria-busy');
+    ocupado(clearBtn, false);
     await paintStore();
   });
   store.appendChild(clearBtn);
@@ -1182,14 +1306,14 @@ export function refreshSettings() {
     const ta = telCard.querySelector('#tel-feedback');
     const text = ta.value.trim();
     if (!text) { toast(tr('writeSomething')); ta.focus(); return; }
-    telSendBtn.disabled = true;
+    ocupado(telSendBtn, true);            // aria-disabled: el foco se queda en «Enviar»
     const wasEnabled = telemetry.isEnabled();
     if (!wasEnabled) telemetry.setEnabled(true); // envío manual es explícito, se permite aunque el automático esté apagado
     let llego = false;
     try { llego = await telemetry.sendFeedback(text); }
     finally {
       if (!wasEnabled) telemetry.setEnabled(false); // no activa el automático de fondo si no lo pidió
-      telSendBtn.disabled = false;
+      ocupado(telSendBtn, false);
     }
     if (llego) { ta.value = ''; toast(tr('sentThanks')); }
     else toast(tr('sendFailed'), { accion: { label: tr('openIssues'), run: () => window.open(ISSUES_URL, '_blank', 'noopener,noreferrer') } });
@@ -1216,6 +1340,8 @@ function memoriaCard() {
   pintarMemoria(c);
   return c;
 }
+// Tras olvidar un hecho, el foco va al ✕ del que queda en su sitio (o al título
+// de la sección) y, tras «Deshacer», al del hecho devuelto.
 async function pintarMemoria(c) {
   const hechos = (await db.all('memory').catch(() => [])).sort((a, b) => a.at - b.at);
   c.replaceChildren(el('b', null, tr('memTitle')), el('span', 'muted', tr('memDesc')));
@@ -1224,9 +1350,15 @@ async function pintarMemoria(c) {
     const fila = el('div', 'row between');
     fila.dataset.ruta = f.id;       // #/memoria/<id>
     const x = btn('✕', 'ghost', async () => {
+      const i = [...c.querySelectorAll('.row[data-ruta]')].indexOf(fila);
       await memory.forget({ id: f.id });
-      pintarMemoria(c);
-      toast(tr('memForgotten'), { accion: { label: tr('undo'), run: async () => { await db.set('memory', f.id, f); pintarMemoria(c); } } });
+      await pintarMemoria(c);
+      enfocarFila(c.querySelectorAll('.row[data-ruta]'), i, 'button', c.querySelector(':scope > b'));
+      toast(tr('memForgotten'), { accion: { label: tr('undo'), run: async () => {
+        await db.set('memory', f.id, f);
+        await pintarMemoria(c);
+        enfocarFila(c.querySelectorAll(`.row[data-ruta="${CSS.escape(f.id)}"]`), 0, 'button');
+      } } });
     });
     x.title = tr('memForgetL', { fact: String(f.fact).slice(0, 60) });
     x.setAttribute('aria-label', x.title);
@@ -1301,11 +1433,21 @@ function pintarInstaladas(box) {
     const fila = el('div', 'row between');
     const desdeRepo = s.repo && s.path && !String(s.path).startsWith('local/');
     const origen = desdeRepo ? enlaceSkillMd(s.repo, s.path) : el('span', 'muted', s.repo || 'local');
-    const quitar = btn(tr('remove'), 'ghost', async () => {
+    // Quitar: el foco va al «Quitar» de la skill que queda en su sitio (o al
+    // contador), y las listas de «Explorar» abiertas vuelven a ofrecer instalarla.
+    const quitar = btn(tr('remove'), 'ghost quitar-skill', async () => {
+      const i = [...box.querySelectorAll('.card[data-ruta]')].indexOf(c);
       await skills.remove(s.name);
       pintarInstaladas(box);
+      actualizarListas();
+      enfocarFila(box.querySelectorAll('.card[data-ruta]'), i, '.quitar-skill', box.firstElementChild);
       toast(tr('skillRemoved', { name: s.name }), { accion: { label: tr('undo'), run: async () => {
-        try { await skills.install(s); pintarInstaladas(box); } catch (e) { toast('⚠️ ' + e.message); }
+        try {
+          await skills.install(s);
+          pintarInstaladas(box);
+          actualizarListas();
+          enfocarFila(box.querySelectorAll(`.card[data-ruta="${CSS.escape(s.name)}"]`), 0, '.quitar-skill');
+        } catch (e) { toast('⚠️ ' + e.message); }
       } } });
     });
     quitar.setAttribute('aria-label', tr('skillRemoveL', { name: s.name }));
@@ -1336,15 +1478,19 @@ async function pintarFuentes(box, instaladas) {
     lista.id = 'repo-' + src.repo.replace(/[^\w-]/g, '-');
     lista.hidden = true;
     lista.setAttribute('aria-live', 'polite');
-    const explorar = btn(tr('browse'), 'primary', () => explorarRepo(src.repo, lista, explorar, instaladas));
+    const explorar = btn(tr('browse'), 'primary explorar-repo', () => explorarRepo(src.repo, lista, explorar, instaladas));
     explorar.setAttribute('aria-expanded', 'false');
     explorar.setAttribute('aria-controls', lista.id);
     fila.append(el('b', null, src.label), link, explorar);
     if (!src.official) {          // las que añadiste tú se pueden quitar
+      // El foco va al «Explorar» del repo que queda en su sitio (o al campo
+      // para añadir otro).
       const x = btn('✕', 'ghost', async () => {
+        const i = [...box.querySelectorAll('.card[data-ruta]')].indexOf(c);
         await skills.removeSource(src.repo);
         toast(tr('repoRemoved', { repo: src.repo }));
         await pintarFuentes(box, instaladas);
+        enfocarFila(box.querySelectorAll('.card[data-ruta]'), i, '.explorar-repo', box.querySelector('form input'));
       });
       x.title = tr('repoRemoveL', { repo: src.repo });
       x.setAttribute('aria-label', tr('repoRemoveL', { repo: src.repo }));
@@ -1372,7 +1518,29 @@ async function pintarFuentes(box, instaladas) {
   box.appendChild(form);
 }
 
+// El botón de una skill en la lista de «Explorar»: «Instalar», o «Instalada ✓»
+// sin poder pulsarse. Su nombre accesible dice lo mismo que se ve (se quedaba en
+// «Instalar: <nombre>» ya instalada). aria-disabled y no disabled: el foco no
+// cae a <body> al instalar con el teclado (ver btn).
+function pintarBotonInstalar(b, instalada, nombre) {
+  b.textContent = instalada ? tr('installedOk') : tr('install');
+  b.className = (instalada ? 'ghost' : 'primary') + ' instalar-skill';
+  ocupado(b, instalada, { hecho: true });
+  b.setAttribute('aria-label', (instalada ? tr('installedOk') : tr('install')) + ': ' + nombre);
+}
+// Las listas de «Explorar» ya pintadas dicen la verdad de lo instalado: al quitar
+// una skill (o devolverla con «Deshacer») su botón vuelve a «Instalar» (o a
+// «Instalada ✓»). Antes seguía «Instalada ✓» y desactivado, también al volver a
+// abrir la lista, que no se repinta.
+function actualizarListas() {
+  for (const b of document.querySelectorAll('#panel-skills .repo-skills button.instalar-skill')) {
+    if (b.getAttribute('aria-busy') === 'true') continue;          // instalándose ahora mismo
+    pintarBotonInstalar(b, skills.isInstalled(b.dataset.repo, b.dataset.path), b.dataset.nombre);
+  }
+}
+
 // La lista de un repo va DENTRO de su tarjeta y el botón la abre y la cierra.
+// Mientras carga, el botón está ocupado (aria-disabled): el foco se queda en él.
 async function explorarRepo(repo, lista, boton, instaladas) {
   if (!lista.hidden) {
     lista.hidden = true;
@@ -1383,8 +1551,8 @@ async function explorarRepo(repo, lista, boton, instaladas) {
   lista.hidden = false;
   boton.setAttribute('aria-expanded', 'true');
   boton.textContent = tr('hideList');
-  if (lista.dataset.cargada) return;
-  boton.disabled = true;
+  if (lista.dataset.cargada) { actualizarListas(); return; }
+  ocupado(boton, true);
   lista.setAttribute('aria-busy', 'true');
   lista.replaceChildren(el('div', 'muted', tr('loadingRepo', { repo })));
   try {
@@ -1392,22 +1560,25 @@ async function explorarRepo(repo, lista, boton, instaladas) {
     lista.replaceChildren(el('div', 'muted', tr('repoSkills', { repo, n: found.length })));
     for (const sk of found.slice(0, 120)) {
       const c = el('div', 'card');
-      const on = skills.isInstalled(sk.repo, sk.path);
-      const b = btn(on ? tr('installedOk') : tr('install'), on ? 'ghost' : 'primary', async () => {
-        b.disabled = true;
+      const b = btn('', '', async () => {
+        if (skills.isInstalled(sk.repo, sk.path)) return;
+        ocupado(b, true);
         b.textContent = '…';
         try {
           const entry = await skills.installFromRepo(sk);
-          b.textContent = tr('installedOk');
-          b.className = 'ghost';
+          pintarBotonInstalar(b, true, sk.name);
           pintarInstaladas(instaladas);
+          actualizarListas();
           const msg = onSkillInstalledCb(entry);   // → mensaje «cómo usarla» en el chat
           // …y desde la tarjeta se llega a ese mensaje (antes había que buscarlo).
-          if (msg) c.append(btn(tr('skillSeeChat'), 'ghost', () => irAlMensaje(msg)));
-        } catch (e) { b.disabled = false; b.textContent = tr('install'); toast('⚠️ ' + e.message); }
+          if (msg) {
+            c.querySelector('.ver-en-chat')?.remove();
+            c.append(btn(tr('skillSeeChat'), 'ghost ver-en-chat', () => irAlMensaje(msg)));
+          }
+        } catch (e) { pintarBotonInstalar(b, false, sk.name); toast('⚠️ ' + e.message); }
       });
-      b.disabled = on;
-      b.setAttribute('aria-label', (on ? tr('installedOk') : tr('install')) + ': ' + sk.name);
+      b.dataset.repo = sk.repo; b.dataset.path = sk.path; b.dataset.nombre = sk.name;
+      pintarBotonInstalar(b, skills.isInstalled(sk.repo, sk.path), sk.name);
       c.append(el('b', null, sk.name), el('span', 'muted', sk.dir), enlaceSkillMd(sk.repo, sk.path, sk.branch || 'HEAD'), b);
       lista.appendChild(c);
     }
@@ -1415,7 +1586,7 @@ async function explorarRepo(repo, lista, boton, instaladas) {
   } catch (e) {
     lista.replaceChildren(el('div', 'muted', '⚠️ ' + e.message));
   } finally {
-    boton.disabled = false;
+    ocupado(boton, false);
     lista.removeAttribute('aria-busy');
   }
 }
@@ -1797,14 +1968,14 @@ export function mobileGate(sizeText, onAccept) {
   estado.setAttribute('role', 'status');
   const boton = btn(tr('mobAnyway', { size: sizeText }), 'ghost', async () => {
     try { localStorage.setItem('elffuss.movil.ok', '1'); } catch { /* — */ }
-    boton.disabled = true;
+    ocupado(boton, true);                // aria-disabled: el foco se queda en el botón
     estado.textContent = tr('mobLoading');
     let cargo = false;
     try { cargo = await onAccept(); } catch { cargo = false; }
     if (cargo) { box.remove(); return; }
     estado.textContent = tr('mobFailed');
     boton.textContent = tr('mobRetry');
-    boton.disabled = false;
+    ocupado(boton, false);
   });
   box.append(estado, boton);
   (document.getElementById('log') || document.body).appendChild(box);

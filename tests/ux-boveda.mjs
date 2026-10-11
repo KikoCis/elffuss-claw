@@ -4,7 +4,8 @@
 //   · 👁 enseña y vuelve a tapar (aria-pressed); el autobloqueo repinta el panel
 //     y tapa lo revelado; 🗑 pide confirmación con el nombre del secreto.
 //   · Un solo nombre por idioma: «Bóveda» en español.
-//   · «Bloquear ahora» con el teclado deja el foco en la contraseña.
+//   · «Bloquear ahora» con el teclado deja el foco en la contraseña; 🗑 con el
+//     teclado lo deja en el 🗑 del secreto que queda, o en el nombre de uno nuevo.
 //
 //   BASE=http://localhost:8743 node tests/ux-boveda.mjs
 import { navegador, contexto, pagina, ok, hasta, espera, avisos, fin, OUT } from './ux-comun.mjs';
@@ -66,9 +67,23 @@ ok('una contraseña mala lo dice y la bóveda sigue cerrada', await hasta(async 
 await p.fill('#vault-master', 'clave-de-prueba-1');
 await p.press('#vault-master', 'Enter');
 await hasta(() => p.evaluate(() => !!document.getElementById('vault-name')));
+// otro secreto detrás, para ver adónde va el foco al borrar el primero
+await p.fill('#vault-name', 'banco2');
+await p.fill('#panel-vault input[type=password]', 'pin-1234');
+await p.press('#panel-vault input[type=password]', 'Enter');
+await hasta(async () => (await p.locator('#panel-vault .card b').allTextContents()).includes('banco2'));
+const foco = () => p.evaluate(() => {
+  const a = document.activeElement;
+  return !a || a === document.body ? 'BODY' : (a.getAttribute('aria-label') || a.textContent || a.id).trim().slice(0, 60);
+});
 p.__aceptar = true;
-await p.locator('#panel-vault .card', { hasText: 'correo' }).locator('button[aria-label^="Borrar"]').click();
+await p.locator('#panel-vault .card', { hasText: 'correo' }).locator('button[aria-label^="Borrar"]').focus();
+await p.keyboard.press('Enter');
 ok('y si dices que sí, se borra', await hasta(async () => !(await p.locator('#panel-vault .card b').allTextContents()).includes('correo')));
+ok('…y con el teclado el foco va al 🗑 del secreto que queda (no a <body>)', await hasta(async () => (await foco()) === 'Borrar «banco2»'), await foco());
+await p.keyboard.press('Enter');
+ok('borrar el último deja el foco en el nombre de uno nuevo', await hasta(async () =>
+  (await p.locator('#panel-vault .card b').count()) === 0 && (await foco()) === 'Nombre del secreto'), await foco());
 
 // ── «Bloquear ahora» con el teclado: el foco va a la contraseña, no a <body> ─
 await p.locator('#panel-vault button', { hasText: 'Bloquear ahora' }).focus();

@@ -6,6 +6,8 @@
 //   · El feedback dice si llegó: si falla, lo dice y el texto se queda.
 //   · «Acerca de» enlaza el código, la comunidad, las incidencias y la licencia;
 //     el sello del build enlaza su commit solo si es un commit limpio.
+//   · Con el teclado el foco no cae a <body>: «Enviar» lo conserva mientras
+//     envía, y olvidar un hecho (o deshacerlo) lo lleva al ✕ que toca.
 //
 //   BASE=http://localhost:8743 node tests/ux-ajustes.mjs
 import { navegador, contexto, pagina, ok, hasta, avisos, fin, BASE } from './ux-comun.mjs';
@@ -15,6 +17,10 @@ const { ctx } = await contexto(b, {
   extraInit: { 'elffuss.providers': JSON.stringify({ server: { enabled: true, baseURL: 'https://claw.elffuss.com/v1', model: 'ornith-9b', apiKey: '' } }) },
 });
 const { p, errores } = await pagina(ctx);
+const foco = () => p.evaluate(() => {
+  const a = document.activeElement;
+  return !a || a === document.body ? 'BODY' : (a.getAttribute('aria-label') || a.textContent || a.id).trim().slice(0, 80);
+});
 const abrirAjustes = async () => { await p.click('#tabs button[data-tab="ajustes"]'); await p.locator('#panel-ajustes .ext-block').waitFor(); };
 await abrirAjustes();
 await p.click('#panel-ajustes .ext-block > summary');
@@ -38,9 +44,11 @@ let estado = 500, recibido = null;
 await p.route('**/proxy/report', async route => { recibido = route.request().postDataJSON(); await route.fulfill({ status: estado, body: estado === 200 ? '{"ok":true}' : 'caído' }); });
 await abrirAjustes();
 await p.fill('#tel-feedback', 'el botón X no hace nada');
-await p.click('#panel-ajustes button:has-text("Enviar")');
+await p.locator('#panel-ajustes button:has-text("Enviar")').focus();
+await p.keyboard.press('Enter');
 ok('si el envío falla, lo dice y el texto se queda', await hasta(async () => (await avisos(p)).some(t => /No ha llegado/.test(t)))
   && (await p.inputValue('#tel-feedback')) === 'el botón X no hace nada' && !(await avisos(p)).some(t => /gracias/.test(t)));
+ok('…y con el teclado el foco sigue en «Enviar» (no cae a <body>)', (await foco()) === 'Enviar', await foco());
 ok('…y ofrece el sitio público de incidencias', await p.locator('#toasts .toast', { hasText: 'No ha llegado' }).locator('.toast-accion').innerText() === 'Abrir incidencias');
 estado = 200;
 await p.click('#panel-ajustes button:has-text("Enviar")');
@@ -67,17 +75,25 @@ ok('#/ajustes/acerca lleva a esa tarjeta', await hasta(() => p.evaluate(() =>
   document.querySelector('#panel-ajustes [data-ruta="acerca"]')?.classList.contains('resaltado'))));
 
 // ── memoria: se ve y se olvida hecho a hecho ────────────────────────────────
-await p.evaluate(async () => (await import('/js/db.js')).set('memory', 'mprueba', { id: 'mprueba', fact: 'le gusta el té verde', at: Date.now() }));
+await p.evaluate(async () => {
+  const db = await import('/js/db.js');
+  await db.set('memory', 'mprueba', { id: 'mprueba', fact: 'le gusta el té verde', at: Date.now() });
+  await db.set('memory', 'mprueba2', { id: 'mprueba2', fact: 'vive en Madrid', at: Date.now() + 1 });
+});
 await p.goto(BASE + '/#/memoria/mprueba', { waitUntil: 'domcontentloaded' });
 await p.waitForFunction(() => !!window.elffuss?.agent);
 const hecho = p.locator('#panel-ajustes [data-ruta="mprueba"]');
 ok('#/memoria/<id> abre Ajustes y señala ese hecho (sin el texto en la URL)', await hasta(async () =>
   await hecho.evaluate(e => e.classList.contains('resaltado')).catch(() => false)) && !/t%C3%A9|té/.test(await p.evaluate(() => location.href)));
-await hecho.locator('button[aria-label="Olvidar «le gusta el té verde»"]').click();
+await hecho.locator('button[aria-label="Olvidar «le gusta el té verde»"]').focus();
+await p.keyboard.press('Enter');
 ok('✕ lo olvida…', await hasta(async () => await hecho.count() === 0)
   && !(await p.evaluate(async () => (await (await import('/js/db.js')).get('memory', 'mprueba')))));
-await p.locator('#toasts .toast', { hasText: 'Olvidado' }).locator('.toast-accion').click();
+ok('…con el teclado, el foco va al ✕ del hecho que queda en su sitio', await hasta(async () => (await foco()) === 'Olvidar «vive en Madrid»'), await foco());
+await p.locator('#toasts .toast', { hasText: 'Olvidado' }).locator('.toast-accion').focus();
+await p.keyboard.press('Enter');
 ok('…y «Deshacer» lo devuelve', await hasta(async () => await hecho.count() === 1));
+ok('…con el foco en su ✕', await hasta(async () => (await foco()) === 'Olvidar «le gusta el té verde»'), await foco());
 ok('el lema de la cabecera sale en español', (await p.locator('.brand .claim').first().innerText()) === 'las apps no existen: se crean');
 
 // ── el modo básico señala el selector de modelo, no el 🧠 ───────────────────
