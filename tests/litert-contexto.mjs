@@ -9,6 +9,7 @@
 //   node tests/litert-contexto.mjs
 //   LITERT=/ruta/a/otro-litert.mjs node tests/litert-contexto.mjs   # p. ej. el de antes, que debe fallar
 const L = await import(process.env.LITERT ? 'file://' + process.env.LITERT : '../web/js/providers/litert.js');
+globalThis.__ELFFUSS_PRUEBAS__ = true;   // el gancho __usarMotor solo funciona si la prueba lo pide
 
 const CARACTERES_POR_TOKEN = 3.2;   // a propósito distinto del 2 con que arranca el guardia
 let fallos = 0;
@@ -74,8 +75,15 @@ const intenta = async f => { try { return [await f(), null]; } catch (e) { retur
   const enviado = ultima(m).enviados.at(-1) || '';
   ok(`resultado de ${cuerpo.length} caracteres en un contexto de 4.096: el turno no falla`, !error, error || '');
   ok('  lo recorta por el medio y lo avisa', enviado.includes('[recortado:') && enviado.length < cuerpo.length);
-  ok('  conserva la petición, la cabecera del resultado, el principio y el final',
-    enviado.startsWith('lee el informe\n[resultado fs.read]') && enviado.includes('PRINCIPIO-MARCADO') && enviado.includes('FINAL-MARCADO'));
+  // La conversación es nueva y el historial ya trae la petición y la llamada a
+  // la herramienta: van en el prefacio (antes se mandaban solo los mensajes de
+  // usuario, juntos, y la llamada se perdía), y se manda el resultado.
+  ok('  conserva la petición y la llamada (en el prefacio), la cabecera del resultado, el principio y el final',
+    ultima(m).sistema.includes('lee el informe') && ultima(m).sistema.includes('fs.read')
+      && enviado.startsWith('[resultado fs.read]') && enviado.includes('PRINCIPIO-MARCADO') && enviado.includes('FINAL-MARCADO'),
+    `${m.conversaciones.length} conversaciones · enviado ${JSON.stringify(enviado.slice(0, 40))}`);
+  ok('  …y la conversación se monta una sola vez (lo anterior ya va compactado al rehacerla)', m.conversaciones.length === 1,
+    `${m.conversaciones.length} conversaciones`);
   h.push({ role: 'user', content: '¿y qué decía al final?' });
   const [, error2] = await intenta(() => L.chat(h, SISTEMA));
   ok('  y la conversación sigue viva en el turno siguiente', !error2, error2 || '');

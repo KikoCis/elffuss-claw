@@ -96,9 +96,14 @@ export const ETIQUETA_CONTEXTO = 'CONTEXTO AHORA (estado real del sistema, úsal
 // empiece por «[resultado», y si este bloque fuera el último se convertiría en
 // la pregunta viva y la recuperación puntuaría contra un volcado de estado en
 // vez de contra lo que ha pedido el usuario.
+//
+// Va marcado `efimero`: cambia en cada llamada y no es parte de la conversación.
+// LiteRT, que guarda la conversación entre llamadas, lo salta al comprobar de
+// qué conversación es un historial (ver dondeSigue en providers/litert.js). La
+// marca no es enumerable: no viaja en el JSON que se manda a ninguna API.
 export function mensajeContexto(context, etiqueta) {
   if (!context) return null;
-  return { role: 'user', content: `${etiqueta}\n${context}` };
+  return Object.defineProperty({ role: 'user', content: `${etiqueta}\n${context}` }, 'efimero', { value: true });
 }
 
 // Inserta el estado vivo justo antes del último mensaje de la conversación.
