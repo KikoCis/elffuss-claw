@@ -37,10 +37,14 @@ SERVE_PY = Path(__file__).resolve().parent.parent / 'server' / 'serve.py'
 _spec = importlib.util.spec_from_file_location('elffuss_serve', SERVE_PY)
 serve = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(serve)
+REAL_SELF_ADDRESSES = serve._self_addresses   # las pruebas lo sustituyen; esta copia es la de verdad
 
 PUBLIC_V4 = '93.184.215.14'
 PUBLIC_V4_B = '93.184.215.15'
 PUBLIC_V6 = '2606:4700:4700::1111'
+# Una respuesta de doble pila como la de un CDN: primero cuatro AAAA.
+DUAL_V6 = ('2a04:4e42::223', '2a04:4e42:200::223', '2a04:4e42:400::223', '2a04:4e42:600::223')
+MANY_V4 = tuple('93.184.216.%d' % i for i in range(1, 11))
 NON_PUBLIC_V4 = ('127.0.0.1', '127.255.255.254', '0.0.0.0', '10.0.0.1', '172.16.0.1', '172.31.255.255',
                  '192.168.0.1', '169.254.169.254', '100.64.0.1', '100.100.100.200', '224.0.0.1',
                  '239.255.255.250', '240.0.0.1', '255.255.255.255', '192.0.0.170', '192.0.2.1',
@@ -188,15 +192,21 @@ class ProxyCase(unittest.TestCase):
             'mixed.example.com': [PUBLIC_V4, '192.168.1.10'],
             'rebind.example.com': _flip([PUBLIC_V4], ['127.0.0.1']),
             'flip.example.com': _flip([PUBLIC_V4], ['127.0.0.1']),
+            'dual.example.com': list(DUAL_V6) + [PUBLIC_V4, PUBLIC_V4_B],
+            'many.example.com': list(MANY_V4),
+            'late.example.com': list(MANY_V4[:4]) + [PUBLIC_V4],
         })
         self.dialer = Dialer({PUBLIC_V4: self.upstream.addr, PUBLIC_V4_B: self.upstream.addr,
                               PUBLIC_V6: self.upstream.addr})
         self.tls = FakeTLSContext()
+        self.own = frozenset()   # las direcciones de «esta máquina» en la prueba
         self.logs = []
         logs = self.logs
         for name, value in (('_getaddrinfo', self.dns), ('_dial', self.dialer),
                             ('_tls_context', lambda: self.tls),
+                            ('_self_addresses', lambda: self.own),
                             ('PROXY_RATE', serve._RateLimiter(60, 10_000)),
+                            ('PROXY_GLOBAL_RATE', serve._RateLimiter(60, 10_000)),
                             ('PROXY_SLOTS', threading.BoundedSemaphore(8))):
             patcher = mock.patch.object(serve, name, value)
             patcher.start()
@@ -313,6 +323,22 @@ class RefusedVectors(ProxyCase):
         with mock.patch.object(serve, 'PROXY_DENY', (ipaddress.ip_network(PUBLIC_V4 + '/32'),)):
             self.assertRefused('http://example.com/ok', 403, 'forbidden-destination')
 
+    def test_own_public_addresses_are_refused_without_any_configuration(self):
+        # Pedir la IP pública de la propia máquina, o un nombre alojado en
+        # ella, vuelve a entrar por su nginx con origen la propia máquina.
+        self.assertEqual(serve.PROXY_DENY, ())
+        self.own = frozenset({ipaddress.ip_address(PUBLIC_V4_B), ipaddress.ip_address(PUBLIC_V6)})
+        for url in ('http://%s/' % PUBLIC_V4_B, 'https://%s/ok' % PUBLIC_V4_B, 'http://[%s]/ok' % PUBLIC_V6,
+                    'http://other.example.org/ok'):   # este nombre resuelve a PUBLIC_V4_B
+            with self.subTest(url=url):
+                _, body = self.assertRefused(url, 403, 'forbidden-destination')
+                self.assertNotIn(PUBLIC_V4_B.encode(), body, 'el error no debe decir a qué resuelve')
+        self.upstream.routes['/to-self'] = (302, {'Location': 'http://other.example.org/ok'}, b'')
+        got, hdrs, _ = self.get('http://example.com/to-self')
+        self.assertEqual((got, hdrs.get('x-proxy-error')), (403, 'forbidden-redirect'))
+        self.assertEqual(self.dialer.calls, [(PUBLIC_V4, 80)], 'solo el primer salto conecta')
+        self.assertEqual(self.get('http://example.com/ok')[0], 200, 'las demás direcciones públicas siguen sirviendo')
+
     def test_callers_other_than_the_app_itself(self):
         for headers in ({'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'},
                         {'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'},
@@ -401,6 +427,22 @@ class NormalFetch(ProxyCase):
         self.assertEqual(self.dialer.calls, [(PUBLIC_V4, 443)])
         self.assertEqual(self.tls.server_hostnames, ['example.com'])
         self.assertEqual(self.upstream.requests[0]['headers']['host'], 'example.com')
+
+    def test_ipv4_is_reached_when_the_first_answers_are_unreachable_ipv6(self):
+        # Máquina con IPv6 configurada pero sin ruta: las AAAA fallan al
+        # conectar. Antes se probaban solo las tres primeras (todas IPv6).
+        status, _, body = self.get('http://dual.example.com/ok')
+        self.assertEqual((status, body), (200, b'<p>hola</p>'))
+        self.assertEqual(self.dialer.calls, [(DUAL_V6[0], 80), (PUBLIC_V4, 80)])
+
+    def test_every_address_is_tried_up_to_the_cap(self):
+        status, _, _ = self.get('http://late.example.com/ok')   # la buena es la quinta
+        self.assertEqual(status, 200)
+        self.assertEqual([ip for ip, _ in self.dialer.calls], list(MANY_V4[:4]) + [PUBLIC_V4])
+        self.dialer.calls.clear()
+        status, hdrs, _ = self.get('http://many.example.com/ok')   # diez, ninguna contesta
+        self.assertEqual((status, hdrs.get('x-proxy-error')), (502, 'upstream'))
+        self.assertEqual([ip for ip, _ in self.dialer.calls], list(MANY_V4[:serve.PROXY_MAX_ADDRS]))
 
     def test_resolved_once_then_pinned(self):
         # El DNS cambia de respuesta tras la primera consulta: no se le vuelve a preguntar.
@@ -529,6 +571,25 @@ class NormalFetch(ProxyCase):
             self.assertEqual(status, 200)
         self.assertEqual(len(self.upstream.requests), 4)
 
+    def test_global_limit_counts_every_client(self):
+        # El límite por IP se salta repartiendo las peticiones entre muchas IP:
+        # el global no.
+        with mock.patch.object(serve, 'PROXY_GLOBAL_RATE', serve._RateLimiter(60, 3)):
+            answers = [self.get('http://example.com/ok', headers={'X-Forwarded-For': '192.0.2.%d' % (20 + i)})
+                       for i in range(4)]
+        self.assertEqual([a[0] for a in answers], [200, 200, 200, 503])
+        self.assertEqual(answers[-1][1].get('x-proxy-error'), 'overloaded')
+        self.assertIn('retry-after', answers[-1][1])
+        self.assertEqual(len(self.upstream.requests), 3)
+
+    def test_non_browser_clients_are_served_the_proxy_is_an_open_relay(self):
+        # Lo que hay que saber de /proxy: sin Sec-Fetch-* ni Origin (curl, un
+        # script) se atiende. Las cabeceras de navegador frenan a OTRAS webs que
+        # usen el navegador del usuario, no a nadie más; lo que acota el relé
+        # son los destinos permitidos y los límites.
+        status, _, body = self.get('http://example.com/ok', headers={'User-Agent': 'curl/8.7.1'})
+        self.assertEqual((status, body), (200, b'<p>hola</p>'))
+
     def test_busy_when_every_slot_is_taken(self):
         slots = threading.BoundedSemaphore(1)
         slots.acquire()
@@ -568,7 +629,96 @@ class NormalFetch(ProxyCase):
                 self.assertEqual(json.loads(f.readline())['ip'], '192.0.2.44')
 
 
+FIB_TRIE = """Main:
+  +-- 0.0.0.0/0 3 0 5
+     |-- 0.0.0.0
+        /0 universe UNICAST
+     +-- 93.184.215.0/24 2 0 2
+        |-- 93.184.215.0
+           /24 link UNICAST
+        |-- 93.184.215.20
+           /32 host LOCAL
+        |-- 93.184.215.255
+           /32 link BROADCAST
+     +-- 127.0.0.0/8 2 0 2
+        |-- 127.0.0.1
+           /32 host LOCAL
+     +-- 172.17.0.0/16 2 0 2
+        |-- 172.17.0.1
+           /32 host LOCAL
+Local:
+  +-- 0.0.0.0/0 3 0 5
+     |-- 93.184.215.20
+        /32 host LOCAL
+"""
+IF_INET6 = """00000000000000000000000000000001 01 80 10 80       lo
+fe80000000000000021122fffe334455 02 40 20 80     eth0
+2a0000000000abcd0000000000000020 02 40 00 80     eth0
+"""
+
+
 class Units(unittest.TestCase):
+    def setUp(self):
+        # Nada de las direcciones reales de la máquina que corre la prueba.
+        patcher = mock.patch.object(serve, '_self_addresses', lambda: frozenset())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_own_addresses_from_proc_and_the_egress_route(self):
+        self.assertEqual(serve._local_v4_from_fib_trie(FIB_TRIE), {'93.184.215.20', '127.0.0.1', '172.17.0.1'})
+        self.assertEqual(serve._local_v6_from_if_inet6(IF_INET6),
+                         {'::1', 'fe80::211:22ff:fe33:4455', '2a00:0:0:abcd::20'})
+        with tempfile.TemporaryDirectory() as tmp:
+            fib, inet6 = os.path.join(tmp, 'fib_trie'), os.path.join(tmp, 'if_inet6')
+            Path(fib).write_text(FIB_TRIE, encoding='ascii')
+            Path(inet6).write_text(IF_INET6, encoding='ascii')
+            with mock.patch.object(serve, '_PROC_FIB_TRIE', fib), mock.patch.object(serve, '_PROC_IF_INET6', inet6), \
+                    mock.patch.object(serve, '_egress_addresses', lambda: {'192.168.1.20', '2001:4860:4860::8888'}):
+                own = serve._own_addresses()
+            # Solo las de internet: loopback, docker, enlace local y LAN ya se rechazan solas.
+            self.assertEqual(own, frozenset(ipaddress.ip_address(a) for a in
+                                            ('93.184.215.20', '2a00:0:0:abcd::20', '2001:4860:4860::8888')))
+            with mock.patch.object(serve, '_PROC_FIB_TRIE', os.path.join(tmp, 'no-existe')), \
+                    mock.patch.object(serve, '_PROC_IF_INET6', os.path.join(tmp, 'no-existe')), \
+                    mock.patch.object(serve, '_egress_addresses', lambda: {'93.184.215.21'}):
+                self.assertEqual(serve._own_addresses(), frozenset({ipaddress.ip_address('93.184.215.21')}),
+                                 'sin /proc (fuera de Linux) queda la dirección de salida')
+
+    def test_own_addresses_are_refused_by_ip_is_public(self):
+        own = frozenset({ipaddress.ip_address('93.184.215.20')})
+        with mock.patch.object(serve, '_self_addresses', lambda: own):
+            self.assertFalse(serve._ip_is_public(ipaddress.ip_address('93.184.215.20')))
+            self.assertTrue(serve._ip_is_public(ipaddress.ip_address('93.184.215.21')))
+
+    def test_own_addresses_are_enumerated_again_after_a_while(self):
+        answers = iter([frozenset({ipaddress.ip_address('93.184.215.20')}),
+                        frozenset({ipaddress.ip_address('93.184.215.21')})])
+        calls = []
+
+        def enumerate_once():
+            calls.append(1)
+            return next(answers)
+        # REAL_SELF_ADDRESSES: el de verdad, no el sustituto del setUp.
+        with mock.patch.object(serve, '_own_addresses', enumerate_once), \
+                mock.patch.dict(serve._self_cache, {'at': None, 'addrs': frozenset()}):
+            with mock.patch.object(serve, 'PROXY_SELF_REFRESH_S', 3600):
+                first = REAL_SELF_ADDRESSES()
+                self.assertEqual(REAL_SELF_ADDRESSES(), first)
+                self.assertEqual(len(calls), 1, 'cada petición no vuelve a enumerar')
+            with mock.patch.object(serve, 'PROXY_SELF_REFRESH_S', 0):
+                self.assertEqual(REAL_SELF_ADDRESSES(), frozenset({ipaddress.ip_address('93.184.215.21')}))
+            self.assertEqual(len(calls), 2)
+
+    def test_dial_order_alternates_families_and_has_a_cap(self):
+        v6 = [(socket.AF_INET6, (ip, 80, 0, 0)) for ip in DUAL_V6]
+        v4 = [(socket.AF_INET, (ip, 80)) for ip in (PUBLIC_V4, PUBLIC_V4_B)]
+        self.assertEqual([a[1][0] for a in serve._dial_order(v6 + v4)],
+                         [DUAL_V6[0], PUBLIC_V4, DUAL_V6[1], PUBLIC_V4_B, DUAL_V6[2], DUAL_V6[3]])
+        self.assertEqual([a[1][0] for a in serve._dial_order(v4 + v6)][:3], [PUBLIC_V4, DUAL_V6[0], PUBLIC_V4_B])
+        many = [(socket.AF_INET, (ip, 80)) for ip in MANY_V4]
+        self.assertEqual(len(serve._dial_order(many)), serve.PROXY_MAX_ADDRS)
+        self.assertEqual(serve._dial_order([]), [])
+
     def test_public_addresses_pass(self):
         for ip in ('8.8.8.8', '1.1.1.1', PUBLIC_V4, PUBLIC_V6, '2001:4860:4860::8888', '2a00:1450:4001:80b::200e'):
             with self.subTest(ip=ip):
@@ -636,11 +786,14 @@ class Units(unittest.TestCase):
                 pass
         env = {k: v for k, v in os.environ.items() if k != 'ELFFUSS_BIND'}
         with mock.patch.object(serve.socketserver, 'ThreadingTCPServer', FakeServer), \
-                mock.patch.dict(os.environ, env, clear=True), mock.patch('builtins.print'):
+                mock.patch.dict(os.environ, env, clear=True), mock.patch('builtins.print') as printed:
             serve.main(['serve.py', '8642'])
             os.environ['ELFFUSS_BIND'] = '0.0.0.0'
             serve.main(['serve.py', '8650'])
         self.assertEqual(seen, [('127.0.0.1', 8642), ('0.0.0.0', 8650)])
+        said = ' '.join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn('/proxy rechaza 0 dirección(es) pública(s) de esta máquina', said,
+                      'al arrancar dice cuántas direcciones propias rechaza (nunca cuáles)')
 
 
 if __name__ == '__main__':

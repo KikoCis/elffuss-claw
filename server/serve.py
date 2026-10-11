@@ -3,7 +3,11 @@
 y recoge /proxy/report.
 
 En producción este mismo fichero es el backend del servicio elffuss-proxy,
-detrás de nginx, que solo le pasa /proxy y /proxy/report.
+detrás de nginx, que solo le pasa /proxy y /proxy/report. Se instala con
+deploy.sh en ~/elffuss-proxy/ (ver server/install-proxy.sh), no en ~/elffuss/.
+
+/proxy es un relé GET ABIERTO hacia la web pública (http y https, puertos 80
+y 443): no autentica a nadie. Ver el bloque de /proxy más abajo.
 
 Uso:  python3 server/serve.py [puerto]   (por defecto 8642)
       Escucha solo en 127.0.0.1; ELFFUSS_BIND=0.0.0.0 lo abre a la red.
@@ -60,21 +64,41 @@ RATE_WINDOW_S, RATE_MAX = 60, 20
 #  · las redirecciones se siguen a mano y cada salto se valida igual;
 #  · no viaja ninguna cabecera del cliente (ni cookies ni Authorization) y el
 #    User-Agent es fijo;
+#  · las direcciones de ESTA máquina tampoco: pedir su IP pública (o un nombre
+#    que resuelva a ella, como cualquier otro vhost alojado aquí) vuelve a
+#    entrar por el nginx de aquí mismo con origen la propia máquina, y /proxy
+#    se podría llamar a sí mismo en bucle;
 #  · tope de bytes con aviso (X-Proxy-Truncated: 1, nunca un 200 mudo), plazo
-#    total, y límites por IP y de peticiones simultáneas.
+#    total, y límites por IP, global y de peticiones simultáneas.
+#
+# QUÉ NO ES: control de acceso. /proxy es un relé GET ABIERTO a la web pública,
+# y no puede ser otra cosa: la app corre entera en el navegador y sin cuentas,
+# así que cualquier secreto o cabecera que la página mandase la mandaría igual
+# un script (está en el JS que se sirve a todo el mundo). _proxy_caller_ok solo
+# impide que OTRA web use el navegador del usuario contra este origen; curl, o
+# cualquier cliente que no sea un navegador, pasa. Lo que acota el relé son las
+# reglas de destino y los topes: el global existe porque el límite por IP se
+# salta repartiendo las peticiones entre muchas IP.
 # El mismo código vive en server/serve.py de elffuss-code: cambiar los dos.
 PROXY_USER_AGENT = 'Mozilla/5.0 (Elffuss)'
 PROXY_PORTS = (80, 443)
 PROXY_MAX_URL = 4096
 PROXY_MAX_REDIRECTS = 5
+PROXY_MAX_ADDRS = 8          # direcciones a las que se intenta conectar, como mucho, por salto
 PROXY_CONNECT_TIMEOUT_S = 8
 PROXY_READ_TIMEOUT_S = 15
 PROXY_TOTAL_TIMEOUT_S = 30   # el proxy_read_timeout de nginx tiene que quedar por encima
 PROXY_RATE_WINDOW_S, PROXY_RATE_MAX = 60, 30
+# Entre TODOS los clientes, por ventana. Holgado para el uso de la app (una
+# búsqueda son dos peticiones), y lo que acota el relé ante una red de bots.
+PROXY_GLOBAL_MAX = int(os.environ.get('ELFFUSS_PROXY_GLOBAL_MAX') or 300)
 PROXY_SLOTS = threading.BoundedSemaphore(8)
+PROXY_SELF_REFRESH_S = 300   # cada cuánto se vuelven a enumerar las direcciones propias
 
-# Además de lo no público, lo que se liste aquí (CIDR separados por comas), por
-# ejemplo las IP públicas de la propia máquina si algún vhost confía en ellas.
+# Además de lo no público y de las direcciones propias que se ven desde aquí, lo
+# que se liste en ELFFUSS_PROXY_DENY (CIDR separados por comas): por ejemplo la
+# IP pública de la máquina cuando está detrás de NAT y no aparece en ninguna
+# interfaz, que es el único caso que la enumeración no ve.
 PROXY_DENY = tuple(ipaddress.ip_network(n.strip(), strict=False)
                    for n in (os.environ.get('ELFFUSS_PROXY_DENY') or '').split(',') if n.strip())
 
@@ -145,16 +169,97 @@ def _in_block_lists(ip):
     return any(ip in n for n in _V4_BLOCKED)
 
 
-def _ip_is_public(ip):
-    """¿Se puede conectar a esta dirección? Las listas propias, y además las
-    banderas de ipaddress, que cambian de una versión de Python a otra (para
-    ellas 224.0.0.1 es «global»)."""
+def _routable(ip):
+    """¿Es una dirección de internet? Las listas propias, y además las banderas
+    de ipaddress, que cambian de una versión de Python a otra (para ellas
+    224.0.0.1 es «global»)."""
     if _in_block_lists(ip):
         return False
-    if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
-            or ip.is_reserved or ip.is_unspecified or not ip.is_global):
-        return False
-    return not any(ip in n for n in PROXY_DENY)
+    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
+                or ip.is_reserved or ip.is_unspecified or not ip.is_global)
+
+
+def _ip_is_public(ip):
+    """¿Se puede conectar a esta dirección? De internet, fuera de
+    ELFFUSS_PROXY_DENY y que no sea de esta misma máquina."""
+    return (_routable(ip) and not any(ip in n for n in PROXY_DENY)
+            and ip not in _self_addresses())
+
+
+# ------------------------------------------------- las direcciones de esta máquina
+_PROC_FIB_TRIE = '/proc/net/fib_trie'    # Linux: cada IPv4 local, «/32 host LOCAL»
+_PROC_IF_INET6 = '/proc/net/if_inet6'    # Linux: cada IPv6 de cada interfaz
+
+
+def _local_v4_from_fib_trie(text):
+    """Las IPv4 locales de /proc/net/fib_trie: cada hoja «|-- a.b.c.d» que
+    lleva debajo una línea «/32 host LOCAL»."""
+    found, leaf = set(), None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('|-- '):
+            leaf = line[4:].strip()
+        elif leaf and line.startswith('/32 host LOCAL'):
+            found.add(leaf)
+    return found
+
+
+def _local_v6_from_if_inet6(text):
+    """Las IPv6 de /proc/net/if_inet6: la primera columna, 32 cifras hex."""
+    found = set()
+    for line in text.splitlines():
+        cols = line.split()
+        if cols and len(cols[0]) == 32:
+            try:
+                found.add(str(ipaddress.IPv6Address(int(cols[0], 16))))
+            except ValueError:
+                pass
+    return found
+
+
+def _egress_addresses():
+    """La dirección con la que la máquina sale a internet, por familia: un
+    connect() UDP elige ruta y origen sin mandar ningún paquete. Es lo único
+    que hay donde no existe /proc (fuera de Linux)."""
+    found = set()
+    for family, probe in ((socket.AF_INET, ('192.0.2.1', 9)), (socket.AF_INET6, ('2001:db8::1', 9, 0, 0))):
+        try:
+            with socket.socket(family, socket.SOCK_DGRAM) as s:
+                s.connect(probe)
+                found.add(s.getsockname()[0])
+        except OSError:
+            pass
+    return found
+
+
+def _own_addresses():
+    """Las direcciones de internet de esta máquina: las de sus interfaces y la
+    de salida. Las privadas y de loopback ya se rechazan por sí solas."""
+    found = set()
+    for path, parse in ((_PROC_FIB_TRIE, _local_v4_from_fib_trie), (_PROC_IF_INET6, _local_v6_from_if_inet6)):
+        try:
+            with open(path, encoding='ascii', errors='replace') as f:
+                found |= parse(f.read())
+        except OSError:
+            pass
+    found |= _egress_addresses()
+    ips = (_parse_ip(a) for a in found)
+    return frozenset(ip for ip in ips if ip is not None and _routable(ip))
+
+
+_self_lock = threading.Lock()
+_self_cache = {'at': None, 'addrs': frozenset()}
+
+
+def _self_addresses():
+    """_own_addresses(), vuelta a enumerar como mucho cada PROXY_SELF_REFRESH_S
+    (una IP que se añade con la máquina en marcha también cuenta)."""
+    with _self_lock:
+        now = time.monotonic()
+        if _self_cache['at'] is None or now - _self_cache['at'] >= PROXY_SELF_REFRESH_S:
+            _self_cache['addrs'] = _own_addresses()
+            _self_cache['at'] = now
+        return _self_cache['addrs']
 
 
 def _is_loopback(text):
@@ -225,7 +330,7 @@ def _resolve(host, port):
         ip = _parse_ip(sockaddr[0]) if family in (socket.AF_INET, socket.AF_INET6) else None
         if ip is None or not _ip_is_public(ip):
             raise ProxyRefused(403, 'forbidden-destination',
-                               'destino no permitido (el nombre resuelve a una dirección no pública)')
+                               'destino no permitido (el nombre resuelve a una dirección no pública o de esta máquina)')
         if (family, sockaddr) not in addrs:
             addrs.append((family, sockaddr))
     if not addrs:
@@ -260,7 +365,7 @@ def _check_url(url):
     if ip is None:
         addrs = _resolve(host, port)
     elif not _ip_is_public(ip):
-        raise ProxyRefused(403, 'forbidden-destination', 'destino no permitido (dirección no pública)')
+        raise ProxyRefused(403, 'forbidden-destination', 'destino no permitido (dirección no pública o de esta máquina)')
     elif ip.version == 6:
         addrs = [(socket.AF_INET6, (host, port, 0, 0))]
     else:
@@ -335,9 +440,25 @@ def _dial(family, sockaddr, timeout):
     return sock
 
 
+def _dial_order(addrs):
+    """Orden de intento: alternando familias, empezando por la que dio primero
+    el resolver (RFC 8305 §4). Con IPv6 configurada pero sin ruta, y una
+    respuesta que trae primero cuatro AAAA, la primera IPv4 es el segundo
+    intento y no queda fuera. Como mucho PROXY_MAX_ADDRS: quien controla el DNS
+    de un nombre no convierte una petición en cien conexiones."""
+    if not addrs:
+        return []
+    first = [a for a in addrs if a[0] == addrs[0][0]]
+    other = [a for a in addrs if a[0] != addrs[0][0]]
+    order = []
+    for i in range(max(len(first), len(other))):
+        order.extend(group[i] for group in (first, other) if i < len(group))
+    return order[:PROXY_MAX_ADDRS]
+
+
 def _connect(target, deadline):
     last = None
-    for family, sockaddr in target.addrs[:3]:
+    for family, sockaddr in _dial_order(target.addrs):
         remaining = deadline.remaining()
         if remaining <= 0:
             break
@@ -522,6 +643,7 @@ class _RateLimiter:
 
 
 PROXY_RATE = _RateLimiter(PROXY_RATE_WINDOW_S, PROXY_RATE_MAX)
+PROXY_GLOBAL_RATE = _RateLimiter(PROXY_RATE_WINDOW_S, PROXY_GLOBAL_MAX)   # una sola clave: '*'
 
 
 def _log_target(path):
@@ -655,8 +777,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _proxy_caller_ok(self):
         """Solo la propia página (fetch del mismo origen) o un cliente que no es
         un navegador (curl, el chequeo de salud). Fuera navegaciones, iframes,
-        <img>/<script> y cualquier otro origen: así una web ajena no usa este
-        servidor de proxy ni abre aquí HTML de terceros con nuestro origen."""
+        <img>/<script> y cualquier otro origen: así una web ajena no usa el
+        navegador del usuario contra este proxy ni abre aquí HTML de terceros
+        con nuestro origen. NO es control de acceso: las cabeceras Sec-Fetch-*
+        y Origin solo las ponen los navegadores, y quien no las manda pasa."""
         site = (self.headers.get('Sec-Fetch-Site') or '').strip().lower()
         dest = (self.headers.get('Sec-Fetch-Dest') or '').strip().lower()
         if site not in ('', 'same-origin') or dest not in ('', 'empty'):
@@ -698,6 +822,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     retry_after=PROXY_RATE_WINDOW_S)
         if not self._proxy_caller_ok():
             return self._proxy_fail(403, 'cross-site', 'el proxy solo atiende a la propia app')
+        if not PROXY_GLOBAL_RATE.allow('*'):
+            return self._proxy_fail(503, 'overloaded', 'el proxy llegó a su límite de peticiones, prueba en un minuto',
+                                    retry_after=PROXY_RATE_WINDOW_S)
         qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         url = (qs.get('url') or [''])[0]
         if not PROXY_SLOTS.acquire(blocking=False):
@@ -789,6 +916,10 @@ def main(argv=None):
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer((bind, port), Handler) as httpd:
         print(f'✳ Elffuss · http://localhost:{port}')
+        # Cuántas, no cuáles: si sale 0 en un servidor con IP pública, esa IP
+        # no está en ninguna interfaz (NAT) y va a mano en ELFFUSS_PROXY_DENY.
+        print(f'  /proxy rechaza {len(_self_addresses())} dirección(es) pública(s) de esta máquina'
+              f' y {len(PROXY_DENY)} red(es) de ELFFUSS_PROXY_DENY', flush=True)
         httpd.serve_forever()
 
 
