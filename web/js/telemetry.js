@@ -23,25 +23,29 @@ export function setEnabled(v) {
   if (enabled) hookGlobalErrors();
 }
 
-// Devuelve si el informe LLEGÓ (true) o no (false). Antes no devolvía nada y
-// quien mandaba feedback decía «¡enviado, gracias!» aunque el envío fallara.
+// Devuelve si el servidor lo aceptó DE VERDAD (respuesta 2xx). Antes no
+// devolvía nada y quien mandaba feedback decía «¡enviado, gracias!» aunque el
+// servidor contestara 404 o no hubiera red.
 async function post(kind, message, opts = {}) {
   if (!enabled) return false;
   try {
-    const r = await fetch('/proxy/report', {
+    const res = await fetch('/proxy/report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         app: appName, kind, message: String(message ?? '').slice(0, 2000),
         stack: String(opts.stack || '').slice(0, 4000),
-        // Sin el fragmento (#/…): la app guarda ahí dónde estás (rutas.js) —
-        // un nombre de app, un id de tarea, una ruta dentro de tu carpeta— y
-        // eso no tiene por qué viajar en un informe de error.
-        url: location.origin + location.pathname + location.search, userAgent: navigator.userAgent,
+        // Solo la página, sin búsqueda ni fragmento. El fragmento (#/…) guarda
+        // dónde estás (rutas.js): un nombre de app, un id de tarea, una ruta
+        // dentro de tu carpeta; la búsqueda puede nombrar una skill tuya
+        // (?skill=…). Nada de eso tiene por qué viajar en un informe de error.
+        // (Igual que la copia de Elffuss Code, donde #/file/<ruta> metía
+        // nombres de ficheros del proyecto en cada informe.)
+        url: location.origin + location.pathname, userAgent: navigator.userAgent,
         extra: String(opts.extra || '').slice(0, 2000),
       }),
     });
-    return r.ok;
+    return res.ok;
   } catch { return false; /* sin conexión o proxy caído: se descarta, no hay reintento */ }
 }
 
