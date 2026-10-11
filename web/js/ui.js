@@ -277,11 +277,15 @@ export function toast(text, opts = {}) {
   // ~50 ms por carácter, entre 4 y 12 s; con acción, unos segundos más para
   // que dé tiempo a decidir.
   restante = ms ?? (Math.min(12000, Math.max(4000, 1500 + String(text).length * 50)) + (accion ? 4000 : 0));
+  // Se para con el RATÓN encima o con el foco dentro, no con un toque: en un
+  // teléfono un toque cuenta como «encima» y no hay «salir», así que el aviso
+  // tocado se quedaba para siempre (y si tapaba ■, el toque nunca llegaba a ■).
+  let ratonEncima = false;
   const arrancar = () => { desde = Date.now(); clearTimeout(timer); timer = setTimeout(quitar, restante); };
   const pausar = () => { if (parado) return; parado = true; clearTimeout(timer); restante = Math.max(1500, restante - (Date.now() - desde)); };
-  const seguir = () => { if (!parado || t.matches(':hover') || t.contains(document.activeElement)) return; parado = false; arrancar(); };
-  t.addEventListener('mouseenter', pausar);
-  t.addEventListener('mouseleave', seguir);
+  const seguir = () => { if (!parado || ratonEncima || t.contains(document.activeElement)) return; parado = false; arrancar(); };
+  t.addEventListener('pointerenter', e => { if (e.pointerType !== 'mouse') return; ratonEncima = true; pausar(); });
+  t.addEventListener('pointerleave', e => { if (e.pointerType !== 'mouse') return; ratonEncima = false; seguir(); });
   t.addEventListener('focusin', pausar);
   t.addEventListener('focusout', () => setTimeout(seguir, 0));
   arrancar();
@@ -1729,6 +1733,14 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
     (($('composer')?.offsetHeight || 0) + ($('chips')?.offsetHeight || 0)) + 'px');
   try { const ro = new ResizeObserver(altoPie); ro.observe($('composer')); ro.observe($('chips')); } catch { /* sin ResizeObserver: queda el valor por defecto */ }
   altoPie();
+  // En el teléfono los avisos se apilan encima de la caja de progreso (ver
+  // #toasts en elffuss.css): su alto, cuando se ve, va a --alto-progreso.
+  const altoProgreso = () => {
+    const caja = $('model-progress');
+    document.documentElement.style.setProperty('--alto-progreso', (caja && !caja.hidden ? caja.offsetHeight + 8 : 0) + 'px');
+  };
+  try { new ResizeObserver(altoProgreso).observe($('model-progress')); } catch { /* sin ResizeObserver: 0 */ }
+  altoProgreso();
 
   // el sello del build enlaza al commit cuando es un commit limpio
   { const b = $('build'); if (b) { const sello = b.textContent.trim(); b.dataset.sello = sello; b.replaceChildren(enlaceBuild(sello)); } }
