@@ -203,7 +203,9 @@ ok('la parada llegó a CADA generación en curso (señal abortada en el proveedo
 ok('el ciclo pausado no forja ninguna propuesta', trasPausa.built === 0 && trasPausa.paused === 1
   && await p.evaluate(() => document.querySelectorAll('.mind-node-label').length) === nodosAntes,
   `built=${trasPausa.built} paused=${trasPausa.paused}`);
-ok('la Mente cuenta que dejó el ciclo', /dejo lo mío|cortado el ciclo/.test(trasPausa.log), trasPausa.log.slice(-160));
+// Una pausa a propósito tiene su propio texto («En pausa: corto el ciclo…»);
+// «Vuelves tú — dejo lo mío…» es para cuando el usuario vuelve a usar la app.
+ok('la Mente cuenta que cortó el ciclo porque se pausó', /En pausa: corto el ciclo/.test(trasPausa.log), trasPausa.log.slice(-160));
 
 await p.screenshot({ path: OUT + '/mind_claw.png' });
 console.log('captura → mind_claw.png');

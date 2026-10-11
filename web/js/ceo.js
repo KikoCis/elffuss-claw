@@ -68,11 +68,24 @@ let enabled = false, running = false, lastActivity = Date.now(), timer = null, l
 // Una parada por ciclo: pausar o volver a usar la app la aborta, y la señal
 // llega hasta el proveedor (corta la generación) y hasta las herramientas.
 let cycleAborter = null;
+// Cada pausa o actividad del usuario cambia la «época». tick() y forceCycle()
+// esperan a isReady() antes de arrancar, y en Claw esa espera es asíncrona
+// (consulta IndexedDB): si la época cambió mientras esperaban, el usuario pausó
+// o volvió y el ciclo NO arranca. Antes solo se miraba `running`, que en ese
+// hueco aún es false, así que interrupt() no hacía nada y el ciclo arrancaba
+// igual y escribía su propuesta justo después de pausar.
+let epoca = 0;
+// Quién cortó: 'actividad' (el usuario volvió) o 'pausa' (lo pausó a propósito
+// desde la Mente). Cuenta el primero que corta el ciclo; con eso se elige qué
+// se le dice (antes las dos decían «Vuelves tú…»).
+let motivoCorte = 'actividad';
 // Interrumpir el ciclo en curso. `running` NO se pone a false aquí: lo hace el
 // propio ciclo al terminar de verdad. Mientras tanto vale 'interrupt' y
 // forceCycle()/tick() no arrancan un segundo ciclo encima del que aún se está
 // desmontando — dos ciclos a la vez son dos generate() contra el mismo modelo.
-function interrupt() {
+function interrupt(motivo = 'actividad') {
+  epoca++;
+  if (running !== 'interrupt') motivoCorte = motivo;
   if (!running) return;
   running = 'interrupt';
   try { cycleAborter?.abort(); } catch { /* */ }
@@ -140,7 +153,7 @@ export function init(opts = {}) {
   initCrossTab();
 }
 export function isThisTabLeader() { return isLeader; }
-export function noteActivity() { lastActivity = Date.now(); interrupt(); }
+export function noteActivity() { lastActivity = Date.now(); interrupt('actividad'); }
 export function isEnabled() { return enabled; }
 export function isRunning() { return !!running; }
 // Play/stop: persistido AQUÍ (fuente única) — cualquier botón que lo toque
@@ -173,37 +186,52 @@ export function enable() {
 export function disable() {
   // Antes ponía running = false sin más: el ciclo seguía generando por detrás,
   // escribía su propuesta igual, y «Pensar ahora» podía lanzar otro a la vez.
-  enabled = false; interrupt(); if (timer) clearTimeout(timer);
+  enabled = false; interrupt('pausa'); if (timer) clearTimeout(timer);
   try { localStorage.setItem(CLAVE_DECISION(), 'off'); } catch { /* */ }
   emit('sys', { type: 'status', text: 'CEO en pausa' });
 }
 
 function schedule() { if (timer) clearTimeout(timer); timer = setTimeout(tick, TICK_MS); }
 
+// ¿Puede pensar AHORA? Para que la UI lo diga antes de prometer un ciclo:
+// devuelve '' si sí, o el motivo ('leader' | 'running' | 'workspace' |
+// 'provider'). Sin modelo de verdad (el anfitrión devuelve null en modo
+// básico) no hay ciclo: con el motor de reglas solo salían propuestas basura
+// escritas dentro del proyecto.
+export async function whyNotThink() {
+  if (!isLeader) return 'leader';
+  if (running) return 'running';
+  if (!(await ws?.isReady())) return 'workspace';
+  if (!getProvider()) return 'provider';
+  return '';
+}
+
 // «Pensar ahora» — salta la espera de ociosidad. Sigue respetando el
 // semáforo: si otra pestaña es la líder, no compite por la GPU.
 export async function forceCycle() {
   if (!isLeader) { emit('ceo', { type: 'paused', text: 'Otra pestaña lleva el cerebro — ábrela ahí para forzar un ciclo.' }); return false; }
   if (running) return false;
+  const e = epoca;
   // isReady() puede ser síncrona (Code: handle en memoria) o async (Claw: consulta IndexedDB) — se espera siempre.
   if (!(await ws?.isReady()) || !getProvider()) { emit('ceo', { type: 'paused', text: 'Necesito un espacio de trabajo abierto y un modelo cargado.' }); return false; }
   if (running) return false;   // otro ciclo arrancó mientras se esperaba a isReady()
+  if (e !== epoca) { emit('ceo', { type: 'paused', text: textoCorte() }); return false; }
   try { await runCycle(); } finally { lastCycleEnd = Date.now(); }
   return true;
 }
 
 async function tick() {
   if (!enabled) return;
-  // ¿Toca ciclo? Se mira ANTES y DESPUÉS de esperar a isReady(). Esa espera
-  // puede ser asíncrona (Claw consulta IndexedDB) y mientras dura puede llegar
-  // una pausa o actividad del usuario; como aún no hay ciclo en marcha,
-  // interrupt() no tiene nada que parar. Mirando después solo `running`, un
-  // ciclo entero arrancaba —y escribía su propuesta— justo después de pausar.
-  const toca = () => enabled && isLeader && !running && !isBusy()
-    && Date.now() - lastActivity >= IDLE_MS && Date.now() - lastCycleEnd > COOLDOWN_MS && !!getProvider();
-  if (toca() && await ws?.isReady() && toca()) {
-    try { await runCycle(); } catch { /* siguiente ciclo */ }
-    lastCycleEnd = Date.now();
+  const idle = Date.now() - lastActivity;
+  const rested = Date.now() - lastCycleEnd > COOLDOWN_MS;
+  const mightRun = isLeader && !running && !isBusy() && idle >= IDLE_MS && rested && getProvider();
+  if (mightRun) {
+    const e = epoca;
+    // Tras la espera se vuelve a mirar todo lo que pudo cambiar en ella.
+    if (await ws?.isReady() && e === epoca && enabled && !running && !isBusy()) {
+      try { await runCycle(); } catch { /* siguiente ciclo */ }
+      lastCycleEnd = Date.now();
+    }
   }
   schedule();
 }
@@ -219,6 +247,12 @@ async function think(channel, task, signal = null) {
   if (!prov) return '';
   if (signal?.aborted) throw new Error('interrumpido');
   const a = new Agent({ chat: (h, s, cb, sig) => prov.chat(h, s, cb, sig) });
+  // Un agente sin stop() no se entera de la señal (el de Claw antes de su
+  // stop-fix: handle(texto, onEvent)). Con él la única forma de cortarlo es
+  // lanzar desde su callback, como hacía antes el core; si no, cada perfil
+  // seguía llamando al modelo y ejecutando herramientas hasta el final aunque
+  // el usuario hubiera vuelto. Con stop() se ignora sin lanzar (ver abajo).
+  const sinParada = typeof a.stop !== 'function';
   const stop = () => { try { a.stop?.(); } catch { /* */ } };
   signal?.addEventListener('abort', stop, { once: true });
   let out = '';
@@ -227,7 +261,10 @@ async function think(channel, task, signal = null) {
       // Parado: se ignora lo que llegue, sin lanzar. Lanzar desde aquí metía una
       // excepción en mitad del agente (y de su proveedor), y un agente que no
       // distingue la parada la reportaba a telemetría como fallo del modelo.
-      if (running === 'interrupt' || signal?.aborted) return;
+      if (running === 'interrupt' || signal?.aborted) {
+        if (sinParada) throw new Error('interrumpido');
+        return;
+      }
       if (ev.type === 'token') { out += ev.text; emit(channel, { type: 'token', text: ev.text }); }
       else if (ev.type === 'tool') emit(channel, { type: 'tool', text: humanizeTool(ev.call.tool, ev.call.args), tool: ev.call.tool, path: ev.call.args?.path || null });
       else if (ev.type === 'tool_result') emit(channel, { type: 'tool_result', tool: ev.tool, text: String(ev.result || '').replace(/\s+/g, ' ').trim().slice(0, 100) });
@@ -237,6 +274,11 @@ async function think(channel, task, signal = null) {
   if (signal?.aborted) throw new Error('interrumpido');
   return out;
 }
+
+// Lo que se dice al cortar un ciclo, según quién lo cortó (ver motivoCorte).
+const textoCorte = () => motivoCorte === 'pausa'
+  ? 'En pausa: corto el ciclo y no guardo nada.'
+  : 'Vuelves tú — dejo lo mío y te cedo el mando.';
 
 async function runCycle() {
   running = true;
@@ -267,7 +309,7 @@ async function cycle(signal) {
     catch { emit(d.id, { type: 'done', text: '(interrumpido)' }); return null; }
   }));
   // Interrumpido: NO se escribe nada. Ni propuesta a medias ni fichero vacío.
-  if (running === 'interrupt' || signal.aborted) { emit('ceo', { type: 'paused', text: 'Vuelves tú — dejo lo mío y te cedo el mando.' }); return; }
+  if (running === 'interrupt' || signal.aborted) { emit('ceo', { type: 'paused', text: textoCorte() }); return; }
 
   const valid = proposals.filter(Boolean).filter(p => p.text && p.text.length > 8);
   const md = `# Propuestas de mejora — ciclo ${cycleN}\n\n**Misión:** ${getMission()}\n\n` +
@@ -279,7 +321,7 @@ async function cycle(signal) {
   const path = `${getSoulDir()}/${stamp}-${topic}.md`;
   try {
     await rotateSoul();
-    if (signal.aborted) { emit('ceo', { type: 'paused', text: 'Vuelves tú — dejo lo mío y te cedo el mando.' }); return; }
+    if (signal.aborted) { emit('ceo', { type: 'paused', text: textoCorte() }); return; }
     await ws.write({ path, content: md });
     emit('ceo', { type: 'built', text: `Propuesta guardada en ${path}`, path, md, proposals: valid });
   } catch (e) {
