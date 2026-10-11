@@ -822,6 +822,9 @@ const FICHAS = {
   'engine:qwen35-0.8b': 'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF',
 };
 const etiquetaDe = id => modelOptions().find(o => o.id === id)?.label?.split(' · ')[0] || id;
+// Cuánto baja un cerebro local, sacado de su etiqueta en el selector («(~2.8 GB)»,
+// «(7.2 GB, se guarda…)»); si no lo dice, lo del ligero.
+const tamanoDeDescarga = id => (modelOptions().find(o => o.id === id)?.label?.match(/\((~?[\d.,]+\s*[MG]B)/) || [])[1] || '~600 MB';
 function pintarFicha(id) { ui.setFichaModelo(FICHAS[id] || null, etiquetaDe(id)); }
 
 // Errores de carga que se enseñan al usuario: los de providers/api.js (core
@@ -1270,9 +1273,17 @@ if (!IS_COPILOT && ceo.wasEnabledLastSession()) ceo.enable();
     // elección. El modo básico sigue atendiendo mientras tanto.
     // Un TELÉFONO, no una ventana estrecha: con ratón y 760 px de ancho también
     // salía «En el móvil todavía no funciona… ábrelo en un ordenador».
+    //
+    // Un cerebro EXTERNO no descarga nada: se carga sin puerta. Antes, con uno
+    // guardado, la puerta decía «haría falta bajar ~600 MB» y lo que cargaba al
+    // aceptar no bajaba ni un byte. La puerta queda para los locales, con el
+    // tamaño del que se va a bajar de verdad (podía ser un Gemma de gigas).
     if (esTelefono() && localStorage.getItem('elffuss.movil.ok') !== '1') {
-      ui.mobileGate('~600 MB', async () => {
-        for (const id of chain) if (await changeModel(id)) return true;
+      for (const id of chain.filter(x => x.startsWith('ext:'))) if (await changeModel(id)) return;
+      const locales = chain.filter(x => !x.startsWith('ext:'));
+      if (!locales.length) return;
+      ui.mobileGate(tamanoDeDescarga(locales[0]), async () => {
+        for (const id of locales) if (await changeModel(id)) return true;
         return false;
       });
       return;

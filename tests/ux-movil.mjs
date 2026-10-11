@@ -11,6 +11,8 @@
 //     progreso): tocar ■ con un aviso a la vista para el turno. Un aviso tocado
 //     con el dedo se va solo igualmente (el toque no lo para para siempre).
 //   · ⛏ se llama «Hard Work» también a 390 px, donde solo se ve el pico.
+//   · Con un cerebro EXTERNO guardado no sale la puerta (no descarga nada) y el
+//     cerebro carga; si no carga, la puerta sale para el local, con su tamaño.
 //
 //   BASE=http://localhost:8743 node tests/ux-movil.mjs
 import { createServer } from 'node:http';
@@ -156,6 +158,45 @@ const sinCerebroGuardado = { model: null };
   ok('si falla, la tarjeta se queda con el error y «Reintentar»', await hasta(async () =>
     /No ha cargado/.test(await p.locator('.mobile-gate').innerText().catch(() => '')) &&
     (await p.locator('.mobile-gate button').innerText()) === 'Reintentar', { veces: 400 }));
+  await ctx.close();
+}
+
+// ── con un cerebro externo guardado: sin puerta ─────────────────────────────
+{
+  const { ctx } = await contexto(b, { ...telefono, model: 'ext:ollama', extraInit: { 'elffuss.providers': OLLAMA } });
+  const { p, errores } = await pagina(ctx);
+  ok('teléfono con un cerebro externo guardado: carga sin la puerta de «descargar ~600 MB»', await hasta(() => p.evaluate(() =>
+    document.getElementById('model-select').value === 'ext:ollama' && document.getElementById('model-status').classList.contains('on')))
+    && await p.locator('.mobile-gate').count() === 0, await p.locator('.mobile-gate').innerText().catch(() => 'sin puerta'));
+  ok('…sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+{
+  // Un externo que no carga (OpenAI sin clave): la puerta sale para el local que
+  // viene detrás, con SU tamaño.
+  const { ctx } = await contexto(b, { ...telefono, model: 'ext:openai',
+    extraInit: { 'elffuss.providers': JSON.stringify({ openai: { enabled: true, baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' } }) } });
+  const { p } = await pagina(ctx);
+  const puerta = p.locator('.mobile-gate');
+  ok('si el externo guardado no carga, la puerta sale para el local, con el tamaño de ese (~600 MB)', await hasta(async () => await puerta.count() === 1)
+    && /~600 MB/.test(await puerta.innerText()) && await p.evaluate(() => document.getElementById('model-select').value === 'rules'),
+    await puerta.innerText().catch(() => 'sin puerta'));
+  await ctx.close();
+}
+
+{
+  // Un Gemma guardado en un teléfono con WebGPU: la puerta dice SU tamaño
+  // (~2.8 GB), no el del ligero.
+  const { ctx } = await contexto(b, { ...telefono, model: 'litert:gemma-e4b' });
+  await ctx.addInitScript(() => {
+    const adaptador = { limits: { maxBufferSize: 2 ** 32 }, features: new Set(), info: {}, async requestDevice() { throw new Error('sin GPU en la prueba'); } };
+    if (navigator.gpu) { try { navigator.gpu.requestAdapter = async () => adaptador; } catch { /* — */ } }
+    else Object.defineProperty(navigator, 'gpu', { value: { requestAdapter: async () => adaptador }, configurable: true });
+  });
+  const { p } = await pagina(ctx);
+  const puerta = p.locator('.mobile-gate');
+  ok('con un Gemma guardado, la puerta dice lo que de verdad se bajaría (~2.8 GB)', await hasta(async () => await puerta.count() === 1)
+    && /~2\.8 GB/.test(await puerta.innerText()) && !/600 MB/.test(await puerta.innerText()), await puerta.innerText().catch(() => 'sin puerta'));
   await ctx.close();
 }
 
