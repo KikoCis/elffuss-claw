@@ -7,15 +7,29 @@
 //     siguen ahí.
 //   · «Vaciar caché del modelo» se desactiva mientras trabaja y dice cuánto liberó.
 //   · El aviso del chip solo nombra el almacén compartido si hay camino a él. Con
-//     un SDK de broker que lo sabe medir y vaciar (un doble local, como el de
-//     main): al arrancar no se le pregunta; al abrir Ajustes sí, a todos los
-//     orígenes; vaciar los pide a la vez; «En disco» lo suma sin errores.
+//     un SDK de broker que lo sabe medir y vaciar (un doble local): al arrancar no
+//     se le pregunta; al abrir Ajustes sí, a todos los orígenes; vaciar los pide
+//     a la vez; «En disco» lo suma sin errores.
+//
+// Las dos mitades sirven el model-broker.js de ESTE árbol con sharedUsage y
+// clearShared fuera de los exports: la primera, sin camino al compartido; la
+// segunda, con el doble en su lugar. El SDK de main ya los exporta, y añadir el
+// doble sin quitarlos daba «export duplicado»: la app no llegaba a arrancar.
 //
 //   BASE=http://localhost:8743 node tests/ux-modelos.mjs
 import { navegador, contexto, pagina, ok, hasta, escribir, reposo, avisos, fin, BASE } from './ux-comun.mjs';
 
+const SIN_COMPARTIDO = src => src.replace(/export\s+async\s+function\s+(sharedUsage|clearShared)\s*\(/g, 'async function __sinExportar_$1(');
+async function servirBroker(ctx, doble = '') {
+  await ctx.route('**/js/runtime/model-broker.js', async route => {
+    const r = await route.fetch();
+    await route.fulfill({ response: r, body: SIN_COMPARTIDO(await r.text()) + doble, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
+  });
+}
+
 const b = await navegador();
 const { ctx } = await contexto(b, { grants: ['apps'] });
+await servirBroker(ctx);
 const { p, errores } = await pagina(ctx);
 const listo = () => p.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 });
 
@@ -77,8 +91,8 @@ ok('y después cuenta cero', await hasta(async () => /Nada cacheado todavía/.te
 
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 
-// ── con un SDK de broker que SÍ sabe del almacén compartido (como el de main) ─
-// Doble local: el model-broker.js de este árbol más sharedUsage/clearShared que
+// ── con un SDK de broker que SÍ sabe del almacén compartido ────────────────
+// Doble local: el model-broker.js de este árbol con sharedUsage/clearShared que
 // apuntan lo que se les pide, y un registro del motor con dos hosts de pesos.
 // Nada sale a la red: ni se incrusta ni se consulta ningún broker de verdad.
 {
@@ -92,10 +106,7 @@ export async function clearShared(o) {
   return { liberado: 1048576, ok: true };
 }`;
   const { ctx: c2 } = await contexto(b, { grants: ['apps'] });
-  await c2.route('**/js/runtime/model-broker.js', async route => {
-    const r = await route.fetch();
-    await route.fulfill({ response: r, body: (await r.text()) + DOBLE, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
-  });
+  await servirBroker(c2, DOBLE);
   await c2.route('**/js/engine/registro.js', route => route.fulfill({ contentType: 'text/javascript',
     body: "export const MODELS = {}; export async function disponible() { return false; } export function origenesAlmacen() { return ['https://m1.elffuss.com/', 'https://m2.elffuss.com/']; }" }));
   const { p: q, errores: errQ } = await pagina(c2);
