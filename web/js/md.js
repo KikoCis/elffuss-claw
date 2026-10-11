@@ -1,6 +1,6 @@
 // Markdown mínimo y SEGURO para el chat (estilo plugin de Claude Code):
 // escapa TODO el HTML primero y luego aplica transformaciones acotadas.
-// Soporta: bloques de código con ```, `inline`, **negrita**, *cursiva*,
+// Soporta: bloques de código con ```, `inline`, **negrita**, *cursiva* y _cursiva_,
 // #### títulos, listas con - o numeradas, saltos de línea y ENLACES.
 //
 // Enlaces: [texto](destino) y URLs sueltas. Solo dos clases de destino:
@@ -54,6 +54,11 @@ export function renderMarkdown(text) {
   t = t.replace(URL_SUELTA, (m, pre, url) => { links.push(enlace(url, url)); return pre + SENT + 'l' + (links.length - 1) + SENT; });
   t = t.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   t = t.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
+  // _cursiva_ también (el informe del cerebro la usa y salían los guiones bajos
+  // tal cual). Solo con espacio o paréntesis delante: un nombre_con_guiones de
+  // código no se toca. El código en línea y los enlaces ya están apartados, así
+  // que ni `f(_x_)` ni una URL con guiones bajos se tocan por dentro.
+  t = t.replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,;:!?]|$)/gm, '$1<i>$2</i>');
   t = t.replace(/^#{1,6}\s*(.+)$/gm, '<h4>$1</h4>');
   t = t.replace(/^\s*[-•]\s+(.+)$/gm, '<li>$1</li>');
   t = t.replace(/^\s*\d+\.\s+(.+)$/gm, '<li class="num">$1</li>');
