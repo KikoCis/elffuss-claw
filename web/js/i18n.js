@@ -265,6 +265,8 @@ const L = {
     webResults: 'Resultados para «{q}»:', webNoResults: 'Sin resultados para «{q}».',
     webImagesBad: 'respuesta inesperada del buscador de imágenes', webNoImages: 'Sin imágenes para «{q}».',
     webGallery: 'Galería con {n} imágenes de «{q}» abierta en el visualizador.',
+    // Estado del cerebro en corto, a la vista junto al punto (ui.modelStatus)
+    modelStOffShort: 'Básico', modelStLoadingShort: 'Cargando…', modelStOnShort: 'Listo', modelStGpuShort: 'Listo · GPU',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -512,6 +514,7 @@ const L = {
     webResults: 'Results for “{q}”:', webNoResults: 'No results for “{q}”.',
     webImagesBad: 'unexpected answer from the image search', webNoImages: 'No images for “{q}”.',
     webGallery: 'Gallery with {n} images of “{q}” open in the viewer.',
+    modelStOffShort: 'Basic', modelStLoadingShort: 'Loading…', modelStOnShort: 'Ready', modelStGpuShort: 'Ready · GPU',
 },
   uk: {
     claim: "застосунків не існує: їх створюють",

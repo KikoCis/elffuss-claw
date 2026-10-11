@@ -41,6 +41,11 @@ ok('un cerebro que carga al momento no deja el escaparate de descarga en la Vist
   await p.evaluate(() => document.getElementById('loading-stage') ? 'escaparate puesto' : 'sin placeholder'));
 ok('el selector se llama «Cerebro (modelo de IA)» y el punto dice su estado', await p.getAttribute('#model-select', 'aria-label') === 'Cerebro (modelo de IA)'
   && await p.getAttribute('#model-status', 'aria-label') === 'Modelo listo');
+// …y lo dice también a la vista, con palabras: el punto solo era un color.
+ok('junto al punto, el estado en palabras («Listo»), visible', await p.evaluate(() => {
+  const t = document.getElementById('model-status-txt');
+  return t?.textContent === 'Listo' && t.getClientRects().length > 0 && getComputedStyle(t).visibility !== 'hidden';
+}));
 
 await p.click('#tabs button[data-tab="ajustes"]');
 await p.evaluate(() => {

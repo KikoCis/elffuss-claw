@@ -864,10 +864,16 @@ export function setFichaModelo(url, nombre = '') {
 export function modelStatus(state) { // 'off' | 'loading' | 'on' | 'gpu'
   const d = $('model-status');
   d.className = 'dot ' + state;
-  // El punto solo era color (y un title en español): ahora dice el estado.
+  // El punto solo era color (y un title en español): ahora dice el estado, en su
+  // nombre accesible y, en corto, con palabras a la vista junto a él.
   const txt = tr({ off: 'modelStOff', loading: 'modelStLoading', on: 'modelStOn', gpu: 'modelStGpu' }[state] || 'modelStOff');
   d.title = txt;
   d.setAttribute('aria-label', txt);
+  const corto = $('model-status-txt');
+  if (corto) {
+    corto.textContent = tr({ off: 'modelStOffShort', loading: 'modelStLoadingShort', on: 'modelStOnShort', gpu: 'modelStGpuShort' }[state] || 'modelStOffShort');
+    corto.className = 'model-st-txt ' + state;
+  }
 }
 
 // ---------- selector de modelo (dinámico) ----------

@@ -70,11 +70,15 @@ select {
   padding: 6px 8px;
   font-size: .85rem;
 }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 .dot.off { background: #4a5062; }
 .dot.loading { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 .dot.on { background: var(--ok); }
 .dot.gpu { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+/* El estado del cerebro en palabras, junto al punto (el color solo no basta).
+   El margen negativo lo arrima al punto: el hueco entre controles es mayor. */
+.model-st-txt { font-size: .72rem; color: var(--muted); white-space: nowrap; flex: none; margin-left: -5px; }
+.model-st-txt.loading { color: var(--warn); }
 @keyframes pulse { 50% { opacity: .35; } }
 
 /* ---------- layout ---------- */
@@ -489,6 +493,7 @@ body:has(#splash:not([hidden])) #toasts { visibility: hidden; }
   .brand { flex: none; }
   .brand b, #model-ico, .model-card { display: none; }
   #btn-clear, #btn-perms { padding: 7px 9px; font-size: .78rem; }
+  .model-st-txt { margin-left: -2px; font-size: .68rem; }
 
   #log { padding: 10px; }
   .msg { max-width: 100%; font-size: .9rem; }
