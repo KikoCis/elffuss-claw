@@ -359,7 +359,8 @@ const cerebroLento = () => p.evaluate(() => {
   await p.click('#btn-clear');
   const ya = await p.evaluate(() => ({
     ocupado: document.getElementById('btn-clear').getAttribute('aria-busy'),
-    aviso: [...document.querySelectorAll('#toasts .toast')].some(t => t.textContent === 'Borrando la conversación…'),
+    // El texto del aviso va en .toast-txt: el aviso lleva además su ✕ (y a veces una acción).
+    aviso: [...document.querySelectorAll('#toasts .toast .toast-txt')].some(t => t.textContent === 'Borrando la conversación…'),
     log: [...document.getElementById('log').children].map(e => e.className),
     enviar: document.getElementById('send').title,
   }));
