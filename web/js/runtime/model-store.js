@@ -313,9 +313,15 @@ export async function getModelParts(url, onProgress = () => {}) {
     // entró ni qué hacer, y se le enseña TAL CUAL al usuario. Traducirlo con la
     // cifra real es la diferencia entre «algo ha fallado» y saber qué pasa.
     if (/quota/i.test(String((e && e.message) || e))) {
-      throw new Error(`No cabe: el navegador dejó de admitir datos tras guardar ` +
+      const err = new Error(`No cabe: el navegador dejó de admitir datos tras guardar ` +
         `${gb(loaded)} de ${gb(total)}. Su límite real es menor que el espacio que ` +
         `anuncia. Vacía la caché de modelos en Ajustes o elige uno más pequeño.`);
+      // Con el nombre del error del navegador (QuotaExceededError…): así quien
+      // llama distingue un fallo al GUARDAR de uno de red, y lo dice (litert.js
+      // avisa en el progreso). Con un Error a secas se lo tragaba en silencio y
+      // el modelo se volvía a bajar entero en cada sesión.
+      err.name = e?.name && e.name !== 'Error' ? e.name : 'QuotaExceededError';
+      throw err;
     }
     throw e;
   } finally {
