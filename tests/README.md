@@ -26,14 +26,28 @@ casos de `../coordinacion/ERRORES.md`.
 ## Proxy `/proxy?url=…` (Python, sin red)
 
 ```bash
-python3 test_proxy.py
+python3 test_proxy.py            # el proxy
+python3 test_install_proxy.py    # su instalación en el servidor, con sonda y vuelta atrás
+node web-proxy.mjs               # lo que el agente recibe del proxy (Playwright)
 ```
 
 `test_proxy.py` prueba el proxy endurecido de `server/serve.py` sin salir a
 internet: el DNS y la conexión TCP se sustituyen, y «la web» es un servidor
 local. Cubre cada vector rechazado (esquemas, puertos, usuario en la url,
 direcciones no públicas en IPv4 e IPv6, IPv4 escritas en decimal, octal o hex,
-nombres que resuelven a direcciones privadas, redirecciones hacia ellas, otro
-origen llamando) y comprueba en cada uno que el proxy NO llegó a conectar;
-y el camino bueno: dirección fijada tras resolver una vez, Host y SNI del
-nombre, cabeceras mínimas, aviso de recorte, plazo total y límites.
+nombres que resuelven a direcciones privadas, las direcciones públicas de la
+propia máquina, redirecciones hacia ellas, otro origen llamando) y comprueba
+en cada uno que el proxy NO llegó a conectar; y el camino bueno: dirección
+fijada tras resolver una vez, Host y SNI del nombre, todas las direcciones
+alternando IPv6 e IPv4 (con tope), cabeceras mínimas, aviso de recorte, plazo
+total y límites por cliente, global y de concurrencia. También deja escrito
+que `/proxy` es un relé abierto: un cliente que no es un navegador se atiende.
+
+`test_install_proxy.py` corre `server/install-proxy.sh` contra un «servicio»
+local: un backend que pasa `server/proxy-probe.py` se queda; el relé abierto de
+antes vuelve al anterior; y sin ninguno que pase, el servicio se para.
+
+`web-proxy.mjs` arranca su propio `serve.py` y corta toda la red: el motivo de
+`X-Proxy-Error`, el estado de la web (`X-Proxy-Upstream-Status`) y el recorte
+(`X-Proxy-Truncated`) llegan al agente, y la página anti-bot de DuckDuckGo (un
+202) o un 429/503 del proxy son un error con su motivo, no «Sin resultados».
