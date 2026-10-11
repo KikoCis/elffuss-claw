@@ -61,6 +61,11 @@ export function setOpenFile(fn, { etiqueta = null } = {}) { onOpenFile = fn; eti
 // `fn(md)` devuelve false si no la ejecutó (p. ej. sin modelo): el panel de la
 // propuesta se queda abierto en vez de cerrarse como si hubiera arrancado.
 export function setExecuteProposal(fn) { onExecute = fn; }
+// En Básico el panel de la propuesta no enseña «Ejecutar» (lo esconde el CSS con
+// body.modo-basico) sino que hace falta un modelo, con un botón que lleva a
+// elegirlo: lo que haga ese botón lo pone la app anfitriona.
+let onElegirModelo = null;
+export function setElegirModelo(fn) { onElegirModelo = fn; }
 // Lo que hace la app anfitriona al cerrarse la Mente (Claw devuelve la URL a la
 // pestaña de debajo: ver kernel.js).
 let onCerrar = () => {};
@@ -256,6 +261,7 @@ function showThoughtPanel(node) {
     `<div class="mp-body">${renderMarkdown(md)}</div>` +
     `<div class="mp-actions">` +
     `<button id="mp-exec" type="button" class="mp-exec">${escHtml(t('mindRunProposal'))}</button>` +
+    (onElegirModelo ? `<div class="proposal-needs-model mp-needs-model">${escHtml(t('proposalNeedsModelShort'))} <button id="mp-pick" type="button">${escHtml(t('pickModel'))}</button></div>` : '') +
     (node.userData.path ? `<button id="mp-open" type="button" class="mp-open">${escHtml(etiquetaAbrir || t('mindOpenEditor'))}</button>` : '') +
     `</div>`;
   root.querySelector('.mp-path').textContent = path;
@@ -268,7 +274,11 @@ function showThoughtPanel(node) {
   root.querySelector('#mp-exec').onclick = () => { if (onExecute(md) !== false) root.classList.remove('show'); };
   const openBtn = root.querySelector('#mp-open');
   if (openBtn) openBtn.onclick = () => { onOpenFile(node.userData.path); root.classList.remove('show'); };
-  root.querySelector('#mp-exec').focus({ preventScroll: true });
+  const pick = root.querySelector('#mp-pick');
+  if (pick) pick.onclick = () => onElegirModelo?.();
+  // El foco, al primer botón que se vea («Ejecutar», o «Elegir modelo» en Básico).
+  const primero = ['#mp-exec', '#mp-pick', '#mp-open'].map(s => root.querySelector(s)).find(b => b && b.getClientRects().length);
+  primero?.focus({ preventScroll: true });
 }
 
 // ══ perfiles: anclas 3D + leyenda (recalculadas al abrir o al reprogramar) ══

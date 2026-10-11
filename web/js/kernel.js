@@ -296,6 +296,12 @@ addEventListener('beforeunload', (e) => {
 });
 let hardMode = false;   // Hard Work (RLM): la próxima petición se procesa por partes
 let activeModel = 'rules';   // qué proveedor está cargado (para el vigilante de RAM)
+// El modo Básico, a la vista de la hoja de estilos: con él, el botón «Ejecutar
+// esta propuesta» (en el chat y en la Mente) se esconde y en su sitio se dice que
+// hace falta un modelo, con un botón para elegirlo (ver elffuss.css). Se llama
+// cada vez que cambia activeModel.
+function marcarModo() { document.body.classList.toggle('modo-basico', activeModel === 'rules'); }
+marcarModo();
 let activeMod = null;
 
 // ---- cola de mensajes ----
@@ -810,6 +816,7 @@ async function changeModel(id, { volviendo = false } = {}) {
   if (id === 'rules') { // modo básico
     agent.setProvider(rules);
     activeModel = 'rules';
+    marcarModo();
     activeMod = null;
     montarVelocimetro(null);
     pintarFicha(null);
@@ -833,6 +840,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     ui.modelProgress(null);
     agent.setProvider(mod);
     activeModel = id;
+    marcarModo();
     activeMod = mod;
     montarVelocimetro(mod);
     pintarFicha(id);
@@ -874,6 +882,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     ui.modelStatus('off');
     agent.setProvider(rules);
     activeModel = 'rules';
+    marcarModo();
     montarVelocimetro(null);
     pintarFicha(null);
     ui.setModel('rules');
@@ -954,6 +963,7 @@ ui.mountDiskChip();   // cuánto ocupan los modelos en este navegador, y cómo v
 ui.setOnFreeModel(async () => {
   const mod = activeMod;
   agent.setProvider(rules); activeModel = 'rules'; activeMod = null;
+  marcarModo();
   montarVelocimetro(null);
   ui.setModel('rules'); ui.modelStatus('off');
   try { await mod?.unload?.(); } catch { /* mejor esfuerzo */ }
@@ -1015,6 +1025,7 @@ function cargarMente() {
     // «▶ Ejecutar esta propuesta» de la Mente pasa por la MISMA puerta que el
     // botón del chat: en Básico no ejecuta (ver executeProposal) y la Mente sigue
     // abierta, con el aviso encima.
+    m.setElegirModelo(() => { m.closeMind(); ui.enfocarSelectorModelo(); });
     m.setExecuteProposal(md => {
       if (!executeProposal(md)) return false;
       m.closeMind();
@@ -1093,6 +1104,17 @@ function reportImprovements(ev) {
 function pintarPropuesta(m) {
   const div = ui.addMsg('assistant', m.content);
   if (!div || !m.propuesta?.md) return;
+  // En Básico no hay con qué ejecutarla: en vez de un botón que solo explica
+  // al pulsarlo, se dice ya y se ofrece elegir modelo (marcarModo y el CSS
+  // eligen cuál de los dos se ve).
+  const pista = document.createElement('div');
+  pista.className = 'proposal-needs-model';
+  const elegir = document.createElement('button');
+  elegir.type = 'button';
+  elegir.textContent = t('pickModel');
+  elegir.onclick = () => ui.enfocarSelectorModelo();
+  pista.append(document.createTextNode(t('proposalNeedsModelShort') + ' '), elegir);
+  div.appendChild(pista);
   const btn = document.createElement('button');
   btn.className = 'proposal-exec-btn';
   btn.textContent = t('proposalRun');
@@ -1220,6 +1242,7 @@ setInterval(async () => {
     const mod = activeMod;
     agent.setProvider(rules);
     activeModel = 'rules';
+    marcarModo();
     activeMod = null;
     montarVelocimetro(null);
     ui.setModel('rules');

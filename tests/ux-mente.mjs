@@ -8,11 +8,12 @@
 //   · ▶/⏸ dice siempre la verdad, y «Reprogramar» no enciende nada;
 //   · el cerebro solo puede LEER: un app.create suyo no crea nada;
 //   · la propuesta llega al chat, se guarda con su botón, sobrevive a recargar,
-//     su enlace abre la Mente en ella; en Básico «Ejecutar» no ejecuta;
+//     su enlace abre la Mente en ella; en Básico no hay «Ejecutar»: en su sitio
+//     dice que hace falta un modelo, con un botón que lleva a elegirlo;
 //   · las etiquetas son botones clicables enteros y vuelven tras recargar;
 //   · «Ver el fichero» lo lee en el chat; la notificación lleva a la propuesta;
-//   · «▶ Ejecutar» de la Mente tampoco ejecuta en Básico, y su aviso se ve y se
-//     pulsa con la Mente abierta (los avisos van encima y no quedan inertes);
+//   · la Mente tampoco enseña «▶ Ejecutar» en Básico, y los avisos se ven y se
+//     pulsan con la Mente abierta (van encima y no quedan inertes);
 //   · cerrar la Mente limpia #/mente/… de la URL (el mismo enlace vuelve a abrir)
 //     y «Atrás» la cierra; cargar la página en #/mente o #/mente/<ruta> la abre;
 //   · sin el permiso «Archivos» el cerebro no arranca ni pide nada, y la clave
@@ -199,11 +200,17 @@ ok('«Ver el fichero» cierra la Mente y lo lee en el chat', await hasta(async (
   await p.evaluate(() => document.getElementById('mind-overlay').style.display === 'none')
   && /Propuestas de mejora/.test(await p.locator('#log').innerText())));
 
-// ── en Básico, «Ejecutar» no ejecuta ────────────────────────────────────────
+// ── en Básico no hay «Ejecutar»: se dice ya que hace falta un modelo ────────
+// (antes el botón estaba y solo al pulsarlo explicaba que no podía)
 const antes = await p.locator('#log .msg.user').count();
-await msg.locator('.proposal-exec-btn').click();
-ok('en Básico «Ejecutar» explica que hace falta un modelo y no manda nada', await hasta(async () =>
-  (await avisos(p)).some(t => /modelo cargado/.test(t))) && await p.locator('#log .msg.user').count() === antes);
+const enChat = await msg.evaluate(m => {
+  const b = m.querySelector('.proposal-exec-btn'), pista = m.querySelector('.proposal-needs-model');
+  return { boton: !!b && b.getClientRects().length === 0, pista: !!pista && pista.getClientRects().length > 0 && /hace falta un modelo/.test(pista.textContent) };
+});
+ok('en Básico «Ejecutar» no se enseña: en su sitio dice que hace falta un modelo', enChat.boton && enChat.pista, JSON.stringify(enChat));
+await msg.locator('.proposal-needs-model button').click();
+ok('…y su «Elegir modelo» lleva al selector sin mandar nada', await hasta(() => p.evaluate(() => document.activeElement?.id === 'model-select'))
+  && await p.locator('#log .msg.user').count() === antes);
 
 // ── tras recargar: el aviso vuelve con su botón, y la Mente con su etiqueta ─
 await p.reload({ waitUntil: 'domcontentloaded' });
@@ -217,28 +224,36 @@ ok('el enlace abre la Mente en esa propuesta (la etiqueta volvió de la carpeta)
   document.getElementById('mind-panel')?.classList.contains('show') && document.querySelectorAll('.mind-node-label').length > 0), { veces: 300 }));
 if (OUT) await p.screenshot({ path: OUT + '/ux-mente.png' });
 
-// ── «▶ Ejecutar» DENTRO de la Mente, en Básico: tampoco ejecuta ─────────────
+// ── «▶ Ejecutar» DENTRO de la Mente, en Básico: tampoco está ─────────────────
 // (antes solo el botón del chat lo comprobaba; el de la Mente mandaba la
 // propuesta al motor de reglas, que creaba apps con lo que encontrara)
-const usuariosAntes = await p.locator('#log .msg.user').count();
-const appsAntes = await p.evaluate(async () => (await (await import('/js/db.js')).all('apps')).length);
-await p.click('#mp-exec');
-const aviso = p.locator('#toasts .toast', { hasText: 'modelo cargado' }).last();
-ok('en Básico «▶ Ejecutar» de la Mente explica que hace falta un modelo y no manda nada', await hasta(async () => await aviso.count() > 0)
-  && await p.locator('#log .msg.user').count() === usuariosAntes
-  && await p.evaluate(async () => (await (await import('/js/db.js')).all('apps')).length) === appsAntes);
-ok('…y la Mente y la propuesta siguen abiertas', await p.evaluate(() =>
-  document.getElementById('mind-overlay').style.display !== 'none' && document.getElementById('mind-panel').classList.contains('show')));
-// Los avisos se ven y se pulsan con la Mente abierta (antes quedaban detrás e inertes).
+const enMente = await p.evaluate(() => ({
+  exec: document.getElementById('mp-exec')?.getClientRects().length === 0,
+  pista: (document.getElementById('mp-pick')?.getClientRects().length || 0) > 0,
+  foco: document.activeElement?.id,
+}));
+ok('en Básico la Mente no enseña «▶ Ejecutar»: dice que hace falta un modelo y el foco va a «Elegir modelo»',
+  enMente.exec && enMente.pista && enMente.foco === 'mp-pick', JSON.stringify(enMente));
+// Los avisos se ven y se pulsan con la Mente abierta (antes quedaban detrás e
+// inertes): uno con acción, como los que saltan con ella abierta (una tarea que
+// se dispara con su «Ver», la bóveda que se cierra sola…).
+await p.evaluate(async () => {
+  window.__accion = 0;
+  (await import('/js/ui.js')).toast('Aviso de prueba con la Mente abierta', { accion: { label: 'Hacer', run: () => { window.__accion++; } } });
+});
+const aviso = p.locator('#toasts .toast', { hasText: 'Aviso de prueba' }).last();
 const visible = !(await aviso.count()) ? { encima: false, falta: true } : await aviso.evaluate(el => {
   const r = el.getBoundingClientRect();
   const arriba = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
   return { encima: el.contains(arriba), inerte: document.getElementById('toasts').inert };
 });
-ok('el aviso se ve ENCIMA de la Mente y no está inerte', visible.encima && !visible.inerte, JSON.stringify(visible));
+ok('un aviso se ve ENCIMA de la Mente y no está inerte', visible.encima && !visible.inerte, JSON.stringify(visible));
 await aviso.locator('.toast-accion').click({ timeout: 5000 }).catch(() => {});
-ok('su acción «Elegir modelo» se puede pulsar: cierra la Mente y enfoca el selector', await hasta(() => p.evaluate(() =>
-  document.getElementById('mind-overlay').style.display === 'none' && document.activeElement?.id === 'model-select')));
+ok('…y su acción se puede pulsar con la Mente abierta', await hasta(() => p.evaluate(() => window.__accion === 1)));
+await p.click('#mp-pick', { timeout: 5000 }).catch(() => {});
+ok('«Elegir modelo» de la Mente la cierra y enfoca el selector, sin mandar nada', await hasta(() => p.evaluate(() =>
+  document.getElementById('mind-overlay').style.display === 'none' && document.activeElement?.id === 'model-select'))
+  && await p.locator('#log .msg.user').count() === antes);
 
 // ── cerrar la Mente devuelve la URL a la pestaña; el mismo enlace vuelve a abrir ─
 ok('cerrar la Mente quita #/mente/… de la URL', await hasta(() => p.evaluate(() => !location.hash.startsWith('#/mente'))),

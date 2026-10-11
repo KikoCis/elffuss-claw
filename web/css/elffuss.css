@@ -676,6 +676,12 @@ kbd { font-family: ui-monospace, monospace; font-size: .8rem; background: var(--
 .proposal-exec-btn { display: block; margin-top: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: .78rem; font-weight: 600; cursor: pointer; }
 .proposal-exec-btn:hover { filter: brightness(1.1); }
 .proposal-exec-btn:disabled { opacity: .6; cursor: default; filter: none; }
+/* En Básico no hay con qué ejecutar una propuesta: el botón se esconde y en su
+   sitio se dice que hace falta un modelo, con un botón para elegirlo. */
+.proposal-needs-model { display: none; margin-top: 10px; font-size: .78rem; color: var(--muted); align-items: center; gap: 8px; flex-wrap: wrap; }
+.proposal-needs-model button { background: none; border: 1px solid var(--line); color: var(--fg, inherit); border-radius: 8px; padding: 5px 10px; font-size: .78rem; cursor: pointer; }
+body.modo-basico .proposal-exec-btn, body.modo-basico #mp-exec { display: none; }
+body.modo-basico .proposal-needs-model { display: flex; }
 
 /* modelos externos: sección plegada, al final y visualmente secundaria */
 .ext-block{opacity:.72}

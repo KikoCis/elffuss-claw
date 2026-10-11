@@ -268,6 +268,7 @@ const L = {
     // Estado del cerebro en corto, a la vista junto al punto (ui.modelStatus)
     modelStOffShort: 'Básico', modelStLoadingShort: 'Cargando…', modelStOnShort: 'Listo', modelStGpuShort: 'Listo · GPU',
     skillSeeChat: 'Ver cómo usarla en el chat',
+    proposalNeedsModelShort: 'Para ejecutarla hace falta un modelo cargado.',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -517,6 +518,7 @@ const L = {
     webGallery: 'Gallery with {n} images of “{q}” open in the viewer.',
     modelStOffShort: 'Basic', modelStLoadingShort: 'Loading…', modelStOnShort: 'Ready', modelStGpuShort: 'Ready · GPU',
     skillSeeChat: 'See how to use it in the chat',
+    proposalNeedsModelShort: 'Running it needs a loaded model.',
 },
   uk: {
     claim: "застосунків не існує: їх створюють",
