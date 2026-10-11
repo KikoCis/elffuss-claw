@@ -463,6 +463,10 @@ async function process(text, id = null, hard = false) {
   // Contar solo las excepciones daría un 100 % permanente: el fallo típico no
   // es una excepción, es una respuesta que llega como `error` al usuario.
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // Quién contesta este turno: el velocímetro solo apunta las tareas del motor
+  // que mide, cada una con su modelo (las del modo Básico o de otro cerebro no
+  // son suyas).
+  const cerebro = agent.provider;
   let huboError = false, parado = false;
   try {
     await agent.handle(text, ev => {
@@ -484,7 +488,7 @@ async function process(text, id = null, hard = false) {
     if (!parado) try {
       const vm = await import('./velocimetro.js');
       const ahora = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      vm.tarea({ ok: !huboError, ms: ahora - t0 });
+      vm.tarea({ ok: !huboError, ms: ahora - t0, cerebro });
     } catch { /* sin velocímetro la app funciona igual */ }
     thinking.remove();
     if (burbujaTurno === thinking) burbujaTurno = null;

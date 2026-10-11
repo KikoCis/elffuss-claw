@@ -7,9 +7,12 @@
 // (`alMedir`/`ultimaMedida` en provider.js) y aquí solo se pintan.
 //
 // Y dos cifras más que NO salen del motor, porque el motor no sabe de tareas:
-// la tasa de resolución y el tiempo por tarea. Las alimenta el agente llamando
-// a `tarea({ ok, ms })` cuando una termina. Sin eso, el panel diría 0 % y
-// parecería un fallo en vez de una ausencia de datos.
+// la tasa de resolución y el tiempo por tarea. Las cronometra la app anfitriona
+// (la cola de mensajes) llamando a `tarea({ ok, ms, cerebro })` cuando una
+// termina. Sin eso, el panel diría 0 % y parecería un fallo en vez de una
+// ausencia de datos. Solo cuentan las del motor que está montado, y cada una
+// lleva su modelo: antes también entraban los turnos del modo Básico (o de
+// cualquier otro cerebro), y el panel los daba por tareas del motor.
 //
 // El historial vive en localStorage y es una comodidad POR NAVEGADOR: puede
 // volver vacío en una ventana privada o si el sitio tiene los datos bloqueados,
@@ -30,8 +33,8 @@ const ES = {
   vmAlert: 'Leer el prompt va casi tan lento como escribir, y eso no debería pasar: leer procesa cientos de posiciones a la vez y escribir solo una. Suele significar que algo está compitiendo por la GPU, o que el modelo no cabe holgado. En un equipo despejado leer va varias veces más rápido.',
   vmReading: 'Leyendo el prompt', vmWriting: 'Escribiendo', vmNeed2: '{what}: hacen falta 2 turnos para dibujar',
   vmMax: 'máx {v} tok/s', vmTurns: '{n} turnos', vmTasks: 'Tareas', vmSolved: 'se resuelven ({ok} de {n})',
-  vmPerTask: 'por tarea, mediana', vmNoTasks: 'Sin tareas registradas todavía.',
-  vmNote: 'Son los números de TU equipo en esta sesión, medidos por el propio motor. Cambian con la máquina, con lo que tengas abierto y con la temperatura, así que no son una cifra del producto.',
+  vmPerTask: 'por tarea, mediana', vmNoTasks: 'Sin tareas registradas todavía con este modelo.',
+  vmNote: 'Son los números de TU equipo, guardados en este navegador (siguen ahí al recargar). Las velocidades las mide el propio motor; las tareas (solo las de este modelo) se cronometran aquí, de principio a fin de cada petición. Cambian con la máquina, con lo que tengas abierto y con la temperatura, así que no son una cifra del producto.',
   vmChipWriting: 'Escribiendo a {g} tok/s · el prompt se leyó a {p} tok/s · primera letra en {t}. Pulsa para ver la gráfica.',
   vmChipReading: 'Leyendo el prompt a {p} tok/s. Pulsa para ver la gráfica.',
 };
@@ -48,7 +51,7 @@ function tx(clave, vars) {
 const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MAX = 60;                  // turnos guardados: suficiente para ver forma
 let hist = [];                   // [{ p: prefillTokS, g: genTokS, t: ttftMs }]
-let tareas = [];                 // [{ ok: bool, ms: number }]
+let tareas = [];                 // [{ ok: bool, ms: number, modelo: string }]
 let chip = null, panel = null, prov = null, cancelar = null;
 
 const leer = () => {
@@ -93,19 +96,27 @@ function grafica(key, color, etiqueta) {
   </div>`;
 }
 
+// Qué modelo es el motor montado (la etiqueta del panel y la de cada tarea).
+const SIN_ETIQUETA = 'motor';
+function etiquetaModelo() {
+  try { return prov?.modeloEtiqueta?.() || prov?.name || ''; } catch { return ''; }
+}
+
 function pintarPanel() {
   if (!panel) return;
   const m = prov?.ultimaMedida?.() || null;
-  const hechas = tareas.length;
-  const bien = tareas.filter(t => t.ok).length;
-  const tasa = hechas ? Math.round((bien / hechas) * 100) : null;
-  const tmed = hechas ? mediana(tareas.map(t => t.ms)) : null;
-
   // El modelo, junto a las cifras. Una velocidad sin saber qué modelo la
   // produjo no se puede diagnosticar: llegó una captura con el prefill mucho
   // mas lento de lo esperable y no habia forma de saber de que modelo era.
-  let modelo = '';
-  try { modelo = prov?.modeloEtiqueta?.() || ''; } catch { /* proveedor sin etiqueta */ }
+  const modelo = etiquetaModelo();
+  // Las tareas, solo las de ESTE modelo: la tasa de resolución es del modelo
+  // tanto como de la máquina. (Las guardadas sin modelo son de antes, cuando
+  // también entraban las de otros cerebros: no se sabe de quién son.)
+  const suyas = tareas.filter(t => t.modelo === (modelo || SIN_ETIQUETA));
+  const hechas = suyas.length;
+  const bien = suyas.filter(t => t.ok).length;
+  const tasa = hechas ? Math.round((bien / hechas) * 100) : null;
+  const tmed = hechas ? mediana(suyas.map(t => t.ms)) : null;
   // El contexto EFECTIVO, no el del registro: si no cabe, el motor baja por una
   // escalera y abre con la mitad. En el modelo grande cada peldaño son gigas de
   // cache KV, asi que dos sesiones del mismo modelo pueden rendir muy distinto
@@ -148,9 +159,12 @@ function pintarChip(m) {
     : tx('vmChipReading', { p: uno(m.prefillTokS) });
 }
 
-/** Una tarea del agente ha terminado. `ok`: ¿se resolvió? `ms`: lo que costó. */
-export function tarea({ ok, ms: dur }) {
-  tareas.push({ ok: !!ok, ms: Number(dur) || 0 });
+/** Una tarea del agente ha terminado. `ok`: ¿se resolvió? `ms`: lo que costó.
+ *  `cerebro`: el proveedor que la hizo. Solo se apunta si es el motor montado
+ *  aquí (el que mide); la de cualquier otro cerebro no es suya. */
+export function tarea({ ok, ms: dur, cerebro = null }) {
+  if (!cerebro || cerebro !== prov || !prov?.alMedir) return;
+  tareas.push({ ok: !!ok, ms: Number(dur) || 0, modelo: etiquetaModelo() || SIN_ETIQUETA });
   if (tareas.length > MAX) tareas = tareas.slice(-MAX);
   guardar();
   if (panel && !panel.hidden) pintarPanel();
@@ -187,8 +201,11 @@ function cablear() {
     abrirPanel(false);
   });
   // …y con Escape, devolviendo el foco al chip.
+  // (Si otra capa ya atendió ese Escape —la Mente, un diálogo—, no se cierra
+  // también este: un Escape, una capa.)
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape' || !panel || panel.hidden) return;
+    if (e.key !== 'Escape' || !panel || panel.hidden || e.defaultPrevented) return;
+    e.preventDefault();
     abrirPanel(false);
     chip?.focus();
   });
