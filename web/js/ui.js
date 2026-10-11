@@ -35,6 +35,19 @@ export function addMsg(cls, text) {
   return div;
 }
 
+// Llevar a un mensaje del chat: en el móvil, al lado del chat; el mensaje a la
+// vista, con el foco (para el teclado y el lector de pantalla) y resaltado un
+// momento para que se vea cuál es.
+export function irAlMensaje(div) {
+  if (!div?.isConnected) return;
+  if (isMobile()) flipTo('chat');
+  div.tabIndex = -1;
+  div.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  div.focus({ preventScroll: true });
+  div.classList.add('resaltado');
+  setTimeout(() => div.classList.remove('resaltado'), 1600);
+}
+
 // Una línea de la conversación que escucha el copiloto (viene del Translator):
 // quién habla y qué dice, con su estilo, no como un mensaje del usuario.
 export function addTranscripcion(quien, texto) {
@@ -1388,7 +1401,9 @@ async function explorarRepo(repo, lista, boton, instaladas) {
           b.textContent = tr('installedOk');
           b.className = 'ghost';
           pintarInstaladas(instaladas);
-          onSkillInstalledCb(entry);           // → mensaje «cómo usarla» en el chat
+          const msg = onSkillInstalledCb(entry);   // → mensaje «cómo usarla» en el chat
+          // …y desde la tarjeta se llega a ese mensaje (antes había que buscarlo).
+          if (msg) c.append(btn(tr('skillSeeChat'), 'ghost', () => irAlMensaje(msg)));
         } catch (e) { b.disabled = false; b.textContent = tr('install'); toast('⚠️ ' + e.message); }
       });
       b.disabled = on;
@@ -1462,8 +1477,9 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   onSettingsChangedCb = onSettingsChanged || (() => {});
   // al instalar una skill: mensaje «cómo usarla» en el chat + volver al chat en móvil
   onSkillInstalledCb = entry => {
-    addMsg('assistant', skills.usageMessage(entry)); // addMsg renderiza markdown en 'assistant'
+    const div = addMsg('assistant', skills.usageMessage(entry)); // addMsg renderiza markdown en 'assistant'
     if (isMobile()) flipTo('chat');
+    return div;
   };
 
   // Historial del prompt: ↑/↓ recuperan lo enviado (como una shell). Persistente.

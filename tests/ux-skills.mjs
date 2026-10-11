@@ -47,13 +47,21 @@ ok('otra vez la cierra (sin duplicar nada)', await tarjeta.locator('.repo-skills
   && await p.locator('#panel-skills .repo-skills .card', { hasText: 'reloj-bonito' }).count() === 1);
 await explorar.click();
 
-const instalar = tarjeta.locator('.repo-skills .card', { hasText: 'reloj-bonito' }).locator('button');
+const tarjetaSkill = tarjeta.locator('.repo-skills .card', { hasText: 'reloj-bonito' });
+const instalar = tarjetaSkill.locator('button', { hasText: 'Instala' });
 await instalar.click();
 ok('«Instalar» deja el botón desactivado en «Instalada ✓»', await hasta(async () =>
   (await instalar.innerText()) === 'Instalada ✓' && await instalar.isDisabled()));
 ok('…el contador sube y la skill aparece en lo instalado', (await contador()) === 'Instaladas: 1'
   && await p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonito"]').count() === 1);
 ok('…y el chat explica cómo usarla', /Skill «reloj-bonito» instalada/.test(await p.locator('#log').innerText()));
+const verEnChat = tarjetaSkill.locator('button', { hasText: 'Ver cómo usarla en el chat' });
+ok('la tarjeta enlaza a ese mensaje del chat', await verEnChat.count() === 1);
+await verEnChat.click();
+ok('…que lo pone a la vista, con el foco y resaltado', await hasta(() => p.evaluate(() => {
+  const a = document.activeElement;
+  return a?.classList.contains('msg') && /Skill «reloj-bonito» instalada/.test(a.textContent) && a.classList.contains('resaltado');
+})));
 const inst = p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonito"]');
 await inst.locator('summary').click();
 ok('se puede ver lo que se le da al modelo', /Crea un reloj grande/.test(await inst.locator('.skill-text').innerText()));
