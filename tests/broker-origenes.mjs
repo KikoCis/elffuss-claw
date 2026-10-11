@@ -57,11 +57,16 @@ const RECHAZA = [
   'https://x.burn-my-computer.utopiaia.com',
 ];
 const veredictos = {};   // página → { origen: acepta? }
+const codigos = {};      // página → el código de allowed() sin comentarios ni espacios
+// Sin comentarios ni espacios: lo que cuenta es el código. (Un // detrás de «:»
+// es una URL y una barra escapada es parte de una regex: eso no se quita.)
+const soloCodigo = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"])\/\/.*$/gm, '$1').replace(/\s+/g, '');
 for (const pagina of ['server/broker/index.html', 'broker/index.html']) {
   const html = readFileSync(join(RAIZ, pagina), 'utf8');
   const ini = html.indexOf('const extra =');
   const fin = html.indexOf('\n}\n', html.indexOf('function allowed(origin)'));
   if (ini < 0 || fin < 0) { ok(`${pagina}: se encuentra allowed()`, false); continue; }
+  codigos[pagina] = soloCodigo(html.slice(ini, fin + 2));
   const allowed = new Function('location', html.slice(ini, fin + 2) + '\nreturn allowed;')(
     { search: '?allow=https://socio.example' });
   const malAceptados = RECHAZA.filter(o => allowed(o));
@@ -70,14 +75,21 @@ for (const pagina of ['server/broker/index.html', 'broker/index.html']) {
   ok(`${pagina}: no acepta git, key, el resto de utopiaia.com ni imitaciones`, !malAceptados.length, malAceptados.join(' '));
   veredictos[pagina] = Object.fromEntries([...ACEPTA, ...RECHAZA].map(o => [o, allowed(o)]));
 }
-// Las dos copias tienen que decir LO MISMO de cada origen. Si alguien toca una y
-// se olvida de la otra, esto falla aunque el origen nuevo no esté en las listas
-// de arriba como aceptado o rechazado a propósito.
+// Las dos copias tienen que decir LO MISMO de cada origen de las listas de
+// arriba. Eso solo mira esos orígenes: una regla nueva en una sola copia, para
+// un origen que no está en ninguna lista, pasaba sin que nadie lo viera (lo
+// demostró un mutante: `https://foo.utopiaia.com` aceptado solo en broker/).
+// Por eso, además, el CÓDIGO de allowed() tiene que ser el mismo en las dos,
+// comentarios y espacios aparte.
 {
   const [a, b] = ['server/broker/index.html', 'broker/index.html'].map(p => veredictos[p] || {});
   const distintos = Object.keys(a).filter(o => a[o] !== b[o]);
-  ok('las dos copias del broker aceptan exactamente los mismos orígenes', Object.keys(a).length > 0 && !distintos.length,
+  ok('las dos copias del broker aceptan exactamente los mismos orígenes de las listas', Object.keys(a).length > 0 && !distintos.length,
     distintos.map(o => `${o} (server/: ${a[o]}, broker/: ${b[o]})`).join(' '));
+  const [ca, cb] = ['server/broker/index.html', 'broker/index.html'].map(p => codigos[p] || '');
+  let i = 0; while (i < ca.length && ca[i] === cb[i]) i++;
+  ok('…y el código de allowed() es el mismo en las dos copias (comentarios aparte)', !!ca && ca === cb,
+    ca === cb ? '' : `difieren desde «${ca.slice(i, i + 50)}» / «${cb.slice(i, i + 50)}»`);
 }
 
 // ── 2. Un `document` de mentira para el SDK del broker ───────────────────────
