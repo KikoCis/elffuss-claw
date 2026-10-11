@@ -24,8 +24,12 @@ let lastSaveAt = null, lastError = null;
 let autosaveCfg = { enabled: false, debounceMs: 3000 };
 let autosaveTimer = null;
 
-export function init({ app, ns, db, stores }) {
+// `nombreOPFS`: cómo se llama, en el idioma de la interfaz, la carpeta del
+// almacenamiento privado del navegador (no tiene nombre propio). Lo da la app.
+let nombreOPFS = 'OPFS';
+export function init({ app, ns, db, stores, opfsName }) {
   cfg = { app, ns, db, stores: stores || [] };
+  if (opfsName) nombreOPFS = opfsName;
 }
 
 export function supported() {
@@ -38,9 +42,13 @@ export function supported() {
 const emit = () => { const s = statusSync(); listeners.forEach(f => { try { f(s); } catch { /* */ } }); };
 export function onChange(fn) { listeners.push(fn); return () => { listeners = listeners.filter(f => f !== fn); }; }
 
+// La raíz del almacenamiento privado del navegador (OPFS) no tiene nombre: ''
+// se leía como «sin carpeta» y la carpeta elegida no se podía usar.
+const nombreDe = h => h ? (h.name || nombreOPFS) : null;
+
 function statusSync() {
   return {
-    supported: supported(), folder: dirHandle ? dirHandle.name : null, ready,
+    supported: supported(), folder: nombreDe(dirHandle), ready,
     dirty: [...dirty], lastSaveAt, lastError, autosave: autosaveCfg.enabled,
   };
 }
@@ -62,7 +70,7 @@ export async function restore() {
   dirHandle = h;
   ready = await perm(h);
   emit();
-  return { name: h.name, ready, reason: ready ? null : 'prompt' };
+  return { name: nombreDe(h), ready, reason: ready ? null : 'prompt' };
 }
 
 // Elegir carpeta (requiere gesto de usuario).
@@ -73,7 +81,7 @@ export async function pick() {
   ready = true;
   await cfg.db.set('kv', HANDLE_KEY, h);
   emit();
-  return { name: h.name, ready: true };
+  return { name: nombreDe(h), ready: true };
 }
 
 // Reutilizar un handle que la app ya tiene (Code: la carpeta del proyecto).
@@ -83,7 +91,7 @@ export async function adopt(handle) {
   ready = await perm(handle);
   await cfg.db.set('kv', HANDLE_KEY, handle);
   emit();
-  return { name: handle.name, ready };
+  return { name: nombreDe(handle), ready };
 }
 
 // Re-conceder permiso tras recargar (requiere gesto de usuario).
@@ -95,7 +103,7 @@ export async function regrant() {
   ready = ok;
   emit();
   if (!ok) throw new Error('permiso denegado');
-  return { name: dirHandle.name, ready: true };
+  return { name: nombreDe(dirHandle), ready: true };
 }
 
 export async function forget() {

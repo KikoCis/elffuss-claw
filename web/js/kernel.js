@@ -1243,7 +1243,7 @@ watch.startWatcher((msg, w) => {
 // ── Espacio de trabajo: qué se puede guardar en tu disco / ver / borrar ──
 // El manifiesto es lo ÚNICO que Claw le cuenta al core sobre sus almacenes.
 workspace.init({
-  app: 'claw', ns: 'elffuss', db,
+  app: 'claw', ns: 'elffuss', db, opfsName: t('wsOpfsName'),
   stores: [
     // Las etiquetas son getters: se leen al pintar «Qué hay guardado», en el idioma
     // de la página (antes salían en español también en inglés).
