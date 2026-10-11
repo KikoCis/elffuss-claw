@@ -92,6 +92,38 @@ ok('#/skills/reloj-bonito abre Skills, la señala y abre su texto', await hasta(
   return document.getElementById('panel-skills').classList.contains('active') && c?.classList.contains('resaltado') && c.querySelector('details')?.open;
 })));
 
+// ── a lo ancho: nada se sale del panel ──────────────────────────────────────
+// Hasta 1280 px, «Explorar» y «Quitar» quedaban fuera del panel, que se
+// desplazaba de lado sin que nada lo indicara: el nombre de cada fila no podía
+// encoger (una regla para el título de la tarjeta caía también en él).
+await p.evaluate(async () => {
+  const s = await import('/js/skills.js');
+  await s.install({ name: 'threejs-escena-con-nombre-largo', description: 'Escenas.', content: 'Usa three.js.',
+    repo: 'scottstts/Threejs-Awesome-Graphics-Agent-Skills', path: 'skills/threejs-escena-con-nombre-largo/SKILL.md' });
+});
+await p.click('#tabs button[data-tab="apps"]');
+await p.click('#tabs button[data-tab="skills"]');
+await tarjeta.locator('button', { hasText: 'Explorar' }).click();
+await hasta(async () => /reloj-bonito/.test(await tarjeta.locator('.repo-skills').innerText()));
+for (const ancho of [1280, 1024, 768, 390]) {
+  await p.setViewportSize({ width: ancho, height: 900 });
+  if (ancho <= 700 && !(await p.evaluate(() => document.body.classList.contains('show-viz')))) await p.click('#btn-flip');
+  await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const r = await p.evaluate(() => {
+    const panel = document.getElementById('panel-skills');
+    const pr = panel.getBoundingClientRect();
+    const fuera = [...panel.querySelectorAll('.card button')].filter(b => b.getClientRects().length).filter(b => {
+      const q = b.getBoundingClientRect();
+      return q.left < pr.left - 1 || q.right > Math.min(pr.right, innerWidth) + 1;
+    }).map(b => b.getAttribute('aria-label') || b.textContent);
+    return { scrollW: panel.scrollWidth, clientW: panel.clientWidth, fuera,
+      botones: panel.querySelectorAll('.card button').length };
+  });
+  ok(`a ${ancho} px el panel no se desplaza de lado y todos los botones (Explorar, Quitar, Instalar…) están dentro`,
+    r.scrollW <= r.clientW + 1 && !r.fuera.length && r.botones >= 10, JSON.stringify(r));
+}
+await p.setViewportSize({ width: 1400, height: 900 });
+
 ok('nada salió a GitHub de verdad', !fuera.some(u => /github/.test(u)), fuera.filter(u => /github/.test(u)).join(' | '));
 ok('sin errores de página', errores.length === 0, errores.slice(0, 3).join(' | '));
 await fin(b, 'SKILLS: explorar dentro de su tarjeta, instalar/quitar al momento, repos que aparecen y se quitan');

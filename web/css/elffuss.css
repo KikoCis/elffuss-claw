@@ -322,10 +322,19 @@ main {
 .card b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .card code { background: var(--bg); padding: 2px 8px; border-radius: 6px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
 .card.col { flex-direction: column; align-items: stretch; gap: 8px; }
-.card.col b { flex: none; }
+/* Solo el título de la tarjeta (hijo directo). Con `.card.col b` también caía
+   en el nombre de la fila de cada skill y de cada repo, que ya no podía encoger
+   ni partirse: hasta 1280 px, «Explorar» y «Quitar» quedaban fuera del panel. */
+.card.col > b { flex: none; }
 /* Skills: enlaces a repos y SKILL.md, la lista de un repo dentro de su tarjeta y
-   el texto que se le da al modelo */
-.repo-link { color: var(--accent2); font-size: .74rem; text-decoration: none; white-space: nowrap; }
+   el texto que se le da al modelo. La fila de cada tarjeta (nombre, repo,
+   enlace, botones) baja a otra línea lo que no cabe: el nombre va primero, entero
+   si cabe, y los nombres largos se parten en vez de empujar los botones fuera. */
+.repo-link { color: var(--accent2); font-size: .74rem; text-decoration: none; overflow-wrap: anywhere; min-width: 0; }
+.skills-instaladas .row.between, .skills-fuentes .row.between, .repo-skills .card { flex-wrap: wrap; gap: 6px 10px; }
+.skills-instaladas .row.between > :not(button), .skills-fuentes .row.between > :not(button), .repo-skills .card > :not(button) { min-width: 0; overflow-wrap: anywhere; }
+.skills-instaladas .row.between > button, .skills-fuentes .row.between > button, .repo-skills .card > button { flex: none; }
+.skills-instaladas .row.between > b, .skills-fuentes .row.between > b, .repo-skills .card > b { flex: 1 1 auto; }
 .prov-name { font-weight: 700; flex: 1; cursor: pointer; }
 .panel .card a { color: var(--accent2); }
 .repo-link:hover { text-decoration: underline; }
