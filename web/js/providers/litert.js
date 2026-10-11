@@ -38,6 +38,9 @@ export function configure(key) {
 export function enrutaHerramientas() { return false; }
 
 let engine = null, conversation = null, sentCount = 0, sys = '';
+// El build que hay en `engine` (configure() solo cambia el que se pedirá), y la
+// conversación que está generando ahora mismo, si alguna (ver soltarMotor).
+let engineKey = null, generando = null;
 // Lo que la conversación de LiteRT ya lleva dentro, en mensajes del historial de
 // quien llama: rol y texto de cada uno (ver huellaDe). null = no hay conversación
 // de la que fiarse. `respondio`: el modelo ya contestó detrás de eso.
@@ -74,6 +77,13 @@ const CTX_LADDER = [32768, 16384, 8192, 4096];
 export let ctxTokens = 4096; // efectivo tras load() (la UI puede leerlo)
 
 export async function load(onProgress = () => {}) {
+  // Ese mismo build ya está cargado: no se crea otro motor. Volver al cerebro
+  // que funcionaba tras un cambio fallido (kernel.js) pasa por aquí, y cada
+  // llamada creaba un motor nuevo encima del anterior, sin cerrarlo: el modelo
+  // dos veces en la GPU, el chat siguiendo en la conversación del primero, y
+  // «Liberar el modelo» soltando solo el segundo.
+  if (engine && engineKey === curKey) return;
+  const clave = curKey, url = MODEL_URL;   // configure() puede cambiarlos mientras se espera
   if (!navigator.gpu) throw new Error('LiteRT-LM necesita WebGPU (Chrome/Edge modernos)');
   // navigator.gpu puede existir como API sin adaptador real (algunos Linux/
   // drivers, entornos sandboxed…) — comprobarlo YA evita bajar 2-4 GB para
@@ -92,12 +102,18 @@ export async function load(onProgress = () => {}) {
   // Motivo: el fetch interno de LiteRT baja el peso con XHR+Range desde un WORKER
   // que el service worker no intercepta → antes se re-descargaba SIEMPRE. Bajándolo
   // aquí queda cacheado de verdad y damos progreso real en MB.
-  const model = await cachedModelBlob(MODEL_URL, onProgress);
+  const model = await cachedModelBlob(url, onProgress);
   onProgress('Preparando el modelo IA en la GPU…');
+  // Otro build cargado (E4B → E2B): fuera ANTES de crear el nuevo, que los dos
+  // no caben en la GPU. Después de la descarga y no antes: si la descarga falla,
+  // el que funcionaba sigue cargado y kernel.js vuelve a él sin recrearlo. Si lo
+  // que falla es crear el nuevo, kernel.js vuelve al anterior y lo recrea.
+  await soltarMotor();
   let lastErr = null;
   for (const n of CTX_LADDER) {
     try {
       engine = await litertlm.Engine.create({ model, mainExecutorSettings: { maxNumTokens: n } });
+      engineKey = clave;
       ctxTokens = n;
       lastErr = null;
       break;
@@ -191,10 +207,22 @@ function fmtBytes(loaded, total, t0) {
     : `Descargando el modelo IA… ${mb(loaded)} MB (${spd} MB/s)`;
 }
 
-// Liberar el modelo (vigilante de RAM).
-export async function unload() {
-  try { engine?.close?.(); } catch { /* mejor esfuerzo */ }
-  engine = null; conversation = null; sentCount = 0; dentro = null; respondio = false; trasParada = null;
+// Liberar el modelo («Liberar el modelo» en Ajustes y el vigilante de RAM).
+export async function unload() { await soltarMotor(); }
+
+// Suelta el motor cargado y su conversación. @litert-lm/core 0.15.0 libera el
+// motor con delete(): no tiene close(), y el `engine?.close?.()` de antes no
+// soltaba nada, así que «Liberar el modelo» y el vigilante de RAM dejaban el
+// modelo en la GPU. delete() espera al mutex del ejecutor: lo que esté
+// generando se corta primero para no esperar a que termine (chatEnTurno lo ve,
+// ver motorDelTurno). close() queda para un motor que solo tenga ese.
+async function soltarMotor() {
+  const m = engine, c = conversation, g = generando;
+  engine = null; engineKey = null; generando = null;
+  conversation = null; sentCount = 0; sys = ''; dentro = null; respondio = false; trasParada = null;
+  if (g) { try { g.cancel?.(); } catch { /* ya terminó */ } }
+  if (c) { try { await c.delete?.(); } catch { /* ya no estaba */ } }
+  if (m) { try { await (typeof m.delete === 'function' ? m.delete() : m.close?.()); } catch { /* mejor esfuerzo */ } }
 }
 
 // UNA llamada a la vez. Todo lo que habla con el modelo comparte este proveedor
@@ -233,6 +261,9 @@ export async function chat(history, system, onToken = () => {}, opciones = null)
 
 async function chatEnTurno(history, system, onToken, signal) {
   if (!engine) throw new Error('Modelo no cargado');   // descargado mientras esperaba turno
+  // El motor de este turno: si se suelta a mitad (otro build, o «Liberar el
+  // modelo»), el turno no sigue en el motor nuevo ni en ninguno (ver el catch).
+  const motorDelTurno = engine;
   // Comparar solo la parte estática del prompt: el CONTEXTO AHORA va al final
   // y cambia cada turno — recrear la conversación tiraría el KV-cache.
   const sysKey = system.slice(0, 200);
@@ -308,8 +339,10 @@ async function chatEnTurno(history, system, onToken, signal) {
     const corta = () => { try { conversation?.cancel?.(); } catch { /* ya terminó */ } };
     signal?.addEventListener?.('abort', corta, { once: true });
     enviado = true;
+    const esta = conversation;
+    generando = esta;
     try {
-      for await (const chunk of conversation.sendMessageStreaming(t)) {
+      for await (const chunk of esta.sendMessageStreaming(t)) {
         if (signal?.aborted) break;   // parar: se devuelve lo generado hasta aquí
         for (const item of (chunk.content || [])) {
           if (signal?.aborted) break;   // un trozo puede traer varios textos: ni uno más tras parar
@@ -317,6 +350,7 @@ async function chatEnTurno(history, system, onToken, signal) {
         }
       }
     } finally {
+      if (generando === esta) generando = null;
       signal?.removeEventListener?.('abort', corta);
     }
   };
@@ -326,6 +360,9 @@ async function chatEnTurno(history, system, onToken, signal) {
     // Parado: lo mismo que si el flujo terminara al parar (cancel() puede
     // acabarlo con un error), se devuelve lo generado y la conversación se tira.
     if (signal?.aborted) { soltarTrasParada(history); return out.trim(); }
+    // El motor se soltó a mitad (soltarMotor lo cortó): ni reintento ni nada
+    // que tocar, que la conversación ya no existe.
+    if (engine !== motorDelTurno) throw new Error('Modelo no cargado');
     // Si falla ANTES de escribir nada, lo normal es que no cupiera (la cuenta de
     // caracteres por token se quedó corta): se rehace compactada, se recorta a la
     // mitad de lo libre y se intenta UNA vez más. Si ya había escrito algo,
@@ -340,6 +377,9 @@ async function chatEnTurno(history, system, onToken, signal) {
     enviado = false;   // la conversación rehecha aún no ha recibido nada
     await enviar(text);
   }
+  // El motor se soltó mientras generaba y el flujo terminó sin error: lo
+  // generado se devuelve, pero no se apunta en un estado que ya es de otro.
+  if (engine !== motorDelTurno) return out.trim();
   // Parado a media respuesta: se devuelve lo generado, pero la conversación de
   // LiteRT se TIRA. Ya lleva dentro ese trozo de respuesta, y el agente no lo
   // guarda en su historial (un turno parado no deja respuesta): seguir con ella
@@ -537,4 +577,5 @@ export function __usarMotor(motor, contexto) {
   if (!globalThis.__ELFFUSS_PRUEBAS__) throw new Error('__usarMotor es solo para pruebas');
   engine = motor; ctxTokens = contexto; conversation = null; sentCount = 0; sys = ''; charsPorToken = 2;
   dentro = null; respondio = false; trasParada = null; turno = Promise.resolve();
+  engineKey = null; generando = null;
 }
