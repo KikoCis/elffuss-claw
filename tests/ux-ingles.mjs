@@ -5,7 +5,9 @@
 //   · el error de la bóveda al guardar sin nombre;
 //   · el velocímetro (chip, panel y su nombre accesible), con un motor de prueba;
 //   · lo que devuelven las herramientas (y se ve en el chat), lo que cuenta el
-//     cerebro (ceo.js) y los textos de skills.js.
+//     cerebro (ceo.js) y los textos de skills.js;
+//   · el tablero del copiloto (lo que enseña; la skill y su contrato con el
+//     modelo no cambian).
 // Antes todo eso salía en español con la página en inglés.
 //
 //   BASE=http://localhost:8743 node tests/ux-ingles.mjs
@@ -103,5 +105,32 @@ ok('what the brain says (on watch, paused) is in English', cerebro.includes('CEO
   JSON.stringify(cerebro));
 
 ok('no page errors', errores.length === 0, errores.slice(0, 3).join(' | '));
+
+// ── tablero del copiloto, con un Translator de mentira (en inglés) ──────────
+{
+  const TRANSLATOR = 'https://translator.elffuss.com';
+  const STUB = '<!doctype html><html><body>stub<script>window.__msgs=[];addEventListener("message",e=>window.__msgs.push({origin:e.origin,data:e.data}));</script></body></html>';
+  const { ctx: c2 } = await contexto(b, { locale: 'en-US', grants: ['apps'],
+    rutas: async (url, route) => { if (!url.startsWith(TRANSLATOR + '/')) return false; await route.fulfill({ status: 200, contentType: 'text/html', body: STUB }); return true; } });
+  const stub = await c2.newPage();
+  await stub.goto(TRANSLATOR + '/copilot-test.html');
+  const { BASE } = await import('./ux-comun.mjs');
+  const [claw] = await Promise.all([c2.waitForEvent('page'), stub.evaluate(u => { window.__claw = window.open(u, 'claw'); }, BASE + '/?copilot=1&skill=ficha')]);
+  await claw.waitForFunction(() => !!window.elffuss?.agent, null, { timeout: 15000 });
+  await hasta(() => stub.evaluate(() => window.__msgs.some(m => m.data?.kind === 'copilot-ready')));
+  await stub.evaluate(o => window.__claw.postMessage({ kind: 'copilot-init', skill: 'ficha', sellerLangName: 'English' }, o), new URL(BASE).origin);
+  const tablero = () => claw.frames().find(f => f !== claw.mainFrame() && f.url() === 'about:srcdoc');
+  ok('the copilot board is in English (title, labels, live box, export)', await hasta(async () => {
+    const f = tablero(); if (!f) return false;
+    // textContent y no innerText: la hoja del tablero pasa a MAYÚSCULAS algunas
+    // etiquetas, e innerText devuelve el texto ya transformado.
+    const t = await f.evaluate(() => ['h1', '.sub', '#slots', '.advice', '#exp'].map(s => document.querySelector(s)?.textContent || '').join(' | ')).catch(() => '');
+    return /Client record/.test(t) && /Captured data/.test(t) && /Company/.test(t) && /Waiting for the conversation to start/.test(t)
+      && /Export to Excel/.test(t) && !/Ficha de cliente|Datos capturados|Empresa|Esperando/.test(t);
+  }), await tablero()?.evaluate(() => document.body.textContent.slice(0, 300)).catch(() => '?'));
+  const proyectado = await stub.evaluate(() => window.__msgs.find(m => m.data?.kind === 'surface')?.data?.title || '');
+  ok('…and so is the board projected to the Translator', /Client record/.test(proyectado), proyectado);
+  await c2.close();
+}
 
 await fin(b, 'INGLÉS: lo rehecho en la auditoría habla inglés con la página en inglés');

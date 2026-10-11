@@ -5,7 +5,7 @@ import * as rules from './providers/rules.js';
 import * as db from './db.js';
 import * as settings from './settings.js';
 import * as skills from './skills.js';
-import { applyI18n, t } from './i18n.js';
+import { applyI18n, t, uiLang } from './i18n.js';
 import { ensureModelCache } from './model-cache.js';
 import { tasks, watch, fs, apps } from './tools/index.js';
 import { hardWork, gatherFolder, deepCreate } from './rlm.js';
@@ -850,7 +850,7 @@ async function changeModel(id, { volviendo = false } = {}) {
     const where = isLocal(id) ? (realGPU ? t('whereGpu') : t('whereCpu')) : t('whereExt');
     ui.modelStatus(isLocal(id) && realGPU ? 'gpu' : 'on');
     ui.toast(t('modelReady', { where }));
-    if (window.__copilotOpener) copilotPostState('Listo. Habla con el cliente y te voy soplando.');
+    if (window.__copilotOpener) copilotPostState(t('copilotReady'));
     return true;
   } catch (e) {
     ui.modelProgress(null);
@@ -1395,10 +1395,30 @@ Si no hay nada útil que aportar ahora, usa "CONSEJO: —". Nunca borres un dato
 AUTO-EDICIÓN: puedes cambiarte a ti misma. Si el usuario te pide por el chat de Claw algo como "añade un campo email", "quita el presupuesto" o "sé más breve", edita ESTA misma skill con skill.edit y sigue la nueva versión desde ya.`;
 }
 
+// Lo que el tablero ENSEÑA, en el idioma de la página: nombre, descripción y
+// etiquetas de las ranuras (cpName_<id>, cpDesc_<id>, cpSlot_<id>_<clave>). La
+// skill en sí —su id, su nombre como skill instalada, las claves y el contrato
+// con el modelo— no cambia de idioma: es un identificador y un formato.
+const tOr = (clave, porDefecto, vars) => { const s = t(clave, vars); return s === clave ? porDefecto : s; };
+function vistaDe(sk) {
+  return {
+    ...sk,
+    name: tOr('cpName_' + sk.id, sk.name), desc: tOr('cpDesc_' + sk.id, sk.desc),
+    slots: sk.slots.map(s => ({ ...s, label: tOr('cpSlot_' + sk.id + '_' + s.key, s.label) })),
+  };
+}
+// ¿El visor enseña el tablero de esta skill? Por su id (marcado en el <body>), no
+// por su nombre, que ahora sale en el idioma de la página.
+const esTablero = (f, sk) => !!f && !f.hidden && (f.srcdoc || '').includes(`data-skill="${sk.id}"`);
+
 // Superficie genérica: pinta las ranuras de la skill (objetivos o campos),
-// el consejo en vivo y, si procede, el botón de exportar a Excel.
-function surfaceHtml(sk) {
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8">
+// el consejo en vivo y, si procede, el botón de exportar a Excel. Los textos del
+// tablero van en el idioma de la página (antes, en español siempre).
+function surfaceHtml(skill) {
+  const sk = vistaDe(skill);
+  const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const CSV = JSON.stringify([t('cpCsvField'), t('cpCsvValue')]);
+  return `<!doctype html><html lang="${esc(uiLang())}"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
 <style>
 :root{--bg:#0b0c14;--card:#12141f;--line:#232838;--brass:#c8a06a;--brass2:#e6c294;--indigo:#6e63c5;--fg:#eae8f2;--dim:#8b91a3;--ok:#54dcc6}
@@ -1424,15 +1444,15 @@ h1{font-family:"Iowan Old Style",Georgia,serif;font-size:1.12rem;margin:0 0 3px;
 @keyframes advin{0%{opacity:.4;transform:translateY(-3px)}100%{opacity:1;transform:none}}
 button{margin-top:10px;width:100%;background:transparent;color:var(--brass);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit;font-size:.78rem;cursor:pointer}
 button:hover{border-color:var(--brass)}
-</style></head><body>
-<h1>${sk.icon} ${sk.name}</h1>
-<div class="sub">${sk.kind === 'goals' ? 'Objetivos' : 'Datos capturados'} <b id="count"></b></div>
+</style></head><body data-skill="${esc(sk.id)}">
+<h1>${sk.icon} ${esc(sk.name)}</h1>
+<div class="sub">${esc(t(sk.kind === 'goals' ? 'cpGoals' : 'cpData'))} <b id="count"></b></div>
 <div class="bar"><i id="fill"></i></div>
 <div id="slots"></div>
-<div class="advice" id="advice"><span class="k">En vivo</span><span id="atext">Esperando a que empiece la conversación…</span></div>
-${sk.exportable ? '<button id="exp">⬇ Exportar a Excel (CSV)</button>' : ''}
+<div class="advice" id="advice"><span class="k">${esc(t('cpLive'))}</span><span id="atext">${esc(t('cpWaiting'))}</span></div>
+${sk.exportable ? `<button id="exp">${esc(t('cpExport'))}</button>` : ''}
 <script>
-const KIND=${JSON.stringify(sk.kind)}, SLOTS=${JSON.stringify(sk.slots)}, NAME=${JSON.stringify(sk.name)};
+const KIND=${JSON.stringify(sk.kind)}, SLOTS=${JSON.stringify(sk.slots)}, NAME=${JSON.stringify(sk.name)}, CSV_HEAD=${CSV};
 let data={};
 function render(justKey){
   const box=document.getElementById('slots'); box.innerHTML=''; let filled=0;
@@ -1461,7 +1481,7 @@ addEventListener('message',e=>{
 });
 const exp=document.getElementById('exp');
 if(exp) exp.onclick=()=>{
-  const rows=[['Campo','Valor']].concat(SLOTS.map(s=>[s.label,(data[s.key]==null?'':String(data[s.key]))]));
+  const rows=[CSV_HEAD].concat(SLOTS.map(s=>[s.label,(data[s.key]==null?'':String(data[s.key]))]));
   const csv='\\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\\r\\n');
   const a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
@@ -1476,17 +1496,14 @@ let copilotData = {};
 
 function copilotInitState() { copilotData = {}; copilotTranscript = []; }
 function renderCopilotBoard() {
-  try { ui.renderApp(copilotSkill.icon + ' ' + copilotSkill.name, surfaceHtml(copilotSkill)); } catch { /* */ }
+  try { ui.renderApp(copilotSkill.icon + ' ' + vistaDe(copilotSkill).name, surfaceHtml(copilotSkill)); } catch { /* */ }
 }
 // Una app que el USUARIO acaba de abrir (Apps › Abrir, o su dirección) manda
 // sobre el tablero un rato: antes el vigilante la tapaba con el tablero a los
 // pocos segundos, y «Abrir» parecía no hacer nada.
 const COPILOTO_RESPETA_MS = 60000;
 const vistaLibreParaTablero = () => Date.now() - ui.aperturaManual() > COPILOTO_RESPETA_MS;
-const tableroALaVista = () => {
-  const f = document.getElementById('appframe');
-  return !!f && !f.hidden && (f.srcdoc || '').includes(copilotSkill.name);
-};
+const tableroALaVista = () => esTablero(document.getElementById('appframe'), copilotSkill);
 function copilotPostState(advice) {
   // El visor de Claw es uno solo: si otra cosa (una app del agente, el cerebro
   // autónomo…) lo ocupa, la superficie desaparecía. Se re-monta sola.
@@ -1674,14 +1691,14 @@ Si no hay nada útil que decir: CONSEJO: —`;
       copilotInitState();
       renderCopilotBoard();
       // Proyectar la superficie a la app que nos abrió → pantalla partida real.
-      try { window.opener?.postMessage({ kind: 'surface', v: 1, id: sk.id, title: sk.icon + ' ' + sk.name, html: surfaceHtml(sk) }, e.origin); } catch { /* */ }
+      try { window.opener?.postMessage({ kind: 'surface', v: 1, id: sk.id, title: sk.icon + ' ' + vistaDe(sk).name, html: surfaceHtml(sk) }, e.origin); } catch { /* */ }
       clearInterval(window.__copilotBoardWatch);
       window.__copilotBoardWatch = setInterval(() => {
         const f = document.getElementById('appframe');
         if (document.hidden) return;
-        if ((!f || f.hidden || !(f.srcdoc || '').includes(sk.name)) && vistaLibreParaTablero()) { renderCopilotBoard(); copilotPostState(''); }
+        if (!esTablero(f, sk) && vistaLibreParaTablero()) { renderCopilotBoard(); copilotPostState(''); }
       }, 5000);
-      setTimeout(() => { if (activeModel === 'rules') copilotPostState('Cargando el cerebro… empiezo en cuanto esté listo.'); }, 800);
+      setTimeout(() => { if (activeModel === 'rules') copilotPostState(t('copilotLoading')); }, 800);
       copilotHist = [];
     } else if (m.kind === 'transcript' && m.text) {
       const line = '[' + (m.speaker || 'interlocutor') + '] ' + String(m.text).slice(0, 400);
