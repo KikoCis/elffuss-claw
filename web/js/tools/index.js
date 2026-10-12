@@ -41,6 +41,36 @@ export const TOOLS = {
   'memory.forget': { desc: 'Olvidar un hecho por id', params: { id: 'id del hecho' }, run: a => memory.forget(a) },
 };
 
+// Cómo llega el valor de un <param> cuando el modelo usa etiquetas.
+// ─────────────────────────────────────────────────────────────────────────────
+// Por defecto se RECORTA: el modelo escribe el valor en su propia línea y ese
+// espacio es formato suyo. Tres excepciones, y las tres venían mal desde
+// b7d7db0, cuando el parser recortaba Y pasaba por `JSON.parse` todo valor:
+//
+//   · EXACTO: el valor ES el contenido. Recortarlo deja un fichero sin su
+//     sangría inicial ni su salto final, y a un HTML de `app.create` le quita la
+//     primera indentación. El caso que más duele es `vault.set.secret`: un
+//     secreto recortado —o parseado, si parece JSON— se corrompe de una forma
+//     que el usuario no puede depurar.
+//   · NÚMERO: `inMinutes` se usa como número, no como la cadena "30".
+//   · BOOLEANO: `append` venía funcionando por ACCIDENTE, porque `JSON.parse`
+//     convertía "true"/"false". Sin ese parseo, la cadena "false" sería
+//     verdadera y `skill.edit` añadiría en vez de reemplazar. Se convierte
+//     explícitamente.
+//
+// Nada se pasa por `JSON.parse`: un contenido que parezca JSON es texto, y un
+// valor entrecomillado conserva sus comillas.
+// `tests/funciontags.mjs` comprueba que cada nombre de aquí existe de verdad.
+export const PARAM_EXACTO = {
+  'fs.write': ['content'],
+  'app.create': ['html'],
+  'skill.create': ['instructions'],
+  'skill.edit': ['instructions'],
+  'vault.set': ['secret'],
+};
+export const PARAM_NUMERO = { 'tasks.add': ['inMinutes'] };
+export const PARAM_BOOLEANO = { 'skill.edit': ['append'] };
+
 export function toolHelp() {
   return Object.entries(TOOLS).map(([n, t]) =>
     `- ${n}(${Object.keys(t.params).join(', ')}): ${t.desc}`).join('\n');

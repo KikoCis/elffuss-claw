@@ -1,5 +1,5 @@
 // Bucle agéntico mínimo: modelo → ¿tool call? → ejecutar → resultado → modelo.
-import { runTool, toolHelp, snapshot } from './tools/index.js';
+import { runTool, toolHelp, snapshot, PARAM_EXACTO, PARAM_NUMERO, PARAM_BOOLEANO } from './tools/index.js';
 import { skillsPromptBlock, installed } from './skills.js';
 import { crearRouter, bloqueEjemplos } from './tool-router.js';
 import { t } from './i18n.js';
@@ -265,13 +265,31 @@ export function parseFunctionTags(text) {
   let m;
   while ((m = re.exec(text))) {
     const args = {};
-    const pre = /<param\s+name=["']([\w.\-]+)["']\s*>([\s\S]*?)<\/param\s*>/g;
+    // Dos cuerpos posibles, y el de CDATA va PRIMERO a propósito: dentro de
+    // `<![CDATA[…]]>` el contenido puede llevar `</param>`, que es lo que rompe
+    // el patrón no voraz. El `\s*` va DENTRO de esa alternativa, no antes:
+    // puesto fuera se come la sangría de la primera línea del cuerpo normal, que
+    // es la mitad del bug que esto arregla.
+    const pre = /<param\s+name=["']([\w.\-]+)["']\s*>(?:\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/param\s*>|([\s\S]*?)<\/param\s*>)/g;
     let p;
     while ((p = pre.exec(m[2]))) {
-      const bruto = p[2].trim();
-      let v = bruto;
-      try { v = JSON.parse(bruto); } catch { /* texto tal cual: lo normal en una ruta */ }
-      args[p[1]] = v;
+      const nombre = p[1];
+      const crudo = p[2] !== undefined ? p[2] : (p[3] || '');
+      if ((PARAM_EXACTO[m[1]] || []).includes(nombre)) {
+        args[nombre] = crudo;              // tal cual, byte a byte
+      } else {
+        const v = crudo.trim();
+        if ((PARAM_NUMERO[m[1]] || []).includes(nombre)) {
+          const n = Number(v);
+          // Si no es número, se deja el texto: que el error salga donde se usa,
+          // con el valor que mandó el modelo, y no un NaN callado.
+          args[nombre] = (v !== '' && Number.isFinite(n)) ? n : v;
+        } else if ((PARAM_BOOLEANO[m[1]] || []).includes(nombre)) {
+          args[nombre] = /^(true|1|s[ií]|yes)$/i.test(v);
+        } else {
+          args[nombre] = v;
+        }
+      }
     }
     out.push({ tool: m[1], args });
   }
