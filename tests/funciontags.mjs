@@ -88,5 +88,48 @@ for (const [mapa, nombre] of [[PARAM_EXACTO, 'PARAM_EXACTO'], [PARAM_NUMERO, 'PA
 }
 ok('9 · cada excepción del contrato apunta a un parámetro real', huerfanos.length === 0, huerfanos.join(' · '));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Lo que encontró el fuzz de T2T el 2026-10-12.
+
+// ── 10. `</function>` dentro de CDATA no cierra la llamada. Sin esto el cuerpo
+// llegaba cortado, el <param> del contenido no casaba y `fs.write` escribía un
+// fichero VACÍO, porque content vale '' por defecto.
+c = uno('<function name="fs.write"><param name="path">q.mjs</param><param name="content">'
+  + '<![CDATA[const c = \'<function name="x"></function>\'\n]]></param></function>');
+ok('10 · un </function> dentro de CDATA no corta la llamada',
+   c.args.content === 'const c = \'<function name="x"></function>\'\n', ver(c.args.content));
+
+// ── 11. Un nombre de herramienta que pisa Object.prototype no tumba el turno.
+for (const n of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+  let bien = true, det = '';
+  try { parseFunctionTags(`<function name="${n}"><param name="x">1</param></function>`); }
+  catch (e) { bien = false; det = e.message; }
+  ok(`11 · «${n}» como nombre de herramienta no lanza`, bien, det);
+}
+
+// ── 12. Un escalar entrecomillado no se lleva las comillas puestas.
+c = uno('<function name="fs.read"><param name="path">"notas/a.txt"</param></function>');
+ok('12 · un path entrecomillado no crea una carpeta «"notas»', c.args.path === 'notas/a.txt', ver(c.args.path));
+c = uno('<function name="tasks.add"><param name="inMinutes">"30"</param><param name="prompt">x</param></function>');
+ok('12b · un numérico entrecomillado sigue siendo número', c.args.inMinutes === 30, ver(c.args.inMinutes));
+
+// ── 13. El valor exacto abierto en su propia línea no mete una línea en blanco.
+c = uno('<function name="fs.write"><param name="path">a.js</param><param name="content">\nconst a = 1\n</param></function>');
+ok('13 · un content abierto en su línea no empieza el fichero en blanco',
+   c.args.content === 'const a = 1\n', ver(c.args.content));
+c = uno('<function name="fs.write"><param name="path">a.js</param><param name="content"><![CDATA[\nx\n]]></param></function>');
+ok('13b · con CDATA el salto inicial se respeta', c.args.content === '\nx\n', ver(c.args.content));
+
+// ── 14. Y una llamada CITADA dentro de un valor no se ejecuta. En Claw esto ya
+// se cumplía —`parseToolCall` devuelve la PRIMERA etiqueta y no llega a la
+// pasada de JSON—, pero queda fijado para que un futuro «ejecuta todas» no lo
+// rompa en silencio, que es como se rompió en Code.
+const { parseToolCall } = await import('../web/js/agent.js');
+const DOC = '<function name="fs.write"><param name="path">R.md</param><param name="content">ej:\n'
+  + '{"tool":"vault.get","args":{"name":"api"}}\n</param></function>';
+const sola = parseToolCall(DOC);
+ok('14 · una llamada citada dentro de un <param> NO se ejecuta',
+   sola && sola.tool === 'fs.write', sola ? sola.tool : 'nada');
+
 console.log(fallos ? `\n❌ ${fallos} FALLO(S)` : '\n✅ las etiquetas <function> no estropean lo que escribe el modelo');
 process.exit(fallos ? 1 : 0);

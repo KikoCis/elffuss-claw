@@ -259,42 +259,68 @@ export function parseNativeCall(text) {
 // `param` se intenta leer como JSON —para que un 3 sea el número 3 y no "3"—
 // y si no es JSON válido se queda como texto, que es lo que hay que hacer con
 // una ruta.
+// Lectura segura de las excepciones del contrato.
+// `PARAM_EXACTO['constructor']` no es undefined: es `Object.prototype.constructor`,
+// o sea una función, así que `(mapa[x] || []).includes(...)` LANZA. Y el nombre de
+// la herramienta sale del texto del modelo, que puede decir `constructor`,
+// `toString` o `__proto__`.
+const esDe = (mapa, herramienta, param) =>
+  Object.hasOwn(mapa, herramienta) && Array.isArray(mapa[herramienta]) &&
+  mapa[herramienta].includes(param);
+
+// El cuerpo se saca con un grupo atómico emulado —el `(?=(…))\3`— para que un
+// `</function>` DENTRO de un CDATA no cierre la llamada. Sin eso el cuerpo
+// llegaba cortado, el <param> del contenido no casaba, y `fs.write` escribía un
+// fichero VACÍO (content vale '' por defecto). Una llamada sin cerrar no casa
+// nada, que es lo que se quiere: mejor no ejecutar que ejecutar a medias.
+const RE_FUNCION = /<function\s+name=["']([\w.\-]+)["']\s*>((?:(?=(<!\[CDATA\[[\s\S]*?\]\]>(?=\s*<\/param\s*>)))\3|[\s\S])*?)<\/function\s*>/g;
+
 export function parseFunctionTags(text) {
   const out = [];
-  const re = /<function\s+name=["']([\w.\-]+)["']\s*>([\s\S]*?)<\/function\s*>/g;
+  RE_FUNCION.lastIndex = 0;
   let m;
-  while ((m = re.exec(text))) {
+  while ((m = RE_FUNCION.exec(text))) {
+    const herramienta = m[1];
     const args = {};
-    // Dos cuerpos posibles, y el de CDATA va PRIMERO a propósito: dentro de
-    // `<![CDATA[…]]>` el contenido puede llevar `</param>`, que es lo que rompe
-    // el patrón no voraz. El `\s*` va DENTRO de esa alternativa, no antes:
-    // puesto fuera se come la sangría de la primera línea del cuerpo normal, que
-    // es la mitad del bug que esto arregla.
+    // El `\s*` va DENTRO de la alternativa de CDATA, no antes: puesto fuera se
+    // come la sangría de la primera línea del cuerpo normal.
     const pre = /<param\s+name=["']([\w.\-]+)["']\s*>(?:\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/param\s*>|([\s\S]*?)<\/param\s*>)/g;
     let p;
     while ((p = pre.exec(m[2]))) {
       const nombre = p[1];
-      const crudo = p[2] !== undefined ? p[2] : (p[3] || '');
-      if ((PARAM_EXACTO[m[1]] || []).includes(nombre)) {
-        args[nombre] = crudo;              // tal cual, byte a byte
+      const enCdata = p[2] !== undefined;
+      const crudo = enCdata ? p[2] : (p[3] || '');
+      if (esDe(PARAM_EXACTO, herramienta, nombre)) {
+        // El valor ES el contenido. Dentro de un CDATA, exacto. Fuera, se quita
+        // UN salto de línea inicial y solo uno: el modelo abre el valor en su
+        // propia línea y ese salto es formato suyo, no una primera línea en
+        // blanco del fichero. El salto FINAL se conserva. Quien necesite que el
+        // contenido empiece de verdad con una línea en blanco tiene el CDATA.
+        args[nombre] = enCdata ? crudo : crudo.replace(/^\r?\n/, '');
       } else {
-        const v = crudo.trim();
-        if ((PARAM_NUMERO[m[1]] || []).includes(nombre)) {
+        // Escalar: se recorta y se le quita UN par de comillas que lo envuelva.
+        // Sin esto, un `path` que el modelo entrecomilla crea una carpeta «"src»
+        // y un numérico entrecomillado da NaN. Un valor de verdad no empieza y
+        // acaba por comilla; el contenido de un fichero sí puede, y por eso esto
+        // NO se aplica a los exactos.
+        const v = crudo.trim().replace(/^(["'])([\s\S]*)\1$/, '$2');
+        if (esDe(PARAM_NUMERO, herramienta, nombre)) {
           const n = Number(v);
-          // Si no es número, se deja el texto: que el error salga donde se usa,
+          // Si no es número se deja el texto: que el error salga donde se usa,
           // con el valor que mandó el modelo, y no un NaN callado.
           args[nombre] = (v !== '' && Number.isFinite(n)) ? n : v;
-        } else if ((PARAM_BOOLEANO[m[1]] || []).includes(nombre)) {
+        } else if (esDe(PARAM_BOOLEANO, herramienta, nombre)) {
           args[nombre] = /^(true|1|s[ií]|yes)$/i.test(v);
         } else {
           args[nombre] = v;
         }
       }
     }
-    out.push({ tool: m[1], args });
+    out.push({ tool: herramienta, args });
   }
   return out;
 }
+
 
 export function parseToolCall(text) {
   const xml = parseFunctionTags(text);
