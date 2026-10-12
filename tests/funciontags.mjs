@@ -131,5 +131,29 @@ const sola = parseToolCall(DOC);
 ok('14 · una llamada citada dentro de un <param> NO se ejecuta',
    sola && sola.tool === 'fs.write', sola ? sola.tool : 'nada');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Las dos respuestas del fuzz que estropeaban el valor en las capas de
+// RECUPERACIÓN de JSON, no en las etiquetas. Las dos escribían y decían
+// «Escrito». En Claw el mismo corte le puede tocar al `html` de `app.create` o
+// al `secret` del vault.
+
+// ── 15. Una comilla sin escapar seguida de «, "» parecía el fin del valor.
+const C1 = '```tool\n{"tool": "fs.write", "args": {"path": "f.js", "content": "console.log("a", "b")\n"}}\n```';
+let r = parseToolCall(C1);
+ok('15 · una comilla sin escapar no trunca el valor',
+   r?.args?.content === 'console.log("a", "b")\n', ver(r?.args?.content));
+
+// ── 16. Una barra justo antes de un salto REAL (continuación de línea de shell)
+// se convertía en barra + la letra «n», y el salto se perdía.
+const C2 = '```tool\n{"tool": "fs.write", "args": {"path": "s.sh", "content": "echo one \\\n  two\n"}}\n```';
+r = parseToolCall(C2);
+ok('16 · una continuación de línea de shell sobrevive',
+   r?.args?.content === 'echo one \\\n  two\n', ver(r?.args?.content));
+
+// ── 17. Y lo que NO puede perderse al arreglar lo de arriba: un mensaje cortado
+// a media escritura se sigue rechazando. Completarlo sería inventar contenido.
+r = parseToolCall('```tool\n{"tool": "fs.write", "args": {"path": "a.js", "content": "empieza y se corta');
+ok('17 · un mensaje truncado de verdad NO se recupera', !r?.args?.content, ver(r?.args?.content));
+
 console.log(fallos ? `\n❌ ${fallos} FALLO(S)` : '\n✅ las etiquetas <function> no estropean lo que escribe el modelo');
 process.exit(fallos ? 1 : 0);
