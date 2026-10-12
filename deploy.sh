@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Deploy de Elffuss Claw a claw.elffuss.com (servidor UtopiaIA).
 # El sitio (nginx + certbot + servicio elffuss-proxy) ya está configurado;
-# esto solo sincroniza contenido. Los pesos de web/models/ del servidor
-# están protegidos frente a --delete.
+# esto sincroniza la web y el backend de /proxy (ver abajo). Los pesos de
+# web/models/ del servidor están protegidos frente a --delete.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -60,8 +60,6 @@ for a in "$@"; do
 done
 
 rsync -az --delete "${MOTOR[@]}" "${BLOG[@]}" -e "ssh -i $KEY" web/ "$HOST:$DEST/"
-rsync -az -e "ssh -i $KEY" server/serve.py "$HOST:${ELFFUSS_APPDIR:-~/elffuss}/serve.py"
-ssh -i "$KEY" "$HOST" 'sudo systemctl restart elffuss-proxy'
 
 # anti-caché: versionar assets del index con el commit y sellar el build.
 # Con cambios sin commitear en web/ (o ficheros nuevos sin añadir) el sello lleva
@@ -71,5 +69,23 @@ ssh -i "$KEY" "$HOST" 'sudo systemctl restart elffuss-proxy'
 V=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
 if [ -n "$(git status --porcelain -- web 2>/dev/null)" ]; then V="$V-dirty"; fi
 ssh -i "$KEY" "$HOST" "sed -i 's|href=\"css/\([^\"]*\)\.css\"|href=\"css/\1.css?v=$V\"|g; s|src=\"js/\([^\"]*\)\.js\"|src=\"js/\1.js?v=$V\"|g; s|__BUILD__|$V|g' $DEST/index.html"
+
+# El backend de /proxy y /proxy/report (servicio elffuss-proxy) vive en
+# ~/elffuss-proxy/, una ruta que no escribe ningún deploy.sh anterior a este.
+# Aquellos copiaban serve.py a ~/elffuss/ y reiniciaban el servicio: con el
+# ExecStart apuntando aquí, desplegar una rama vieja ya no vuelve a poner el
+# proxy abierto, solo escribe un fichero que nadie arranca. Este lo sube como
+# serve.py.new y server/install-proxy.sh lo pone en su sitio, reinicia y pasa
+# la sonda (server/proxy-probe.py): si no pasa vuelve al anterior, y si
+# tampoco, para el servicio. No apuntes ELFFUSS_APPDIR (la variable de los
+# deploy.sh viejos) a este directorio.
+PROXYDIR=${ELFFUSS_PROXYDIR:-elffuss-proxy}   # relativo al $HOME del servidor
+ssh -i "$KEY" "$HOST" "mkdir -p '$PROXYDIR'"
+rsync -az -e "ssh -i $KEY" server/proxy-probe.py server/install-proxy.sh "$HOST:$PROXYDIR/"
+rsync -az -e "ssh -i $KEY" server/serve.py "$HOST:$PROXYDIR/serve.py.new"
+if ! ssh -i "$KEY" "$HOST" "ELFFUSS_PROXYDIR='$PROXYDIR' bash '$PROXYDIR/install-proxy.sh'"; then
+  echo "✗ la web está desplegada (build $V), pero el backend de /proxy NO: el motivo, arriba." >&2
+  exit 1
+fi
 
 echo "✳ desplegado → https://claw.elffuss.com (build $V)"

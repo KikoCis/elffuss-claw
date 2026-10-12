@@ -50,7 +50,7 @@ browser** (WebGPU) — everything stays on your machine.
 | **Folder automation** | "watch the *inbox* folder and drop processed files in *outbox*" → you drop a file, Elffuss picks it up, processes it (Excel→CSV; else copy) and leaves it in the other folder, pinging you in chat. |
 | **Vault** | Secrets encrypted with AES-256-GCM, key derived via PBKDF2 (310k iters) from your master password. Auto-locks after 5 min. Nothing leaves your machine. |
 | **Scheduled tasks** | "Remind me in 20 minutes…" → the prompt auto-fires in the future (while the tab is open). |
-| **Internet** | `web.fetch` with a direct fetch (CORS) and a `/proxy?url=` server fallback. |
+| **Internet** | `web.fetch` with a direct fetch (CORS) and a `/proxy?url=` server fallback. `/proxy` is an open GET relay to public web pages: it cannot tell the app from any other client (there are no accounts, and anything the page sends a script can send too), so it is bounded instead: public `http`/`https` destinations on ports 80 and 443 only (never private, loopback or the server's own addresses), a size cap, a deadline, and per-client, global and concurrency limits. |
 
 ## Run locally
 
@@ -74,7 +74,7 @@ web/
   js/permissions.js     per-scope permissions (modal + localStorage)
   js/tools/             fs · apps · vault · tasks · web  ← the only things touching the world
   js/providers/         rules (no model) · onnx (transformers.js) · litert (LiteRT-LM)
-server/serve.py         static server + CORS proxy (dev)
+server/serve.py         dev server, and in production the /proxy backend (see the Internet row)
 ```
 
 No framework, no build step. The agent talks to the tools with

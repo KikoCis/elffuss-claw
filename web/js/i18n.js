@@ -397,6 +397,10 @@ const L = {
     ceoProfFocus_memo: 'qué hechos útiles sobre el usuario merece la pena recordar a partir de lo visto, y qué recordado ya no aplica',
     ceoMissionDefault: 'Revisar tu espacio (carpetas, apps, tareas, memoria) y proponer mejoras concretas y accionables.',
     stoppedForModel: 'Paro la respuesta en curso para cambiar de cerebro.',
+    // lo que dice el proxy endurecido (server/serve.py) en X-Proxy-Error, X-Proxy-Upstream-Status y X-Proxy-Truncated
+    webProxyRefused: 'No pude leer {host}: el proxy del servidor no la trajo (HTTP {status}, {code}): {why}',
+    webSiteStatus: 'No pude leer {host}: la web respondió HTTP {status} (a través del proxy del servidor).',
+    webProxyCut: '… (el proxy del servidor cortó la página en {mb} MB: falta el final)',
 },
   en: {
     welcome: 'An operating system with a soul that lives in your browser. Here apps aren’t installed: they’re created when you ask, appearing on the right. I can use your folders (with permission), store encrypted secrets, schedule tasks and browse for you. Everything stays on your machine.',
@@ -770,6 +774,9 @@ const L = {
     ceoProfFocus_memo: 'which useful facts about the user are worth remembering from what was seen, and what is remembered that no longer applies',
     ceoMissionDefault: 'Review your space (folders, apps, tasks, memory) and propose concrete, actionable improvements.',
     stoppedForModel: 'Stopping the current answer to switch brains.',
+    webProxyRefused: 'I could not read {host}: the server’s proxy did not fetch it (HTTP {status}, {code}): {why}',
+    webSiteStatus: 'I could not read {host}: the site answered HTTP {status} (through the server’s proxy).',
+    webProxyCut: '… (the server’s proxy cut the page at {mb} MB: the end is missing)',
 },
   uk: {
     claim: "застосунків не існує: їх створюють",
