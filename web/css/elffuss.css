@@ -337,6 +337,17 @@ main {
 .skills-instaladas .row.between > :not(button), .skills-fuentes .row.between > :not(button), .repo-skills .card > :not(button) { min-width: 0; overflow-wrap: anywhere; }
 .skills-instaladas .row.between > button, .skills-fuentes .row.between > button, .repo-skills .card > button { flex: none; }
 .skills-instaladas .row.between > b, .skills-fuentes .row.between > b, .repo-skills .card > b { flex: 1 1 auto; }
+/* Cada catálogo, igual en todas las tarjetas: nombre y repo uno debajo del
+   otro, y su botón a la derecha. Antes el botón bajaba a otra línea solo cuando
+   el nombre era largo y cada tarjeta quedaba distinta. */
+.skills-fuentes .card > .row.between { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; margin: 0; }
+.skills-fuentes .card > .row.between > b { grid-column: 1; grid-row: 1; }
+.skills-fuentes .card > .row.between > .repo-link { grid-column: 1; grid-row: 2; }
+.skills-fuentes .card > .row.between > button { grid-row: 1 / span 2; }
+.sk-h { font-size: .74rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin: 14px 0 8px; }
+.sk-h:focus { outline: none; }
+.sk-h:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.sk-nota { margin: -4px 0 8px; font-size: .78rem; }
 .prov-name { font-weight: 700; flex: 1; cursor: pointer; }
 .panel .card a { color: var(--accent2); }
 .repo-link:hover { text-decoration: underline; }
@@ -527,6 +538,8 @@ body:has(#splash:not([hidden])) #toasts { visibility: hidden; }
   #tabs { overflow-x: auto; scrollbar-width: none; }
   #tabs button { padding: 8px 10px; font-size: .82rem; white-space: nowrap; }
   .panel { padding: 12px; }
+  /* el botón flotante «Chat» no tapa lo último del panel (un «Instalar») */
+  body.show-viz .panel:not(#panel-vista) { padding-bottom: 72px; }
   .card { flex-wrap: wrap; }
 
   dialog { max-width: 92vw; margin: auto; }
