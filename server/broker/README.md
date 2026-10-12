@@ -47,5 +47,5 @@ peticiones que llegan al servidor:
 
     sudo grep -c "<fichero>" /var/log/nginx/access.log
 
-Si la segunda carga no añade ninguna, vino del almacén. Medido así: 357 s la
-primera vez y 35 s la segunda, con cero peticiones nuevas.
+Si la segunda carga no añade ninguna, vino del almacén. Medido así: la segunda carga va un orden
+de magnitud más rápida, con cero peticiones nuevas.

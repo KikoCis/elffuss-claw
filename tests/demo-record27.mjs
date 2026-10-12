@@ -71,7 +71,7 @@ const server = createServer(async (req, res) => {
 });
 // PROD=1 graba contra el sitio PÚBLICO (lo que hace verdadero el "simplemente
 // conectándote aquí"): no se sirve nada en local, el navegador se lo baja todo de
-// producción, GGUF incluido. Tarda más (~430-545 s) pero es la experiencia real.
+// producción, GGUF incluido. Tarda bastante más, pero es la experiencia real.
 const PROD = process.env.PROD === '1';
 if (!PROD) await new Promise(r => server.listen(PUERTO, r));
 const BASE = PROD ? 'https://claw.elffuss.com' : `http://localhost:${PUERTO}`;

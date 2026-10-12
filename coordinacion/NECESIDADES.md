@@ -77,10 +77,9 @@ el default ya no es Qwen2.5-0.5B sino **LFM2.5-1.2B-Instruct** (850 MB q4,
 agentic-first, clava el protocolo SIN fine-tune con transformers.js v4). El SFT
 sigue teniendo valor para pulir persona/español/uso del CONTEXTO.
 
-- **Qué**: SFT sobre `LiquidAI/LFM2.5-1.2B` (o 700M/350M si basta) con dataset
-  sintético del protocolo Elffuss: pares user→tool-call para las 14 herramientas,
-  user→```html app completa, y [resultado]→respuesta en español. Podemos generar
-  el dataset juntos (pedídnoslo por aquí y os pasamos transcripciones reales).
+- **Qué**: SFT sobre `LiquidAI/LFM2.5-1.2B` (o 700M/350M si basta) con un
+  dataset propietario curado para el protocolo de Elffuss. La composición no se
+  publica; si colaboráis, se habla por privado.
 - **Restricción dura (medida, ver ERRORES.md E-005)**: el export final debe
   pesar **≤~1 GB en disco** — onnxruntime-web tiene heap wasm de 4 GB y un
   1.5B q4 (1.8 GB) ya no carga. Con 0.5B q4 (786 MB) vamos sobrados.

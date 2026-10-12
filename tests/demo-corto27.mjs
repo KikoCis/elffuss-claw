@@ -1,7 +1,7 @@
 // demo-corto27.mjs — TOMA de vídeo del Qwen3.8-27B contestando dentro del
 // navegador, y a la vez SONDA de por qué la toma anterior se quedó muda.
 //
-// Qué cambia respecto a demo-record27.mjs (que se quedó en silencio 300 s):
+// Qué cambia respecto a demo-record27.mjs (que se quedó muda durante toda la toma):
 //
 // 1) Mide la latencia AL PRIMER TOKEN, no al mensaje terminado. La toma anterior
 //    esperaba a `.msg.assistant`, que la interfaz solo crea cuando la respuesta

@@ -9,9 +9,9 @@ dtype `q4` (no q4f16); debe seguir el protocolo agéntico (tool-calls JSON +
 
 | Modelo | Tamaño q4 | ¿Carga? | Prueba agéntica | Veredicto |
 |---|---|---|---|---|
-| **LFM2.5-1.2B-Instruct** (Liquid, jun-2026) | **850 MB** | ✅ (necesita transformers.js **v4**) | ⭐ App contador completa y funcional al primer intento, renderizada en el visor; resumen en buen español; ~45 s la app entera; 0 errores | **🏆 NUEVO DEFAULT** |
+| **LFM2.5-1.2B-Instruct** (Liquid, jun-2026) | **850 MB** | ✅ (necesita transformers.js **v4**) | ⭐ App contador completa y funcional al primer intento, renderizada en el visor; resumen en buen español; la app entera de una vez; 0 errores | **🏆 NUEVO DEFAULT** |
 | Qwen2.5-0.5B-Instruct (el anterior) | 786 MB | ✅ | Bucle completo pero apps basura (`<script src="path/to/boton.js">`), español pobre | Relevado |
-| **Qwen3.5-0.8B** (mar-2026, multimodal) | 716 MB | ✅ carga | ❌ RuntimeError «unaligned accesses» (su arquitectura híbrida `past_conv/past_recurrent` pisa un bug de ort-web) + generación lentísima (7 min) | Descartado HOY; revisar con futuras versiones de ort |
+| **Qwen3.5-0.8B** (mar-2026, multimodal) | 716 MB | ✅ carga | ❌ RuntimeError «unaligned accesses» (su arquitectura híbrida `past_conv/past_recurrent` pisa un bug de ort-web) + generación inutilizablemente lenta | Descartado HOY; revisar con futuras versiones de ort |
 | Granite 4.0 Nano 1B web (IBM) | **1781 MB** | ❌ (mismo tamaño que el Qwen 1.5B que reventó el wasm) | — | No cabe. El 350M (≈300 MB) queda como opción ultraligera no probada |
 | Qwen3.5-2B | 1753 MB | ❌ previsible | — | No cabe |
 | Gemma-4 E2B `.litertlm` (LiteRT-LM) | ~GBs | ✅ (ruta LiteRT, solo WebGPU) | sin E2E | La vía del modelo propio (N-001) |

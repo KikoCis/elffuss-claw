@@ -6,8 +6,9 @@ Estados: `ABIERTO / MITIGADO (workaround en Elffuss) / CERRADO`.
 El agente de agentic-install puede usar estos casos como set de evaluación de
 los modelos que nos sirva.
 
-**Dato de referencia (2026-07-12, M-series, headless Chromium + WebGPU):**
-Qwen2.5-0.5B-Instruct ONNX q4 = 786 MB, descarga+carga ~30 s, respuesta ~10 s.
+**Dato de referencia (2026-07-12, headless Chromium + WebGPU):**
+Qwen2.5-0.5B-Instruct ONNX q4 = 786 MB; descarga, carga y respuesta se quedan
+dentro de lo usable.
 La infraestructura navegador funciona; los fallos son de CALIDAD del modelo
 genérico.
 
@@ -60,9 +61,9 @@ genérico.
 - **Visto**: Ornith-1.0-9B (Qwen3.5-9B, repack KikoCis con template arreglado)
   servido con llama.cpp `--jinja` piensa en `reasoning_content` antes del
   `content`; con `max_tokens` corto se queda pensando y el content llega vacío.
-  En la CPU del servidor (E-007) un turno razonado = >5 min.
-- **Solución**: `chat_template_kwargs: {enable_thinking:false}` por petición →
-  respuesta en 4.7 s. El streaming enseña `reasoning_content` en la burbuja de
+  En la CPU del servidor (E-007) un turno razonado no termina en un tiempo usable.
+- **Solución**: `chat_template_kwargs: {enable_thinking:false}` por petición → la
+  respuesta pasa de inusable a inmediata. El streaming enseña `reasoning_content` en la burbuja de
   «pensando» si se activa el modo profundo (`REMOTE.thinking=true`).
 - Recordad SIEMPRE con Ornith: **temp 1.0 / top_p 0.95** (con temp baja entra
   en bucles de repetición — documentado en el README del repack).
@@ -71,8 +72,8 @@ genérico.
 - llama.cpp, Ornith 9B Q4_K_M (requant de Q8_0), solo CPU: la ingestión va unas
   cinco veces más rápida que la generación. El prompt de Elffuss (≈ 650 tokens)
   es una espera larga la primera vez (`--cache-reuse 256` reutiliza el prefijo
-  después), y una app HTML de ~600 tokens se va a varios minutos.
-- El 31B IQ2_M NO cabe en la memoria del servidor → thrash de disco, inusable.
+  después), y una app HTML de ~600 tokens se va muy por encima de lo usable.
+- El 31B IQ2_M NO cabe en ese servidor → thrash de disco, inusable.
   Si algún día hay servidor con GPU o más memoria, reevaluar.
 
 ## E-008 · LFM2.5 requiere transformers.js v4 — **CERRADO** *(2026-07-12)*
@@ -84,7 +85,7 @@ genérico.
 - Carga (716 MB: decoder+embed+vision separados) pero al generar:
   `RuntimeError: operation does not support unaligned accesses` (inputs
   `past_conv`/`past_recurrent` → arquitectura híbrida) y lentitud extrema
-  (7 min un turno). Bug del runtime, no del modelo. Re-evaluar con futuras
+  (un turno no llega a terminar). Bug del runtime, no del modelo. Re-evaluar con futuras
   versiones de ort-web/transformers.js. Análisis completo:
   [CANDIDATOS-MODELO.md](CANDIDATOS-MODELO.md).
 
