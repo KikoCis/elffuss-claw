@@ -3,6 +3,8 @@
 //   · «Explorar» abre la lista DENTRO de la tarjeta del repo y otra vez la
 //     cierra (antes añadía una copia al final del panel por cada clic); cada
 //     skill enlaza a su SKILL.md.
+//   · «Instalar» avisa con «Ver cómo usarla en el chat» (en el aviso: la fila
+//     tiene una sola acción).
 //   · «Instalar» deja el botón desactivado y sube el contador; «Quitar» la quita
 //     al momento y deja «Deshacer»; se puede ver lo que se le da al modelo.
 //   · «Añadir repo» lo enseña al momento, vacía el campo y se puede quitar (✕).
@@ -41,7 +43,7 @@ const foco = () => p.evaluate(() => {
 });
 const conTeclado = async loc => { await loc.focus(); await p.keyboard.press('Enter'); };
 await p.click('#tabs button[data-tab="skills"]');
-const contador = () => p.locator('#panel-skills .skills-instaladas > .muted').first().innerText();
+const contador = () => p.locator('#panel-skills .skills-instaladas > .sk-h').first().textContent();
 ok('empieza con «Instaladas: 0»', (await contador()) === 'Instaladas: 0');
 
 const tarjeta = p.locator(`#panel-skills [data-ruta="repo:${REPO}"]`);
@@ -75,8 +77,10 @@ ok('…ya instalada, pulsarlo no hace nada', (await instalar.innerText()) === 'I
 ok('…el contador sube y la skill aparece en lo instalado', (await contador()) === 'Instaladas: 1'
   && await p.locator('#panel-skills .skills-instaladas [data-ruta="reloj-bonito"]').count() === 1);
 ok('…y el chat explica cómo usarla', /Skill «reloj-bonito» instalada/.test(await p.locator('#log').innerText()));
-const verEnChat = tarjetaSkill.locator('button', { hasText: 'Ver cómo usarla en el chat' });
-ok('la tarjeta enlaza a ese mensaje del chat', await verEnChat.count() === 1);
+// Una acción por fila: el enlace al mensaje va en el aviso, no en la tarjeta.
+const verEnChat = p.locator('#toasts .toast', { hasText: 'reloj-bonito' }).locator('.toast-accion', { hasText: 'Ver cómo usarla en el chat' });
+ok('el aviso de «instalada» enlaza a ese mensaje del chat (y la tarjeta tiene una sola acción)', await verEnChat.count() === 1
+  && await tarjetaSkill.locator('button').count() === 1);
 await verEnChat.click();
 ok('…que lo pone a la vista, con el foco y resaltado', await hasta(() => p.evaluate(() => {
   const a = document.activeElement;

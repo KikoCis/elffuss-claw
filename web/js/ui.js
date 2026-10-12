@@ -1433,7 +1433,12 @@ const enlaceSkillMd = (repo, path, branch = 'HEAD') => {
 };
 function pintarInstaladas(box) {
   const inst = skills.installed();
-  box.replaceChildren(el('div', 'muted', tr('installedN', { n: inst.length })));
+  // Encabezado de verdad (antes una línea gris que no se distinguía del texto):
+  // «Instaladas» y «Explorar catálogos» son dos partes que no se mezclan. Si se
+  // queda sin filas, el foco viene aquí.
+  const h = el('h4', 'sk-h', tr('installedN', { n: inst.length }));
+  h.tabIndex = -1;
+  box.replaceChildren(h);
   for (const s of inst) {
     const c = el('div', 'card col');
     c.dataset.ruta = s.name;        // #/skills/<nombre>
@@ -1471,7 +1476,7 @@ function pintarInstaladas(box) {
 
 async function pintarFuentes(box, instaladas) {
   const srcs = await skills.sources();
-  box.replaceChildren();
+  box.replaceChildren(el('h4', 'sk-h', tr('catalogsH')), el('p', 'muted sk-nota', tr('catalogsHint')));
   for (const src of srcs) {
     const c = el('div', 'card col');
     c.dataset.ruta = 'repo:' + src.repo;
@@ -1577,11 +1582,10 @@ async function explorarRepo(repo, lista, boton, instaladas) {
           pintarInstaladas(instaladas);
           actualizarListas();
           const msg = onSkillInstalledCb(entry);   // → mensaje «cómo usarla» en el chat
-          // …y desde la tarjeta se llega a ese mensaje (antes había que buscarlo).
-          if (msg) {
-            c.querySelector('.ver-en-chat')?.remove();
-            c.append(btn(tr('skillSeeChat'), 'ghost ver-en-chat', () => irAlMensaje(msg)));
-          }
+          // …y el aviso lleva a ese mensaje. Antes era un segundo botón en la
+          // fila (dos acciones por fila) y, en el móvil, instalar te sacaba de
+          // Skills al chat sin pedirlo: ahora te quedas donde estabas.
+          toast(tr('skillInstalledToast', { name: entry.name }), msg ? { accion: { label: tr('skillSeeChat'), run: () => irAlMensaje(msg) } } : {});
         } catch (e) { pintarBotonInstalar(b, false, sk.name); toast('⚠️ ' + e.message); }
       });
       b.dataset.repo = sk.repo; b.dataset.path = sk.path; b.dataset.nombre = sk.name;
@@ -1655,9 +1659,9 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   onSettingsChangedCb = onSettingsChanged || (() => {});
   // al instalar una skill: mensaje «cómo usarla» en el chat + volver al chat en móvil
   onSkillInstalledCb = entry => {
-    const div = addMsg('assistant', skills.usageMessage(entry)); // addMsg renderiza markdown en 'assistant'
-    if (isMobile()) flipTo('chat');
-    return div;
+    // addMsg renderiza markdown en 'assistant'. En el móvil ya no se salta al
+    // chat: el aviso de «instalada» trae «Ver cómo usarla en el chat».
+    return addMsg('assistant', skills.usageMessage(entry));
   };
 
   // Historial del prompt: ↑/↓ recuperan lo enviado (como una shell). Persistente.
