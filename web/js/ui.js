@@ -1754,7 +1754,7 @@ export function init({ onSend, onStop = () => {}, onModelChange, onSettingsChang
   setWorking(working);   // icono, título y aria del botón enviar/parar
   $('btn-slash').innerHTML = UI.slash;
 
-  // menú de comandos (/) en el chat, estilo plugin de Claude Code.
+  // menú de comandos (/) en el chat, estilo plugin de agente.
   // Un menú de verdad: role=menu, ↑/↓/Inicio/Fin, Enter, Escape, y el foco
   // vuelve a donde toca. Escribiendo «/» filtra por prefijo («/sk» → /skills) y
   // Enter ejecuta el marcado; un «/» suelto nunca se manda al modelo. Después

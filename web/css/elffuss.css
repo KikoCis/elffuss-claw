@@ -551,7 +551,7 @@ body:has(#splash:not([hidden])) #toasts { visibility: hidden; }
 }
 
 
-/* ---------- markdown en el chat (estilo plugin de Claude Code) ---------- */
+/* ---------- markdown en el chat (estilo plugin de agente) ---------- */
 .msg.md { white-space: normal; }
 .msg.md code {
   background: #0d1117; border: 1px solid var(--line); border-radius: 5px;

@@ -1,5 +1,5 @@
 // Skills de Elffuss Code: instrucciones en markdown (formato SKILL.md de
-// Claude Code) que el modelo sigue cuando aplican. Se instalan desde el
+// agente) que el modelo sigue cuando aplican. Se instalan desde el
 // catálogo grande OFICIAL (github.com/anthropics/skills), desde los plugins
 // oficiales, o desde CUALQUIER repo público (marketplaces de la comunidad
 // tipo OpenClaude/openclaw). Todo transparente: se ve el repo, la lista y el
@@ -42,8 +42,8 @@ export const CATALOG_REPO = 'anthropics/skills';
 export const DEFAULT_SOURCES = [
   { repo: 'KikoCis/elffuss-claw-skills', clave: 'skSrc_elffuss', label: 'Elffuss · Skills que funcionan en Claw (3D·Excel·web·juegos)', official: true },
   { repo: 'bbgnsurftech/claude-skills-collection', clave: 'skSrc_comunidad', label: 'Comunidad · Mega-colección (1000+ skills)', official: true },
-  { repo: 'anthropics/skills', clave: 'skSrc_anthropic', label: 'Anthropic · Agent Skills (oficial de Claude Code)', official: true },
-  { repo: 'anthropics/claude-plugins-official', clave: 'skSrc_plugins', label: 'Anthropic · Claude Code Plugins (oficial)', official: true },
+  { repo: 'anthropics/skills', clave: 'skSrc_anthropic', label: 'Anthropic · Agent Skills (oficial)', official: true },
+  { repo: 'anthropics/claude-plugins-official', clave: 'skSrc_plugins', label: 'Anthropic · Plugins oficiales', official: true },
   { repo: 'earthtojake/text-to-cad', clave: 'skSrc_cad', label: 'Text-to-CAD · CAD/STEP/DXF (Python, solo referencia)', official: true },
   { repo: 'scottstts/Threejs-Awesome-Graphics-Agent-Skills', clave: 'skSrc_threejs', label: '3D en el navegador · Three.js (funciona en Claw)', official: true },
 ];

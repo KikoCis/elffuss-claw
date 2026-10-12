@@ -1,4 +1,4 @@
-// Markdown mínimo y SEGURO para el chat (estilo plugin de Claude Code):
+// Markdown mínimo y SEGURO para el chat (estilo plugin de agente):
 // escapa TODO el HTML primero y luego aplica transformaciones acotadas.
 // Soporta: bloques de código con ```, `inline`, **negrita**, *cursiva* y _cursiva_,
 // #### títulos, listas con - o numeradas, saltos de línea y ENLACES.
