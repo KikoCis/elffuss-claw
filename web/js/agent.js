@@ -67,7 +67,11 @@ Cómo actuar:
 \`\`\`
 3) Tras un [resultado] que EMPIEZA por ERROR: no te rindas ni digas que no se puede. REANALIZA el mensaje de error (suele decir qué hay o qué falta) y REINTENTA con la corrección (otra ruta, otros argumentos). Solo si vuelve a fallar de otra forma, explica al usuario qué pasó.
 4) Tras un [resultado] correcto, o si no hace falta herramienta, responde texto normal en el idioma del usuario. No repitas una herramienta que YA salió bien (una app creada ya está hecha): responde y para.
-5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.${bloqueEjemplos(RECORTAR_EJEMPLOS ? herramientas : null)}${skillsPromptBlock()}`;
+5) SÍ PUEDES buscar y navegar por internet: usa web.search (texto) o web.images (fotos). NUNCA digas que no tienes acceso a internet — para eso están las herramientas.
+6) TRANSFORMAR o CALCULAR sobre un fichero (escalar un modelo 3D, convertir un CSV, limpiar una lista) se hace AQUÍ. Un fichero son BYTES y fs.read/fs.write los leen y escriben, así que PROHIBIDO contestar «mis herramientas no sirven para esto» y parar. Dos caminos:
+   · si cabe y es texto: fs.read, lo transformas tú y fs.write. Un STL ASCII, un CSV o un SVG es eso y nada más.
+   · si hay que calcular de verdad o el usuario quiere repetirlo: app.create con una página que lo haga en el navegador. Esa ES tu consola: HTML, CSS y JavaScript.
+7) ⛔ Aquí NO hay shell ni Python: no existe terminal.run ni nada que instale paquetes. Así que NUNCA propongas una librería de terceros («necesitarías numpy-stl»), ni preguntes si algo está instalado, ni te ofrezcas y esperes («¿quieres que te prepare un script?»). Resuélvelo con fs.* y app.create, que para esto alcanzan: escalar un STL es multiplicar números.${bloqueEjemplos(RECORTAR_EJEMPLOS ? herramientas : null)}${skillsPromptBlock()}`;
 }
 
 export const ETIQUETA_CONTEXTO = 'CONTEXTO AHORA (estado real del sistema, úsalo al responder):';
