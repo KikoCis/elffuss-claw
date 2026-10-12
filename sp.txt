@@ -1,8 +1,0 @@
-tests/i18n-claves.mjs
-tests/i18n_smoke.mjs
-tests/prompt-vs-contexto.mjs
-tests/prompthist.mjs
-web/js/agent.js
-web/js/i18n.js
-web/js/i18n.js
-web/js/i18n.js
